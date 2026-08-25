@@ -1,0 +1,9 @@
+// Single global stylesheet entry point, imported once from main.ts.
+// All styling lives here (and its partials) — Vue components never carry
+// <style> blocks; they only reference these classes.
+
+@use "base";
+@use "components/app-shell";
+@use "components/sidebar";
+@use "components/empty-state";
+@use "components/project-panel";

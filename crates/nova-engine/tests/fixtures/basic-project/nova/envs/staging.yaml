@@ -1,0 +1,5 @@
+name: staging
+
+variables:
+  base_url: https://staging.worldzero.example.com
+  username: developer

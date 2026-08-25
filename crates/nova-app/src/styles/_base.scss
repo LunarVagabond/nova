@@ -1,0 +1,58 @@
+@use "variables" as *;
+
+:root {
+  --color-bg: #f6f6f6;
+  --color-bg-raised: #ffffff;
+  --color-bg-sidebar: #efefef;
+  --color-border: #dcdcdc;
+  --color-text: #0f0f0f;
+  --color-text-muted: #6b6b6b;
+  --color-accent: #396cd8;
+  --color-danger: #c0392b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #1f1f1f;
+    --color-bg-raised: #2a2a2a;
+    --color-bg-sidebar: #262626;
+    --color-border: #3a3a3a;
+    --color-text: #f2f2f2;
+    --color-text-muted: #9a9a9a;
+    --color-accent: #6a9bff;
+    --color-danger: #ff6b5e;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: $font-family-base;
+  font-size: $font-size-base;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}

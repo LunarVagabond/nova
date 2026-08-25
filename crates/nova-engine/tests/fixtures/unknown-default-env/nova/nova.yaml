@@ -1,0 +1,13 @@
+version: 1
+
+project:
+  name: Broken Defaults
+
+defaults:
+  environment: does-not-exist
+
+collections:
+  path: collections
+
+environments:
+  path: envs

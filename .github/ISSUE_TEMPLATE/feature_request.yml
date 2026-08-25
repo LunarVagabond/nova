@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest an improvement or new capability
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every feature is checked against Nova's Project Philosophy (see README.md) —
+        in particular, does this improve developing, testing, understanding, or sharing
+        an API, and does it keep the engine (not the CLI or GUI) owning the logic? A
+        short description is enough to start.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      placeholder: e.g. I need to reuse a value extracted from one request's response in a later request
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach (optional)
+      placeholder: How might Nova solve this? Rough ideas welcome.
+
+  - type: checkboxes
+    id: acceptance
+    attributes:
+      label: Feature filter
+      options:
+        - label: This lives in nova-engine (not the CLI or GUI directly) if it involves project/request/environment logic, per the "engine owns the product" principle
+          required: true

@@ -1,0 +1,10 @@
+version: 1
+
+project:
+  name: Broken Project
+
+environments:
+  path: envs
+
+collections:
+  path: collections

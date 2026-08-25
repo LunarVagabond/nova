@@ -1,0 +1,9 @@
+# Default: everything not matched more specifically below.
+* @LunarVagabond
+
+# Per-area ownership
+# /crates/nova-engine/  @LunarVagabond
+# /crates/nova-cli/     @LunarVagabond
+# /crates/nova-app/     @LunarVagabond
+# /docs/                @LunarVagabond
+# /.github/             @LunarVagabond

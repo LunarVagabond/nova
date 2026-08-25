@@ -1,0 +1,15 @@
+[package]
+name = "nova-engine"
+description = "Core project/request engine for Nova. Owns project discovery, manifest parsing, environment loading, collection/request discovery, and (eventually) request execution. The CLI and desktop app are thin interfaces over this crate."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]

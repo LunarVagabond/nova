@@ -1,0 +1,16 @@
+[package]
+name = "nova-cli"
+description = "Thin CLI over nova-engine. Contains no request parsing, environment parsing, or execution logic of its own."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "nova"
+path = "src/main.rs"
+
+[dependencies]
+nova-engine.workspace = true
+clap = { version = "4", features = ["derive"] }

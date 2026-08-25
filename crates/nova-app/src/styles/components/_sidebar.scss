@@ -1,0 +1,63 @@
+@use "../variables" as *;
+
+.sidebar-header {
+  padding: $spacing-md;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sidebar-header__project {
+  font-weight: 600;
+  font-size: $font-size-lg;
+  margin: 0 0 $spacing-sm;
+  word-break: break-word;
+}
+
+.sidebar-header__env-select {
+  width: 100%;
+  padding: $spacing-xs $spacing-sm;
+  border-radius: $radius-sm;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-raised);
+}
+
+.sidebar-section-title {
+  padding: $spacing-md $spacing-md $spacing-xs;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.collection-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.collection-tree__node {
+  padding-left: $spacing-md;
+}
+
+.collection-tree__label {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  padding: $spacing-xs $spacing-md;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.collection-tree__request {
+  display: block;
+  padding: $spacing-xs $spacing-md;
+  font-size: $font-size-base;
+  border-radius: $radius-sm;
+  color: var(--color-text);
+  cursor: default;
+
+  &:hover {
+    background-color: var(--color-bg-raised);
+  }
+}

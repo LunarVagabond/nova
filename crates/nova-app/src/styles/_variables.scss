@@ -1,0 +1,21 @@
+// Compile-time design tokens (spacing, radius, type scale). Colors live in
+// _base.scss as CSS custom properties instead, since those need to change
+// at runtime based on the OS color scheme.
+
+$spacing-xs: 0.25rem;
+$spacing-sm: 0.5rem;
+$spacing-md: 1rem;
+$spacing-lg: 1.5rem;
+$spacing-xl: 2.5rem;
+
+$radius-sm: 4px;
+$radius-md: 8px;
+
+$font-family-base: Inter, Avenir, Helvetica, Arial, sans-serif;
+$font-family-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+
+$font-size-sm: 0.8125rem;
+$font-size-base: 0.9375rem;
+$font-size-lg: 1.25rem;
+
+$sidebar-width: 260px;
