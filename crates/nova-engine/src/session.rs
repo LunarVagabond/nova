@@ -94,7 +94,7 @@ pub struct Session {
     /// endpoint and client ID they were obtained for, so a run touching
     /// many requests behind the same OAuth2-protected API authenticates
     /// once rather than once per request.
-    access_tokens: HashMap<(String, String), AccessToken>,
+    access_tokens: HashMap<(String, String, Option<String>), AccessToken>,
 }
 
 impl Session {
@@ -176,7 +176,10 @@ impl Session {
     /// Only OAuth2 client credentials lands here today: the client ID and
     /// secret are exchanged for an access token at the scheme's token
     /// endpoint, and the result is cached on this session under
-    /// `(token_url, client_id)`. A cached token is reused until it's within
+    /// `(token_url, client_id, scope)` — the scope is part of the cache
+    /// key too, so two requests sharing a client but asking for different
+    /// scopes never get handed each other's token. A cached token is
+    /// reused until it's within
     /// the safety margin of its advertised expiry, so a run of many
     /// requests against the same API performs one token exchange rather
     /// than one per request.
@@ -196,7 +199,7 @@ impl Session {
             value: format!("Bearer {token}"),
         };
 
-        let key = (token_url.clone(), client_id.clone());
+        let key = (token_url.clone(), client_id.clone(), scope.clone());
         if let Some(cached) = self.access_tokens.get(&key) {
             if cached.is_fresh() {
                 return Ok(Some(bearer(&cached.access_token)));
