@@ -1,0 +1,125 @@
+@use "../variables" as *;
+
+.request-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $spacing-md;
+  margin-bottom: $spacing-lg;
+}
+
+.request-panel__name {
+  font-size: $font-size-lg;
+  font-weight: 600;
+  margin: 0 0 $spacing-xs;
+}
+
+.request-panel__path {
+  color: var(--color-text-muted);
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+  margin: 0;
+  word-break: break-all;
+}
+
+.response-pane {
+  border: 1px solid var(--color-border);
+  border-radius: $radius-md;
+  background-color: var(--color-bg-raised);
+  padding: $spacing-lg;
+}
+
+.response-pane__hint {
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.response-pane__error {
+  color: var(--color-danger);
+  margin: 0;
+}
+
+.response-pane__section-title {
+  font-size: $font-size-sm;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  margin: $spacing-lg 0 $spacing-sm;
+}
+
+.response-summary {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+}
+
+.response-status {
+  display: inline-block;
+  padding: $spacing-xs $spacing-sm;
+  border-radius: $radius-sm;
+  font-weight: 600;
+  font-family: $font-family-mono;
+}
+
+.response-status--ok {
+  background-color: rgba(46, 160, 67, 0.15);
+  color: #2ea043;
+}
+
+.response-status--error {
+  background-color: rgba(192, 57, 43, 0.15);
+  color: var(--color-danger);
+}
+
+.response-status--other {
+  background-color: rgba(155, 155, 155, 0.15);
+  color: var(--color-text-muted);
+}
+
+.response-summary__elapsed {
+  color: var(--color-text-muted);
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+}
+
+.response-headers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+}
+
+.response-headers__item {
+  display: flex;
+  gap: $spacing-sm;
+  padding: $spacing-xs 0;
+  border-bottom: 1px solid var(--color-border);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.response-headers__name {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.response-headers__value {
+  word-break: break-all;
+}
+
+.response-body {
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background-color: var(--color-bg);
+  border-radius: $radius-sm;
+  padding: $spacing-md;
+  margin: 0;
+  max-height: 480px;
+  overflow-y: auto;
+}

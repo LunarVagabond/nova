@@ -54,3 +54,16 @@ export interface NovaProject {
   environments: NovaEnvironment[];
   collections: Collection;
 }
+
+export interface ResponseHeader {
+  name: string;
+  value: string;
+}
+
+/** Mirrors `nova_engine::execute::Response`. */
+export interface RequestResponse {
+  status: number;
+  headers: ResponseHeader[];
+  body: string;
+  elapsed_ms: number;
+}
