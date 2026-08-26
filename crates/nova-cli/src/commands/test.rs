@@ -60,7 +60,7 @@ fn test_one(
         .resolve_and_execute(&parsed, environment)
         .map_err(|e| e.to_string())?;
 
-    println!("{} {}", resolved.method, resolved.url);
+    println!("{} {}", resolved.method, resolved.full_url());
     println!("  {} ({}ms)", response.status, response.elapsed_ms);
 
     if resolved.assertions.is_empty() {

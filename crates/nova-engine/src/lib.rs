@@ -25,6 +25,6 @@ pub use error::{NovaError, NovaResult};
 pub use execute::{execute, Response};
 pub use manifest::{Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION};
 pub use project::{NovaProject, MANIFEST_FILE_NAME};
-pub use request::{Header, MultipartField, ParsedRequest, RequestBody, RequestFile};
+pub use request::{Header, MultipartField, ParsedRequest, QueryParam, RequestBody, RequestFile};
 pub use session::Session;
 pub use validate::{validate, ValidationIssue};

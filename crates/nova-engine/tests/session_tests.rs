@@ -42,6 +42,7 @@ fn persists_cookies_across_requests_in_the_same_session() {
     let login_request = ParsedRequest {
         method: "GET".to_string(),
         url: format!("{url}/login"),
+        query: vec![],
         headers: vec![],
         body: RequestBody::None,
         assertions: vec![],
@@ -52,6 +53,7 @@ fn persists_cookies_across_requests_in_the_same_session() {
     let me_request = ParsedRequest {
         method: "GET".to_string(),
         url: format!("{url}/me"),
+        query: vec![],
         headers: vec![],
         body: RequestBody::None,
         assertions: vec![],
@@ -97,6 +99,7 @@ fn a_fresh_session_does_not_carry_cookies_from_another_session() {
     let login_request = ParsedRequest {
         method: "GET".to_string(),
         url: format!("{url}/login"),
+        query: vec![],
         headers: vec![],
         body: RequestBody::None,
         assertions: vec![],
@@ -108,6 +111,7 @@ fn a_fresh_session_does_not_carry_cookies_from_another_session() {
     let check_request = ParsedRequest {
         method: "GET".to_string(),
         url: format!("{url}/check"),
+        query: vec![],
         headers: vec![],
         body: RequestBody::None,
         assertions: vec![],

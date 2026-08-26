@@ -18,6 +18,7 @@ fn get_request(url: String) -> ParsedRequest {
     ParsedRequest {
         method: "GET".to_string(),
         url,
+        query: vec![],
         headers: vec![],
         body: RequestBody::None,
         assertions: vec![],
@@ -82,6 +83,7 @@ fn login_create_get_chain_carries_extracted_values_forward() {
     let mut create_request = ParsedRequest {
         method: "POST".to_string(),
         url: format!("{base_url}/users"),
+        query: vec![],
         headers: vec![nova_engine::Header {
             name: "Authorization".to_string(),
             value: "Bearer {{access_token}}".to_string(),
