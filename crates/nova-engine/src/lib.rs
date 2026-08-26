@@ -15,6 +15,7 @@ mod project;
 mod request;
 mod session;
 mod validate;
+mod xml;
 
 pub use assertion::{
     evaluate, Assertion, AssertionOutcome, Extraction, Op as AssertionOp, Term as AssertionTerm,
@@ -28,3 +29,4 @@ pub use project::{NovaProject, MANIFEST_FILE_NAME};
 pub use request::{Header, MultipartField, ParsedRequest, QueryParam, RequestBody, RequestFile};
 pub use session::Session;
 pub use validate::{validate, ValidationIssue};
+pub use xml::{XmlElement, XmlNode};

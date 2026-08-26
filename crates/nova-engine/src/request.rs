@@ -59,6 +59,7 @@ pub struct MultipartField {
 pub enum RequestBody {
     None,
     Json(serde_json::Value),
+    Xml(crate::xml::XmlElement),
     Text(String),
     Form(Vec<(String, String)>),
     Multipart(Vec<MultipartField>),
@@ -190,6 +191,7 @@ fn substitute_body(body: &RequestBody, environment: &Environment) -> NovaResult<
         RequestBody::None => RequestBody::None,
         RequestBody::Text(text) => RequestBody::Text(substitute(text, environment)?),
         RequestBody::Json(value) => RequestBody::Json(substitute_json(value, environment)?),
+        RequestBody::Xml(element) => RequestBody::Xml(substitute_xml(element, environment)?),
         RequestBody::Form(pairs) => RequestBody::Form(
             pairs
                 .iter()
@@ -233,6 +235,37 @@ fn substitute_json(
         }
         // Numbers, bools, and null can't contain a placeholder.
         other => other.clone(),
+    })
+}
+
+fn substitute_xml(
+    element: &crate::xml::XmlElement,
+    environment: &Environment,
+) -> NovaResult<crate::xml::XmlElement> {
+    let attributes = element
+        .attributes
+        .iter()
+        .map(|(name, value)| Ok((name.clone(), substitute(value, environment)?)))
+        .collect::<NovaResult<Vec<_>>>()?;
+    let children = element
+        .children
+        .iter()
+        .map(|child| {
+            Ok(match child {
+                crate::xml::XmlNode::Element(child) => {
+                    crate::xml::XmlNode::Element(substitute_xml(child, environment)?)
+                }
+                crate::xml::XmlNode::Text(text) => {
+                    crate::xml::XmlNode::Text(substitute(text, environment)?)
+                }
+            })
+        })
+        .collect::<NovaResult<Vec<_>>>()?;
+
+    Ok(crate::xml::XmlElement {
+        name: element.name.clone(),
+        attributes,
+        children,
     })
 }
 
@@ -333,6 +366,13 @@ fn parse_http(contents: &str) -> Result<ParsedRequest, String> {
         let value = serde_json::from_str(body_text)
             .map_err(|source| format!("invalid JSON body: {source}"))?;
         RequestBody::Json(value)
+    } else if matches!(
+        content_type_essence.as_deref(),
+        Some("application/xml") | Some("text/xml")
+    ) {
+        let element = crate::xml::parse_xml(body_text)
+            .map_err(|source| format!("invalid XML body: {source}"))?;
+        RequestBody::Xml(element)
     } else if content_type_essence.as_deref() == Some("application/x-www-form-urlencoded") {
         let pairs = url::form_urlencoded::parse(body_text.as_bytes())
             .map(|(k, v)| (k.into_owned(), v.into_owned()))
@@ -448,6 +488,7 @@ fn parse_multipart(body: &str, boundary: &str) -> Result<Vec<MultipartField>, St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::xml::XmlNode;
 
     #[test]
     fn parses_request_line_headers_and_json_body() {
@@ -574,13 +615,78 @@ mod tests {
 
     #[test]
     fn unhandled_content_type_falls_back_to_text() {
-        let contents = "POST {{base_url}}/upload\nContent-Type: application/xml\n\n<note>hi</note>";
+        let contents =
+            "POST {{base_url}}/upload\nContent-Type: application/octet-stream\n\nsome bytes";
 
         let parsed = parse_http(contents).unwrap();
 
+        assert_eq!(parsed.body, RequestBody::Text("some bytes".to_string()));
+    }
+
+    #[test]
+    fn parses_an_xml_body() {
+        let contents =
+            "POST {{base_url}}/users\nContent-Type: application/xml\n\n<user id=\"42\"><name>John</name></user>";
+
+        let parsed = parse_http(contents).unwrap();
+
+        let RequestBody::Xml(element) = parsed.body else {
+            panic!("expected an XML body");
+        };
+        assert_eq!(element.name, "user");
         assert_eq!(
-            parsed.body,
-            RequestBody::Text("<note>hi</note>".to_string())
+            element.attributes,
+            vec![("id".to_string(), "42".to_string())]
+        );
+    }
+
+    #[test]
+    fn text_xml_content_type_also_parses_as_xml() {
+        let contents = "POST {{base_url}}/users\nContent-Type: text/xml\n\n<ping/>";
+
+        let parsed = parse_http(contents).unwrap();
+
+        assert!(matches!(parsed.body, RequestBody::Xml(_)));
+    }
+
+    #[test]
+    fn malformed_xml_body_is_a_typed_error() {
+        let contents =
+            "POST {{base_url}}/users\nContent-Type: application/xml\n\n<user><name>John</user>";
+
+        let err = parse_http(contents).unwrap_err();
+
+        assert!(err.contains("invalid XML body"), "{err}");
+    }
+
+    #[test]
+    fn resolve_substitutes_variables_in_xml_text_and_attributes() {
+        let contents = "POST {{base_url}}/users\nContent-Type: application/xml\n\n<user id=\"{{user_id}}\"><name>{{name}}</name></user>";
+        let parsed = parse_http(contents).unwrap();
+        let env = test_environment(
+            "local",
+            &[
+                ("base_url", "http://localhost:8080"),
+                ("user_id", "42"),
+                ("name", "John"),
+            ],
+        );
+
+        let resolved = parsed.resolve(&env).unwrap();
+
+        let RequestBody::Xml(element) = resolved.body else {
+            panic!("expected an XML body");
+        };
+        assert_eq!(
+            element.attributes,
+            vec![("id".to_string(), "42".to_string())]
+        );
+        let XmlNode::Element(name_element) = &element.children[0] else {
+            panic!("expected an element child");
+        };
+        assert_eq!(
+            name_element.children,
+            vec![XmlNode::Text("John".to_string())]
         );
     }
 

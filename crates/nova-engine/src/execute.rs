@@ -50,6 +50,7 @@ fn send(req: ureq::Request, body: &RequestBody) -> Result<ureq::Response, ureq::
         RequestBody::Json(value) => {
             req.send_string(&serde_json::to_string(value).unwrap_or_default())
         }
+        RequestBody::Xml(element) => req.send_string(&element.to_xml_string()),
         RequestBody::Form(pairs) => {
             let encoded = url::form_urlencoded::Serializer::new(String::new())
                 .extend_pairs(pairs)
