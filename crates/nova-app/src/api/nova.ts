@@ -7,8 +7,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import type {
+  AuthDefault,
   Collection,
   Manifest,
+  NovaEnvironment,
   NovaProject,
   ParsedCurlRequest,
   QueryParam,
@@ -107,6 +109,37 @@ export function renameCollection(collectionPath: string, newName: string): Promi
 /** Deletes the collection directory at `collectionPath` and everything inside it. */
 export function deleteCollection(collectionPath: string): Promise<void> {
   return invoke<void>("delete_collection", { collectionPath });
+}
+
+/**
+ * Creates a new environment file named `name` directly inside the
+ * environments directory at `environmentsDir` (a project's
+ * `NovaProject.environments_dir`), with no variables set, and returns its
+ * `NovaEnvironment` handle.
+ */
+export function createEnvironment(environmentsDir: string, name: string): Promise<NovaEnvironment> {
+  return invoke<NovaEnvironment>("create_environment", { environmentsDir, name });
+}
+
+/**
+ * Writes an edited environment's name/variables/auth default back to the
+ * file at `environmentPath`, replacing whatever was there.
+ */
+export function saveEnvironment(
+  environmentPath: string,
+  environment: { name: string; variables: Record<string, string>; auth: AuthDefault | null },
+): Promise<void> {
+  return invoke<void>("save_environment", {
+    environmentPath,
+    name: environment.name,
+    variables: environment.variables,
+    auth: environment.auth,
+  });
+}
+
+/** Deletes the environment file at `environmentPath`. */
+export function deleteEnvironment(environmentPath: string): Promise<void> {
+  return invoke<void>("delete_environment", { environmentPath });
 }
 
 /** Opens the native folder picker and returns the chosen path, or null if cancelled. */
