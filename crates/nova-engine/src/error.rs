@@ -49,6 +49,9 @@ pub enum NovaError {
 
     #[error("undefined variable {name:?} (not set in environment {environment:?})")]
     UndefinedVariable { name: String, environment: String },
+
+    #[error("failed to execute request: {message}")]
+    RequestExecution { message: String },
 }
 
 pub type NovaResult<T> = Result<T, NovaError>;
