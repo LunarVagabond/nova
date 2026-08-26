@@ -253,16 +253,3 @@
 .response-headers__value {
   word-break: break-all;
 }
-
-.response-body {
-  font-family: $font-family-mono;
-  font-size: $font-size-sm;
-  white-space: pre-wrap;
-  word-break: break-word;
-  background-color: var(--color-bg);
-  border-radius: $radius-sm;
-  padding: $spacing-md;
-  margin: 0;
-  max-height: 480px;
-  overflow-y: auto;
-}

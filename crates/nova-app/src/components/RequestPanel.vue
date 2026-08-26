@@ -53,10 +53,36 @@ watch(dirty, (value) => emit("dirtyChange", value));
 
 const editorLanguage = computed<EditorLanguage>(() => {
   const contentType = headers.value.find((h) => h.name.toLowerCase() === "content-type")?.value ?? "";
-  const essence = contentType.split(";")[0]?.trim().toLowerCase();
-  if (essence === "application/json") return "json";
-  if (essence === "application/xml" || essence === "text/xml") return "xml";
+  return languageForContentType(contentType);
+});
+
+// Shared with the response pane below: a `+json`/`+xml` structured syntax
+// suffix (e.g. `application/vnd.api+json`) is treated the same as the bare
+// media type.
+function languageForContentType(contentType: string): EditorLanguage {
+  const essence = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (essence === "application/json" || essence.endsWith("+json")) return "json";
+  if (essence === "application/xml" || essence === "text/xml" || essence.endsWith("+xml")) return "xml";
   return "text";
+}
+
+const responseLanguage = computed<EditorLanguage>(() => {
+  const contentType = response.value?.headers.find((h) => h.name.toLowerCase() === "content-type")?.value ?? "";
+  return languageForContentType(contentType);
+});
+
+// Pretty-print JSON response bodies before handing them to the editor;
+// leave everything else (including malformed JSON) exactly as returned.
+const responseBody = computed(() => {
+  const body = response.value?.body ?? "";
+  if (responseLanguage.value === "json") {
+    try {
+      return JSON.stringify(JSON.parse(body), null, 2);
+    } catch {
+      return body;
+    }
+  }
+  return body;
 });
 
 async function load() {
@@ -241,7 +267,12 @@ defineExpose({ dirty, save: handleSave });
         <p v-else class="response-pane__hint">No headers.</p>
 
         <h3 class="response-pane__section-title">Body</h3>
-        <pre v-if="response.body" class="response-body">{{ response.body }}</pre>
+        <CodeEditor
+          v-if="response.body"
+          :model-value="responseBody"
+          :language="responseLanguage"
+          readonly
+        />
         <p v-else class="response-pane__hint">Empty body.</p>
       </template>
 
