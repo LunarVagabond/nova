@@ -1,0 +1,23 @@
+@use "../variables" as *;
+
+// Marks a field the scheme doesn't require, sitting inline in its label.
+.auth-editor__optional {
+  font-weight: 400;
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+// The Body tab's "keep Content-Type in sync" toggle, sitting alongside the
+// body-type selector it governs.
+.request-panel__body-setting {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  font-size: $font-size-sm;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.request-panel__body-setting input {
+  cursor: pointer;
+}

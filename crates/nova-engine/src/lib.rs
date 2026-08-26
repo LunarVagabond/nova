@@ -25,9 +25,10 @@ mod xml;
 pub use assertion::{
     evaluate, Assertion, AssertionOutcome, Extraction, Op as AssertionOp, Term as AssertionTerm,
 };
+pub use auth::{encode_basic_auth, ApiKeyLocation, AuthScheme};
 pub use collection::{create_collection, delete_collection, rename_collection, Collection};
 pub use curl::{parse_curl, ParsedCurlRequest};
-pub use environment::{create_environment, delete_environment, AuthDefault, Environment};
+pub use environment::{create_environment, delete_environment, Environment};
 pub use error::{NovaError, NovaResult};
 pub use execute::{execute, Response};
 pub use init::{scaffold_project, ScaffoldedProject};

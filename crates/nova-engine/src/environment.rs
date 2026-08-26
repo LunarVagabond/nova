@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::auth::AuthScheme;
 use crate::error::{NovaError, NovaResult};
 
 /// A single environment (`local`, `staging`, `production`, ...) loaded from
@@ -16,31 +17,18 @@ pub struct Environment {
     #[serde(default)]
     pub variables: HashMap<String, String>,
 
-    /// A default auth header applied to every request resolved against
-    /// this environment, unless the request already declares its own
-    /// header of the same name. `value` goes through the same
-    /// `{{variable}}` substitution and Basic-auth base64 encoding as a
-    /// request's own auth header (see `auth.rs`).
+    /// A default authentication scheme applied to every request resolved
+    /// against this environment, unless the request declares an `[auth]`
+    /// section of its own. Its fields go through the same `{{variable}}`
+    /// substitution as a request's own auth (see [`crate::AuthScheme`]).
     #[serde(default)]
-    pub auth: Option<AuthDefault>,
+    pub auth: Option<AuthScheme>,
 
     /// Where this environment was loaded from, for diagnostics and
     /// "open in editor" style GUI actions. Not part of the YAML shape, but
     /// still sent to frontends when serialized.
     #[serde(skip_deserializing)]
     pub path: PathBuf,
-}
-
-/// An environment-level default auth header, e.g.:
-/// ```yaml
-/// auth:
-///   header: Authorization
-///   value: "Bearer {{token}}"
-/// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthDefault {
-    pub header: String,
-    pub value: String,
 }
 
 /// The on-disk YAML shape of an environment file — the same fields as
@@ -54,7 +42,7 @@ struct EnvironmentYaml {
     #[serde(default)]
     variables: HashMap<String, String>,
     #[serde(default)]
-    auth: Option<AuthDefault>,
+    auth: Option<AuthScheme>,
 }
 
 impl Environment {
@@ -275,16 +263,72 @@ mod tests {
     }
 
     #[test]
-    fn round_trips_an_environment_with_an_auth_default() {
-        let contents = "name: local\n\nvariables:\n  base_url: http://localhost:8080\n\nauth:\n  header: Authorization\n  value: \"Bearer {{token}}\"\n";
+    fn round_trips_an_environment_with_a_bearer_auth_default() {
+        let contents = "name: local\n\nvariables:\n  base_url: http://localhost:8080\n\nauth:\n  type: bearer\n  token: \"{{token}}\"\n";
 
         let parsed = parse(contents);
         let text = parsed.to_yaml_string().unwrap();
         let reparsed = parse(&text);
 
-        let auth = reparsed.auth.expect("auth default should round-trip");
-        assert_eq!(auth.header, "Authorization");
-        assert_eq!(auth.value, "Bearer {{token}}");
+        assert_eq!(
+            reparsed.auth,
+            Some(AuthScheme::Bearer {
+                token: "{{token}}".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn round_trips_an_environment_with_an_api_key_auth_default() {
+        let contents = "name: local\n\nvariables: {}\n\nauth:\n  type: api_key\n  name: X-API-Key\n  value: \"{{api_key}}\"\n  location: query\n";
+
+        let parsed = parse(contents);
+        let text = parsed.to_yaml_string().unwrap();
+        let reparsed = parse(&text);
+
+        assert_eq!(
+            reparsed.auth,
+            Some(AuthScheme::ApiKey {
+                name: "X-API-Key".to_string(),
+                value: "{{api_key}}".to_string(),
+                location: crate::auth::ApiKeyLocation::Query,
+            })
+        );
+    }
+
+    #[test]
+    fn an_api_key_auth_default_location_defaults_to_header() {
+        let environment = parse(
+            "name: local\nvariables: {}\nauth:\n  type: api_key\n  name: X-API-Key\n  value: abc\n",
+        );
+
+        assert_eq!(
+            environment.auth,
+            Some(AuthScheme::ApiKey {
+                name: "X-API-Key".to_string(),
+                value: "abc".to_string(),
+                location: crate::auth::ApiKeyLocation::Header,
+            })
+        );
+    }
+
+    #[test]
+    fn round_trips_an_environment_with_an_oauth2_auth_default() {
+        let contents = "name: local\n\nvariables: {}\n\nauth:\n  type: oauth2_client_credentials\n  token_url: \"{{token_url}}\"\n  client_id: \"{{client_id}}\"\n  client_secret: \"{{client_secret}}\"\n  scope: read write\n";
+
+        let parsed = parse(contents);
+        let text = parsed.to_yaml_string().unwrap();
+        let reparsed = parse(&text);
+
+        assert_eq!(
+            reparsed.auth,
+            Some(AuthScheme::Oauth2ClientCredentials {
+                token_url: "{{token_url}}".to_string(),
+                client_id: "{{client_id}}".to_string(),
+                client_secret: "{{client_secret}}".to_string(),
+                scope: Some("read write".to_string()),
+            })
+        );
     }
 
     #[test]

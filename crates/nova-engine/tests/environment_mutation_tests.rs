@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use nova_engine::{create_environment, delete_environment, AuthDefault, NovaError, NovaProject};
+use nova_engine::{create_environment, delete_environment, AuthScheme, NovaError, NovaProject};
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -119,9 +119,8 @@ fn write_persists_edited_variables_and_auth_to_disk() {
     local
         .variables
         .insert("new_var".to_string(), "value".to_string());
-    local.auth = Some(AuthDefault {
-        header: "Authorization".to_string(),
-        value: "Bearer {{token}}".to_string(),
+    local.auth = Some(AuthScheme::Bearer {
+        token: "{{token}}".to_string(),
     });
 
     local.write().expect("write should succeed");
@@ -136,11 +135,13 @@ fn write_persists_edited_variables_and_auth_to_disk() {
         reloaded_local.variables.get("new_var").map(String::as_str),
         Some("value")
     );
-    let auth = reloaded_local
-        .auth
-        .as_ref()
-        .expect("auth default should have been written");
-    assert_eq!(auth.header, "Authorization");
+    assert_eq!(
+        reloaded_local.auth,
+        Some(AuthScheme::Bearer {
+            token: "{{token}}".to_string()
+        }),
+        "auth default should have been written"
+    );
 
     // Untouched environments are unaffected.
     assert!(reloaded.environment("staging").is_some());

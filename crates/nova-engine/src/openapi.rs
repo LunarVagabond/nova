@@ -146,6 +146,12 @@ fn generate_request(
         query,
         headers,
         body,
+        // Mapping an OpenAPI `securityScheme` onto a structured `[auth]`
+        // section is deliberately out of scope for spec import/export for
+        // now; generated requests declare no auth of their own and fall
+        // back to whatever the environment provides.
+        auth: None,
+        sync_content_type: true,
         assertions: Vec::new(),
         extractions: Vec::new(),
         example_response: None,

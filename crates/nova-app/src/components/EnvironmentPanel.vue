@@ -2,7 +2,8 @@
 import { computed, ref, watch } from "vue";
 
 import { saveEnvironment } from "../api/nova";
-import type { NovaEnvironment } from "../types/nova";
+import type { AuthScheme, NovaEnvironment } from "../types/nova";
+import AuthEditor from "./AuthEditor.vue";
 import KeyValueEditor from "./KeyValueEditor.vue";
 
 const props = defineProps<{
@@ -46,8 +47,7 @@ function cloneEnvironment(environment: NovaEnvironment): NovaEnvironment {
 const original = ref<NovaEnvironment>(cloneEnvironment(props.environment));
 const name = ref(original.value.name);
 const variables = ref<Row[]>(recordToRows(original.value.variables));
-const authHeader = ref(original.value.auth?.header ?? "");
-const authValue = ref(original.value.auth?.value ?? "");
+const auth = ref<AuthScheme | null>(original.value.auth ? { ...original.value.auth } : null);
 
 const saving = ref(false);
 const saveError = ref<string | null>(null);
@@ -56,8 +56,7 @@ function resetFromEnvironment() {
   original.value = cloneEnvironment(props.environment);
   name.value = original.value.name;
   variables.value = recordToRows(original.value.variables);
-  authHeader.value = original.value.auth?.header ?? "";
-  authValue.value = original.value.auth?.value ?? "";
+  auth.value = original.value.auth ? { ...original.value.auth } : null;
   saveError.value = null;
 }
 
@@ -71,8 +70,7 @@ const dirty = computed(() => {
   return (
     name.value !== original.value.name ||
     JSON.stringify(rowsToRecord(variables.value)) !== JSON.stringify(original.value.variables) ||
-    authHeader.value !== (original.value.auth?.header ?? "") ||
-    authValue.value !== (original.value.auth?.value ?? "")
+    JSON.stringify(auth.value) !== JSON.stringify(original.value.auth)
   );
 });
 
@@ -83,16 +81,18 @@ async function handleSave(): Promise<boolean> {
   saveError.value = null;
   try {
     const variableRecord = rowsToRecord(variables.value);
-    const auth =
-      authHeader.value.trim() === "" && authValue.value.trim() === ""
-        ? null
-        : { header: authHeader.value, value: authValue.value };
+    const authScheme = auth.value ? { ...auth.value } : null;
     await saveEnvironment(original.value.path, {
       name: name.value,
       variables: variableRecord,
-      auth,
+      auth: authScheme,
     });
-    original.value = { ...original.value, name: name.value, variables: variableRecord, auth };
+    original.value = {
+      ...original.value,
+      name: name.value,
+      variables: variableRecord,
+      auth: authScheme,
+    };
     emit("saved");
     return true;
   } catch (e) {
@@ -150,30 +150,9 @@ defineExpose({ dirty, save: handleSave });
 
     <h2 class="project-panel__section-title">Default auth</h2>
     <p class="request-panel__hint-text">
-      Applied to every request resolved against this environment, unless the request already
-      sets a header of the same name.
+      Applied to every request resolved against this environment, unless the request sets up
+      auth of its own.
     </p>
-    <div class="manifest-editor">
-      <div class="manifest-editor__field">
-        <label class="manifest-editor__label" for="environment-auth-header">Header</label>
-        <input
-          id="environment-auth-header"
-          v-model="authHeader"
-          type="text"
-          class="manifest-editor__input"
-          placeholder="Authorization"
-        />
-      </div>
-      <div class="manifest-editor__field">
-        <label class="manifest-editor__label" for="environment-auth-value">Value</label>
-        <input
-          id="environment-auth-value"
-          v-model="authValue"
-          type="text"
-          class="manifest-editor__input"
-          placeholder="Bearer {{token}}"
-        />
-      </div>
-    </div>
+    <AuthEditor v-model="auth" id-prefix="environment-auth" />
   </div>
 </template>
