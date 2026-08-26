@@ -26,7 +26,7 @@ pub use environment::{AuthDefault, Environment};
 pub use error::{NovaError, NovaResult};
 pub use execute::{execute, Response};
 pub use manifest::{Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION};
-pub use openapi::{generate_from_spec, GeneratedProject, GeneratedRequest};
+pub use openapi::{export_to_spec, generate_from_spec, GeneratedProject, GeneratedRequest};
 pub use project::{NovaProject, MANIFEST_FILE_NAME};
 pub use request::{Header, MultipartField, ParsedRequest, QueryParam, RequestBody, RequestFile};
 pub use session::Session;
