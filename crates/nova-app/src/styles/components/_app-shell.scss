@@ -17,3 +17,11 @@
   overflow-y: auto;
   padding: $spacing-lg;
 }
+
+.app-shell__error {
+  margin: 0 0 $spacing-md;
+  padding: $spacing-sm $spacing-md;
+  border-radius: $radius-sm;
+  border: 1px solid var(--color-danger);
+  color: var(--color-danger);
+}

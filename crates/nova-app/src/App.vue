@@ -27,7 +27,9 @@ async function handleOpen() {
       loaded.manifest.defaults.environment ?? loaded.environments[0]?.name ?? null;
     selectedRequest.value = null;
   } catch (e) {
-    project.value = null;
+    // Keep whatever project was already loaded (if any) so a failed
+    // "switch project" attempt doesn't kick the user back to the empty
+    // state and lose their current project.
     error.value = String(e);
   }
 }
@@ -42,10 +44,12 @@ async function handleOpen() {
         v-model:selected-environment="selectedEnvironment"
         :selected-request-path="selectedRequest?.path"
         @select-request="selectedRequest = $event"
+        @switch-project="handleOpen"
       />
     </aside>
 
     <main class="app-shell__main">
+      <p v-if="project && error" class="app-shell__error">{{ error }}</p>
       <RequestPanel
         v-if="project && selectedRequest"
         :request="selectedRequest"
