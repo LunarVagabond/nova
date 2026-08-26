@@ -6,8 +6,8 @@
 //! `tauri::command` return types must be serializable.
 
 use nova_engine::{
-    parse_curl, Header, Manifest, NovaProject, ParsedCurlRequest, QueryParam, RequestDraft,
-    RequestFile, Response, Session,
+    parse_curl, Collection, Header, Manifest, NovaProject, ParsedCurlRequest, QueryParam,
+    RequestDraft, RequestFile, Response, Session,
 };
 
 #[tauri::command]
@@ -135,4 +135,30 @@ pub fn create_request(collection_path: String, name: String) -> Result<RequestFi
 #[tauri::command]
 pub fn parse_curl_command(command: String) -> Result<ParsedCurlRequest, String> {
     parse_curl(&command)
+}
+
+/// Create a new, empty subcollection named `name` directly inside the
+/// collection directory at `parent_path` — see
+/// [`nova_engine::create_collection`].
+#[tauri::command]
+pub fn create_collection(parent_path: String, name: String) -> Result<Collection, String> {
+    nova_engine::create_collection(std::path::Path::new(&parent_path), &name)
+        .map_err(|e| e.to_string())
+}
+
+/// Rename the collection directory at `collection_path` to `new_name`,
+/// keeping it in the same parent directory — see
+/// [`nova_engine::rename_collection`].
+#[tauri::command]
+pub fn rename_collection(collection_path: String, new_name: String) -> Result<Collection, String> {
+    nova_engine::rename_collection(std::path::Path::new(&collection_path), &new_name)
+        .map_err(|e| e.to_string())
+}
+
+/// Delete the collection directory at `collection_path` and everything
+/// inside it — see [`nova_engine::delete_collection`].
+#[tauri::command]
+pub fn delete_collection(collection_path: String) -> Result<(), String> {
+    nova_engine::delete_collection(std::path::Path::new(&collection_path))
+        .map_err(|e| e.to_string())
 }

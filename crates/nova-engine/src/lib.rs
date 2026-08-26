@@ -25,7 +25,7 @@ mod xml;
 pub use assertion::{
     evaluate, Assertion, AssertionOutcome, Extraction, Op as AssertionOp, Term as AssertionTerm,
 };
-pub use collection::Collection;
+pub use collection::{create_collection, delete_collection, rename_collection, Collection};
 pub use curl::{parse_curl, ParsedCurlRequest};
 pub use environment::{AuthDefault, Environment};
 pub use error::{NovaError, NovaResult};

@@ -73,6 +73,12 @@ pub enum NovaError {
 
     #[error("failed to parse Postman collection: {message}")]
     PostmanParse { message: String },
+
+    #[error("invalid collection name {name:?}: {reason}")]
+    InvalidCollectionName { name: String, reason: String },
+
+    #[error("collection not found at {0}")]
+    CollectionNotFound(PathBuf),
 }
 
 pub type NovaResult<T> = Result<T, NovaError>;

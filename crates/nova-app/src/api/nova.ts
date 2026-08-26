@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import type {
+  Collection,
   Manifest,
   NovaProject,
   ParsedCurlRequest,
@@ -84,6 +85,28 @@ export function parseCurlCommand(command: string): Promise<ParsedCurlRequest> {
  */
 export function saveManifest(projectRoot: string, manifest: Manifest): Promise<void> {
   return invoke<void>("save_manifest", { projectRoot, manifest });
+}
+
+/**
+ * Creates a new, empty subcollection named `name` directly inside the
+ * collection directory at `parentPath`, and returns its `Collection` handle.
+ */
+export function createCollection(parentPath: string, name: string): Promise<Collection> {
+  return invoke<Collection>("create_collection", { parentPath, name });
+}
+
+/**
+ * Renames the collection directory at `collectionPath` to `newName`,
+ * keeping it in the same parent directory; all of its contents (nested
+ * subcollections and requests) move with it.
+ */
+export function renameCollection(collectionPath: string, newName: string): Promise<Collection> {
+  return invoke<Collection>("rename_collection", { collectionPath, newName });
+}
+
+/** Deletes the collection directory at `collectionPath` and everything inside it. */
+export function deleteCollection(collectionPath: string): Promise<void> {
+  return invoke<void>("delete_collection", { collectionPath });
 }
 
 /** Opens the native folder picker and returns the chosen path, or null if cancelled. */

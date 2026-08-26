@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { NovaProject, RequestFile } from "../types/nova";
+import type { Collection, NovaProject, RequestFile } from "../types/nova";
 import CollectionNode from "./CollectionNode.vue";
 
 const props = defineProps<{
@@ -13,6 +13,9 @@ const emit = defineEmits<{
   (e: "selectRequest", request: RequestFile): void;
   (e: "switchProject"): void;
   (e: "createRequest", collectionPath: string): void;
+  (e: "createCollection", collectionPath: string): void;
+  (e: "renameCollection", collection: Collection): void;
+  (e: "deleteCollection", collection: Collection): void;
 }>();
 
 function onEnvironmentChange(event: Event) {
@@ -54,6 +57,9 @@ function onEnvironmentChange(event: Event) {
       :selected-path="selectedRequestPath"
       @select="emit('selectRequest', $event)"
       @create-request="emit('createRequest', $event)"
+      @create-collection="emit('createCollection', $event)"
+      @rename-collection="emit('renameCollection', $event)"
+      @delete-collection="emit('deleteCollection', $event)"
     />
   </div>
 </template>
