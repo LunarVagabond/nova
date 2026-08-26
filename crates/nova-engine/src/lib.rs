@@ -27,7 +27,7 @@ pub use assertion::{
 };
 pub use collection::{create_collection, delete_collection, rename_collection, Collection};
 pub use curl::{parse_curl, ParsedCurlRequest};
-pub use environment::{AuthDefault, Environment};
+pub use environment::{create_environment, delete_environment, AuthDefault, Environment};
 pub use error::{NovaError, NovaResult};
 pub use execute::{execute, Response};
 pub use init::{scaffold_project, ScaffoldedProject};

@@ -16,6 +16,9 @@ const emit = defineEmits<{
   (e: "createCollection", collectionPath: string): void;
   (e: "renameCollection", collection: Collection): void;
   (e: "deleteCollection", collection: Collection): void;
+  (e: "createEnvironment"): void;
+  /** Open the editor for the named environment (the selected one by default). */
+  (e: "manageEnvironment", name: string): void;
 }>();
 
 function onEnvironmentChange(event: Event) {
@@ -38,16 +41,37 @@ function onEnvironmentChange(event: Event) {
         </button>
       </div>
 
-      <select
-        v-if="project.environments.length > 0"
-        class="sidebar-header__env-select"
-        :value="selectedEnvironment ?? ''"
-        @change="onEnvironmentChange"
-      >
-        <option v-for="env in project.environments" :key="env.name" :value="env.name">
-          {{ env.name }}
-        </option>
-      </select>
+      <div class="sidebar-header__env-row">
+        <select
+          v-if="project.environments.length > 0"
+          class="sidebar-header__env-select"
+          :value="selectedEnvironment ?? ''"
+          @change="onEnvironmentChange"
+        >
+          <option v-for="env in project.environments" :key="env.name" :value="env.name">
+            {{ env.name }}
+          </option>
+        </select>
+        <p v-else class="sidebar-header__env-empty">No environments yet</p>
+
+        <button
+          v-if="selectedEnvironment"
+          type="button"
+          class="sidebar-header__env-action"
+          title="Edit this environment's variables"
+          @click="emit('manageEnvironment', selectedEnvironment)"
+        >
+          ✎
+        </button>
+        <button
+          type="button"
+          class="sidebar-header__env-action"
+          title="New environment"
+          @click="emit('createEnvironment')"
+        >
+          +
+        </button>
+      </div>
     </div>
 
     <p class="sidebar-section-title">Collections</p>

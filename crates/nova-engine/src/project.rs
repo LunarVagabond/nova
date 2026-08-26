@@ -22,6 +22,13 @@ pub struct NovaProject {
     pub root: PathBuf,
     pub manifest: Manifest,
     pub environments: Vec<Environment>,
+    /// Absolute path to the project's environments directory (e.g.
+    /// `<repo>/nova/envs`) — where [`Environment`]s were loaded from and
+    /// where the GUI's "new environment" action creates a file. Exposed
+    /// alongside `environments` (rather than making a caller re-derive it
+    /// from `root` + `manifest.environments.path` themselves) the same way
+    /// each [`Collection`]'s own `path` already is.
+    pub environments_dir: PathBuf,
     pub collections: Collection,
 }
 
@@ -62,6 +69,7 @@ impl NovaProject {
             root,
             manifest,
             environments,
+            environments_dir,
             collections,
         })
     }

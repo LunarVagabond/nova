@@ -5,9 +5,11 @@
 //! `NovaError` into a plain `String` at the Tauri boundary, since
 //! `tauri::command` return types must be serializable.
 
+use std::collections::HashMap;
+
 use nova_engine::{
-    parse_curl, Collection, Header, Manifest, NovaProject, ParsedCurlRequest, QueryParam,
-    RequestDraft, RequestFile, Response, Session,
+    parse_curl, AuthDefault, Collection, Environment, Header, Manifest, NovaProject,
+    ParsedCurlRequest, QueryParam, RequestDraft, RequestFile, Response, Session,
 };
 
 #[tauri::command]
@@ -160,5 +162,42 @@ pub fn rename_collection(collection_path: String, new_name: String) -> Result<Co
 #[tauri::command]
 pub fn delete_collection(collection_path: String) -> Result<(), String> {
     nova_engine::delete_collection(std::path::Path::new(&collection_path))
+        .map_err(|e| e.to_string())
+}
+
+/// Create a new environment file named `name` directly inside the
+/// environments directory at `environments_dir` (a project's
+/// `NovaProject.environments_dir`), with no variables or auth default set
+/// — see [`nova_engine::create_environment`].
+#[tauri::command]
+pub fn create_environment(environments_dir: String, name: String) -> Result<Environment, String> {
+    nova_engine::create_environment(std::path::Path::new(&environments_dir), &name)
+        .map_err(|e| e.to_string())
+}
+
+/// Write an edited environment's name/variables/auth default back to the
+/// file at `environment_path`, replacing whatever was there — see
+/// [`nova_engine::Environment::write`].
+#[tauri::command]
+pub fn save_environment(
+    environment_path: String,
+    name: String,
+    variables: HashMap<String, String>,
+    auth: Option<AuthDefault>,
+) -> Result<(), String> {
+    let environment = Environment {
+        name,
+        variables,
+        auth,
+        path: std::path::PathBuf::from(&environment_path),
+    };
+    environment.write().map_err(|e| e.to_string())
+}
+
+/// Delete the environment file at `environment_path` — see
+/// [`nova_engine::delete_environment`].
+#[tauri::command]
+pub fn delete_environment(environment_path: String) -> Result<(), String> {
+    nova_engine::delete_environment(std::path::Path::new(&environment_path))
         .map_err(|e| e.to_string())
 }

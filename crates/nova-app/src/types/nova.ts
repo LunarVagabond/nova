@@ -52,6 +52,8 @@ export interface NovaProject {
   root: string;
   manifest: Manifest;
   environments: NovaEnvironment[];
+  /** Absolute path to the project's environments directory (e.g. `<nova-root>/envs`). */
+  environments_dir: string;
   collections: Collection;
 }
 

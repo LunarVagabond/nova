@@ -79,6 +79,15 @@ pub enum NovaError {
 
     #[error("collection not found at {0}")]
     CollectionNotFound(PathBuf),
+
+    #[error("failed to serialize environment for {path}: {message}")]
+    EnvironmentSerialize { path: PathBuf, message: String },
+
+    #[error("invalid environment name {name:?}: {reason}")]
+    InvalidEnvironmentName { name: String, reason: String },
+
+    #[error("environment not found at {0}")]
+    EnvironmentNotFound(PathBuf),
 }
 
 pub type NovaResult<T> = Result<T, NovaError>;
