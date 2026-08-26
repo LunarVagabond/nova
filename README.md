@@ -204,6 +204,20 @@ response.user.email == input.email
 response.time < 500ms
 ```
 
+placed after a `###` line following the request body:
+
+```http
+POST {{base_url}}/users
+Content-Type: application/json
+
+{ "email": "john@example.com" }
+
+###
+
+status == 201
+response.email == input.email
+```
+
 The same assertions run through both Desktop and CLI.
 
 This turns Nova collections into lightweight integration/API tests.

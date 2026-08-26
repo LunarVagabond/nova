@@ -33,6 +33,7 @@ fn executes_a_request_and_captures_the_response() {
         url,
         headers: vec![],
         body: RequestBody::None,
+        assertions: vec![],
     };
 
     let response = execute(&request).unwrap();
@@ -59,6 +60,7 @@ fn non_2xx_status_is_still_a_successful_response() {
             value: "application/json".to_string(),
         }],
         body: RequestBody::None,
+        assertions: vec![],
     };
 
     let response = execute(&request).unwrap();
@@ -110,6 +112,7 @@ fn sends_json_body_on_the_wire() {
         url,
         headers: vec![],
         body: RequestBody::Json(serde_json::json!({"name": "John"})),
+        assertions: vec![],
     };
 
     execute(&request).unwrap();
@@ -140,6 +143,7 @@ fn sends_multipart_body_with_boundary_on_the_wire() {
                 value: "hello".to_string(),
             },
         ]),
+        assertions: vec![],
     };
 
     execute(&request).unwrap();
@@ -162,6 +166,7 @@ fn network_failure_is_a_typed_error() {
         url: "http://127.0.0.1:1/".to_string(),
         headers: vec![],
         body: RequestBody::None,
+        assertions: vec![],
     };
 
     let err = execute(&request).unwrap_err();

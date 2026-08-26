@@ -56,13 +56,15 @@ pub enum RequestBody {
     Multipart(Vec<MultipartField>),
 }
 
-/// A `.http` file parsed into its method, URL, headers, and body.
+/// A `.http` file parsed into its method, URL, headers, body, and any
+/// assertions declared after a `###` line.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ParsedRequest {
     pub method: String,
     pub url: String,
     pub headers: Vec<Header>,
     pub body: RequestBody,
+    pub assertions: Vec<crate::assertion::Assertion>,
 }
 
 impl ParsedRequest {
@@ -98,6 +100,9 @@ impl ParsedRequest {
             url: substitute(&self.url, environment)?,
             headers,
             body: substitute_body(&self.body, environment)?,
+            // Assertions reference the response/request, not environment
+            // variables, so they carry through resolution unchanged.
+            assertions: self.assertions.clone(),
         })
     }
 }
@@ -242,7 +247,27 @@ fn parse_http(contents: &str) -> Result<ParsedRequest, String> {
         });
     }
 
-    let body_text = body_lines.join("\n");
+    // A line that's exactly `###` ends the body and starts an assertions
+    // section (README's "Testing & Assertions" syntax) — everything after
+    // it is assertion lines, not body content.
+    let mut real_body_lines = Vec::new();
+    let mut assertion_lines = Vec::new();
+    let mut in_assertions = false;
+    for line in body_lines {
+        if !in_assertions && line.trim() == "###" {
+            in_assertions = true;
+            continue;
+        }
+        if in_assertions {
+            assertion_lines.push(line);
+        } else {
+            real_body_lines.push(line);
+        }
+    }
+
+    let assertions = crate::assertion::parse_assertions(&assertion_lines.join("\n"))?;
+
+    let body_text = real_body_lines.join("\n");
     let body_text = body_text.trim();
 
     let content_type = headers
@@ -285,6 +310,7 @@ fn parse_http(contents: &str) -> Result<ParsedRequest, String> {
         url,
         headers,
         body,
+        assertions,
     })
 }
 
@@ -492,6 +518,37 @@ mod tests {
             parsed.body,
             RequestBody::Text("<note>hi</note>".to_string())
         );
+    }
+
+    #[test]
+    fn a_hash_hash_hash_line_splits_body_from_assertions() {
+        let contents = "POST {{base_url}}/users\nContent-Type: application/json\n\n{\n  \"name\": \"John\"\n}\n\n###\n\nstatus == 200\nresponse.name exists\n";
+
+        let parsed = parse_http(contents).unwrap();
+
+        assert_eq!(
+            parsed.body,
+            RequestBody::Json(serde_json::json!({"name": "John"}))
+        );
+        assert_eq!(parsed.assertions.len(), 2);
+    }
+
+    #[test]
+    fn a_request_with_no_assertions_section_has_no_assertions() {
+        let contents = "GET {{base_url}}/users\n";
+
+        let parsed = parse_http(contents).unwrap();
+
+        assert!(parsed.assertions.is_empty());
+    }
+
+    #[test]
+    fn a_malformed_assertion_line_is_a_typed_error() {
+        let contents = "GET {{base_url}}/users\n\n###\n\nnot a valid assertion\n";
+
+        let err = parse_http(contents).unwrap_err();
+
+        assert!(err.contains("malformed assertion line"), "{err}");
     }
 
     fn test_environment(name: &str, vars: &[(&str, &str)]) -> Environment {
