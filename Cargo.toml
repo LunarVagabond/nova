@@ -16,6 +16,7 @@ publish = false
 [workspace.dependencies]
 nova-engine = { path = "crates/nova-engine" }
 serde = { version = "1", features = ["derive"] }
+base64 = "0.22"
 serde_json = "1"
 serde_yaml = "0.9"
 thiserror = "2"

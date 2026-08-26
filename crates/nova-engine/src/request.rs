@@ -91,6 +91,7 @@ impl ParsedRequest {
                 })
             })
             .collect::<NovaResult<Vec<_>>>()?;
+        let headers = crate::auth::encode_basic_auth(headers);
 
         Ok(ParsedRequest {
             method: self.method.clone(),
