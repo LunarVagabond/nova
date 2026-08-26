@@ -15,8 +15,10 @@ use crate::discovery::{requests_at, resolve_environment};
 ///
 /// All requests in one invocation share a single `Session`, so cookies set
 /// by an earlier request (e.g. a login) are sent on later ones against the
-/// same host — scoped to this one run/environment, not persisted anywhere
-/// beyond it.
+/// same host, and a value extracted from an earlier response (a `<name> =
+/// response.<path>` directive) is available as `{{name}}` on later ones —
+/// both scoped to this one run/environment, not persisted anywhere beyond
+/// it.
 pub fn run(request: &Path, environment: Option<&str>) -> Result<(), String> {
     let project = NovaProject::discover(request).map_err(|e| e.to_string())?;
     let environment = resolve_environment(&project, environment)?;
@@ -45,12 +47,11 @@ fn run_one(
     session: &mut Session,
 ) -> Result<(), String> {
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
-    let resolved = parsed.resolve(environment).map_err(|e| e.to_string())?;
+    let (resolved, response) = session
+        .resolve_and_execute(&parsed, environment)
+        .map_err(|e| e.to_string())?;
 
     println!("{} {}", resolved.method, resolved.url);
-
-    let response = session.execute(&resolved).map_err(|e| e.to_string())?;
-
     println!("{} ({}ms)", response.status, response.elapsed_ms);
     for header in &response.headers {
         println!("{}: {}", header.name, header.value);
