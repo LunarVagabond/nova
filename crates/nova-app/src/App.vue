@@ -1,8 +1,16 @@
 <script setup lang="ts">
 import { ref } from "vue";
 
-import { createRequest, openProject, pickProjectDirectory, validateProject } from "./api/nova";
-import type { NovaProject, RequestFile } from "./types/nova";
+import {
+  createCollection,
+  createRequest,
+  deleteCollection,
+  openProject,
+  pickProjectDirectory,
+  renameCollection,
+  validateProject,
+} from "./api/nova";
+import type { Collection, NovaProject, RequestFile } from "./types/nova";
 import Sidebar from "./components/Sidebar.vue";
 import ProjectPanel from "./components/ProjectPanel.vue";
 import RequestPanel from "./components/RequestPanel.vue";
@@ -73,12 +81,28 @@ async function handleSelectRequest(request: RequestFile) {
   projectPanelDirty.value = false;
 }
 
+/** Recursively looks for a request at `path` anywhere in `collection`'s tree. */
+function findRequestPath(collection: Collection, path: string): boolean {
+  if (collection.requests.some((r) => r.path === path)) return true;
+  return collection.children.some((child) => findRequestPath(child, path));
+}
+
 async function refreshProjectTree() {
   if (!project.value) return;
   try {
     project.value = await openProject(project.value.root);
   } catch (e) {
     error.value = String(e);
+    return;
+  }
+
+  // The refreshed tree may no longer contain the currently-selected
+  // request if its collection (or an ancestor) was just renamed or
+  // deleted out from under it — clear the selection rather than leaving a
+  // dangling reference the request panel would fail to load.
+  if (selectedRequest.value && !findRequestPath(project.value.collections, selectedRequest.value.path)) {
+    selectedRequest.value = null;
+    requestPanelDirty.value = false;
   }
 }
 
@@ -114,6 +138,94 @@ async function submitCreateRequest() {
     createError.value = String(e);
   }
 }
+
+// New collection: same in-app prompt pattern as new request, above.
+const newCollectionParentPath = ref<string | null>(null);
+const newCollectionName = ref("");
+const newCollectionError = ref<string | null>(null);
+
+function handleCreateCollection(parentPath: string) {
+  newCollectionError.value = null;
+  newCollectionName.value = "";
+  newCollectionParentPath.value = parentPath;
+}
+
+function cancelCreateCollection() {
+  newCollectionParentPath.value = null;
+}
+
+async function submitCreateCollection() {
+  const parentPath = newCollectionParentPath.value;
+  const name = newCollectionName.value.trim();
+  if (!parentPath || !name) return;
+
+  newCollectionError.value = null;
+  try {
+    await createCollection(parentPath, name);
+    await refreshProjectTree();
+    newCollectionParentPath.value = null;
+  } catch (e) {
+    newCollectionError.value = String(e);
+  }
+}
+
+// Rename collection.
+const renamingCollection = ref<Collection | null>(null);
+const renameCollectionName = ref("");
+const renameCollectionError = ref<string | null>(null);
+
+function handleRenameCollection(collection: Collection) {
+  renameCollectionError.value = null;
+  renameCollectionName.value = collection.name;
+  renamingCollection.value = collection;
+}
+
+function cancelRenameCollection() {
+  renamingCollection.value = null;
+}
+
+async function submitRenameCollection() {
+  const collection = renamingCollection.value;
+  const newName = renameCollectionName.value.trim();
+  if (!collection || !newName) return;
+
+  renameCollectionError.value = null;
+  try {
+    await renameCollection(collection.path, newName);
+    await refreshProjectTree();
+    renamingCollection.value = null;
+  } catch (e) {
+    renameCollectionError.value = String(e);
+  }
+}
+
+// Delete collection — destructive, so this always goes through a confirm
+// step in the in-app Modal rather than acting immediately.
+const deletingCollection = ref<Collection | null>(null);
+const deleteCollectionError = ref<string | null>(null);
+
+function handleDeleteCollection(collection: Collection) {
+  deleteCollectionError.value = null;
+  deletingCollection.value = collection;
+}
+
+function cancelDeleteCollection() {
+  deletingCollection.value = null;
+}
+
+async function confirmDeleteCollection() {
+  const collection = deletingCollection.value;
+  if (!collection) return;
+
+  deleteCollectionError.value = null;
+  try {
+    await deleteCollection(collection.path);
+    await refreshProjectTree();
+    deletingCollection.value = null;
+  } catch (e) {
+    deleteCollectionError.value = String(e);
+  }
+}
 </script>
 
 <template>
@@ -127,6 +239,9 @@ async function submitCreateRequest() {
         @select-request="handleSelectRequest"
         @switch-project="handleOpen"
         @create-request="handleCreateRequest"
+        @create-collection="handleCreateCollection"
+        @rename-collection="handleRenameCollection"
+        @delete-collection="handleDeleteCollection"
       />
     </aside>
 
@@ -184,6 +299,78 @@ async function submitCreateRequest() {
         </button>
         <button type="button" class="button" :disabled="!newRequestName.trim()" @click="submitCreateRequest">
           Create
+        </button>
+      </template>
+    </Modal>
+
+    <Modal
+      v-if="newCollectionParentPath !== null"
+      title="New collection"
+      @cancel="cancelCreateCollection"
+    >
+      <label class="modal__label" for="new-collection-name">Collection name (e.g. users)</label>
+      <input
+        id="new-collection-name"
+        v-model="newCollectionName"
+        class="modal__input"
+        type="text"
+        autofocus
+        @keydown.enter="submitCreateCollection"
+      />
+      <p v-if="newCollectionError" class="modal__error">{{ newCollectionError }}</p>
+      <template #actions>
+        <button type="button" class="button button--secondary" @click="cancelCreateCollection">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="button"
+          :disabled="!newCollectionName.trim()"
+          @click="submitCreateCollection"
+        >
+          Create
+        </button>
+      </template>
+    </Modal>
+
+    <Modal v-if="renamingCollection" title="Rename collection" @cancel="cancelRenameCollection">
+      <label class="modal__label" for="rename-collection-name">Collection name</label>
+      <input
+        id="rename-collection-name"
+        v-model="renameCollectionName"
+        class="modal__input"
+        type="text"
+        autofocus
+        @keydown.enter="submitRenameCollection"
+      />
+      <p v-if="renameCollectionError" class="modal__error">{{ renameCollectionError }}</p>
+      <template #actions>
+        <button type="button" class="button button--secondary" @click="cancelRenameCollection">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="button"
+          :disabled="!renameCollectionName.trim()"
+          @click="submitRenameCollection"
+        >
+          Rename
+        </button>
+      </template>
+    </Modal>
+
+    <Modal v-if="deletingCollection" title="Delete collection?" @cancel="cancelDeleteCollection">
+      <p>
+        Delete <strong>{{ deletingCollection.name }}</strong> and everything inside it? This
+        removes its requests and any subcollections from disk and cannot be undone.
+      </p>
+      <p v-if="deleteCollectionError" class="modal__error">{{ deleteCollectionError }}</p>
+      <template #actions>
+        <button type="button" class="button button--secondary" @click="cancelDeleteCollection">
+          Cancel
+        </button>
+        <button type="button" class="button button--danger" @click="confirmDeleteCollection">
+          Delete
         </button>
       </template>
     </Modal>

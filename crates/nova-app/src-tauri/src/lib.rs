@@ -14,6 +14,9 @@ pub fn run() {
             commands::save_manifest,
             commands::create_request,
             commands::parse_curl_command,
+            commands::create_collection,
+            commands::rename_collection,
+            commands::delete_collection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
