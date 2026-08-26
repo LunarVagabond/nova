@@ -11,6 +11,7 @@ pub fn run() {
             commands::send_request,
             commands::read_request,
             commands::save_request,
+            commands::save_manifest,
             commands::create_request,
         ])
         .run(tauri::generate_context!())

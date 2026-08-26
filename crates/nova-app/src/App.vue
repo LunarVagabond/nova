@@ -16,17 +16,18 @@ const selectedRequest = ref<RequestFile | null>(null);
 const error = ref<string | null>(null);
 const createError = ref<string | null>(null);
 
-// Tracks whether the currently-open RequestPanel has unsaved edits, so
-// switching requests/projects can confirm before discarding them rather
-// than silently losing an in-progress edit.
+// Tracks whether the currently-open RequestPanel/ProjectPanel has unsaved
+// edits, so switching requests/projects can confirm before discarding them
+// rather than silently losing an in-progress edit.
 const requestPanelDirty = ref(false);
+const projectPanelDirty = ref(false);
 
 // In-app replacement for `window.confirm`: unimplemented (or flaky) in
 // Tauri's webview on some platforms, and can't be styled to match the app.
 const pendingDiscardConfirm = ref<((choice: boolean) => void) | null>(null);
 
 function confirmDiscardIfDirty(): Promise<boolean> {
-  if (!requestPanelDirty.value) return Promise.resolve(true);
+  if (!requestPanelDirty.value && !projectPanelDirty.value) return Promise.resolve(true);
   return new Promise((resolve) => {
     pendingDiscardConfirm.value = resolve;
   });
@@ -52,6 +53,7 @@ async function handleOpen() {
       loaded.manifest.defaults.environment ?? loaded.environments[0]?.name ?? null;
     selectedRequest.value = null;
     requestPanelDirty.value = false;
+    projectPanelDirty.value = false;
   } catch (e) {
     // Keep whatever project was already loaded (if any) so a failed
     // "switch project" attempt doesn't kick the user back to the empty
@@ -65,6 +67,10 @@ async function handleSelectRequest(request: RequestFile) {
   if (!(await confirmDiscardIfDirty())) return;
   selectedRequest.value = request;
   requestPanelDirty.value = false;
+  // ProjectPanel (and any unsaved manifest edits in it) unmounts once a
+  // request is selected, so its dirty flag no longer reflects anything on
+  // screen.
+  projectPanelDirty.value = false;
 }
 
 async function refreshProjectTree() {
@@ -133,7 +139,13 @@ async function submitCreateRequest() {
         :selected-environment="selectedEnvironment"
         @dirty-change="requestPanelDirty = $event"
       />
-      <ProjectPanel v-else-if="project" :project="project" :validation-issues="validationIssues" />
+      <ProjectPanel
+        v-else-if="project"
+        :project="project"
+        :validation-issues="validationIssues"
+        @dirty-change="projectPanelDirty = $event"
+        @saved="refreshProjectTree"
+      />
       <EmptyState v-else :error="error" @open="handleOpen" />
     </main>
 

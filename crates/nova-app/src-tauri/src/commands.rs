@@ -5,7 +5,9 @@
 //! `NovaError` into a plain `String` at the Tauri boundary, since
 //! `tauri::command` return types must be serializable.
 
-use nova_engine::{Header, NovaProject, QueryParam, RequestDraft, RequestFile, Response, Session};
+use nova_engine::{
+    Header, Manifest, NovaProject, QueryParam, RequestDraft, RequestFile, Response, Session,
+};
 
 #[tauri::command]
 pub fn open_project(path: String) -> Result<NovaProject, String> {
@@ -87,6 +89,17 @@ pub fn save_request(
     request_file
         .write(&method, &url, query, headers, &body)
         .map_err(|e| e.to_string())
+}
+
+/// Write an edited [`Manifest`] back to `project_root`'s `nova.yaml`,
+/// replacing it entirely — see [`nova_engine::NovaProject::write_manifest`].
+/// `project_root` is the project's Nova directory (`NovaProject::root`,
+/// e.g. `<repo>/nova`), not the outer repo root.
+#[tauri::command]
+pub fn save_manifest(project_root: String, manifest: Manifest) -> Result<(), String> {
+    let project =
+        NovaProject::load(std::path::PathBuf::from(&project_root)).map_err(|e| e.to_string())?;
+    project.write_manifest(&manifest).map_err(|e| e.to_string())
 }
 
 /// Create a new `.nova` file named `name` (a `.nova` suffix is added if
