@@ -105,6 +105,27 @@
   margin-bottom: $spacing-lg;
 }
 
+.request-panel__body-type {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  margin-bottom: $spacing-sm;
+}
+
+.request-panel__body-type-label {
+  font-size: $font-size-sm;
+  color: var(--color-text-muted);
+}
+
+.request-panel__body-type-select {
+  padding: $spacing-xs $spacing-sm;
+  border-radius: $radius-sm;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-raised);
+  color: var(--color-text);
+  font-size: $font-size-sm;
+}
+
 .request-panel__method-url {
   display: flex;
   gap: $spacing-sm;

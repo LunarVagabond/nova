@@ -34,6 +34,79 @@ const bodyText = ref("");
 type FieldTab = "params" | "headers" | "body";
 const activeTab = ref<FieldTab>("params");
 
+type BodyType = "none" | "json" | "xml" | "form" | "multipart" | "text";
+
+const BODY_TYPE_OPTIONS: BodyType[] = ["none", "json", "xml", "form", "multipart", "text"];
+
+const BODY_TYPE_LABELS: Record<BodyType, string> = {
+  none: "No Body",
+  json: "JSON",
+  xml: "XML",
+  form: "Form URL Encoded",
+  multipart: "Multipart Form Data",
+  text: "Plain Text",
+};
+
+const BODY_TYPE_CONTENT_TYPES: Record<Exclude<BodyType, "none">, string> = {
+  json: "application/json",
+  xml: "application/xml",
+  form: "application/x-www-form-urlencoded",
+  multipart: "multipart/form-data",
+  text: "text/plain",
+};
+
+// Driven by the Content-Type header (and whether there's any body text at
+// all) — set explicitly by `handleBodyTypeChange` below, and re-derived
+// whenever a request is (re)loaded so it reflects what the file actually
+// has, not just the last selection made in this session.
+const bodyType = ref<BodyType>("none");
+
+function detectBodyType(currentHeaders: RequestHeader[], text: string): BodyType {
+  if (text.trim() === "") return "none";
+  const contentType = currentHeaders.find((h) => h.name.toLowerCase() === "content-type")?.value ?? "";
+  const essence = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (essence === "application/json" || essence.endsWith("+json")) return "json";
+  if (essence === "application/xml" || essence === "text/xml" || essence.endsWith("+xml")) return "xml";
+  if (essence === "application/x-www-form-urlencoded") return "form";
+  if (essence === "multipart/form-data") return "multipart";
+  return "text";
+}
+
+function randomBoundary(): string {
+  return `----NovaBoundary${Math.random().toString(16).slice(2)}`;
+}
+
+function upsertContentTypeHeader(value: string | null) {
+  const index = headers.value.findIndex((h) => h.name.toLowerCase() === "content-type");
+  if (value === null) {
+    if (index !== -1) headers.value = headers.value.filter((_, i) => i !== index);
+    return;
+  }
+  headers.value =
+    index === -1
+      ? [...headers.value, { name: "Content-Type", value }]
+      : headers.value.map((h, i) => (i === index ? { ...h, value } : h));
+}
+
+// Selecting a body type is the source of truth for the Content-Type
+// header: "No Body" clears both the text and the header entirely, and
+// every other option sets the header to its canonical value (a fresh
+// boundary for multipart) so the two never disagree.
+function handleBodyTypeChange(next: BodyType) {
+  if (next === bodyType.value) return;
+  bodyType.value = next;
+
+  if (next === "none") {
+    bodyText.value = "";
+    upsertContentTypeHeader(null);
+    return;
+  }
+
+  upsertContentTypeHeader(
+    next === "multipart" ? `multipart/form-data; boundary=${randomBoundary()}` : BODY_TYPE_CONTENT_TYPES[next],
+  );
+}
+
 const saving = ref(false);
 const saveError = ref<string | null>(null);
 
@@ -55,8 +128,9 @@ const dirty = computed(() => {
 watch(dirty, (value) => emit("dirtyChange", value));
 
 const editorLanguage = computed<EditorLanguage>(() => {
-  const contentType = headers.value.find((h) => h.name.toLowerCase() === "content-type")?.value ?? "";
-  return languageForContentType(contentType);
+  if (bodyType.value === "json") return "json";
+  if (bodyType.value === "xml") return "xml";
+  return "text";
 });
 
 // Shared with the response pane below: a `+json`/`+xml` structured syntax
@@ -102,6 +176,7 @@ async function load() {
     query.value = draft.query.map((q) => ({ ...q }));
     headers.value = draft.headers.map((h) => ({ ...h }));
     bodyText.value = draft.body_text;
+    bodyType.value = detectBodyType(headers.value, bodyText.value);
   } catch (e) {
     loadError.value = String(e);
     original.value = null;
@@ -273,7 +348,20 @@ defineExpose({ dirty, save: handleSave });
       </div>
 
       <div v-else class="request-panel__tab-panel">
-        <CodeEditor v-model="bodyText" :language="editorLanguage" />
+        <div class="request-panel__body-type">
+          <span class="request-panel__body-type-label">Content-Type</span>
+          <select
+            class="request-panel__body-type-select"
+            :value="bodyType"
+            @change="handleBodyTypeChange(($event.target as HTMLSelectElement).value as BodyType)"
+          >
+            <option v-for="option in BODY_TYPE_OPTIONS" :key="option" :value="option">
+              {{ BODY_TYPE_LABELS[option] }}
+            </option>
+          </select>
+        </div>
+        <p v-if="bodyType === 'none'" class="request-panel__hint-text">This request has no body.</p>
+        <CodeEditor v-else v-model="bodyText" :language="editorLanguage" />
       </div>
     </template>
 
