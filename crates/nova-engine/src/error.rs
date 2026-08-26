@@ -50,6 +50,9 @@ pub enum NovaError {
     #[error("failed to serialize request for {path}: {message}")]
     RequestSerialize { path: PathBuf, message: String },
 
+    #[error("failed to serialize manifest for {path}: {message}")]
+    ManifestSerialize { path: PathBuf, message: String },
+
     #[error("undefined variable {name:?} (not set in environment {environment:?})")]
     UndefinedVariable { name: String, environment: String },
 

@@ -80,6 +80,26 @@ impl NovaProject {
             .as_deref()
             .and_then(|name| self.environment(name))
     }
+
+    /// Serialize `manifest` and write it back to this project's
+    /// `nova.yaml`, replacing whatever was there — the GUI's manifest
+    /// editor goes through this (via [`Manifest::to_yaml_string`]) rather
+    /// than nova-app hand-rolling YAML output itself. Does not update
+    /// `self.manifest`; callers that need the fresh state should re-open
+    /// the project (e.g. [`NovaProject::load`]) after a successful write.
+    pub fn write_manifest(&self, manifest: &Manifest) -> NovaResult<()> {
+        let manifest_path = self.root.join(MANIFEST_FILE_NAME);
+        let text = manifest
+            .to_yaml_string()
+            .map_err(|message| NovaError::ManifestSerialize {
+                path: manifest_path.clone(),
+                message,
+            })?;
+        fs::write(&manifest_path, text).map_err(|source| NovaError::Io {
+            path: manifest_path,
+            source,
+        })
+    }
 }
 
 /// Walk upward from `start` looking for a Nova project.

@@ -113,3 +113,45 @@ fn missing_collections_dir_is_a_typed_error() {
     let result = NovaProject::discover(&fixture("missing-collections"));
     assert!(matches!(result, Err(NovaError::CollectionsDirNotFound(_))));
 }
+
+/// Builds a minimal, throwaway Nova project directory under the OS temp dir
+/// (not one of the checked-in `tests/fixtures`, since this test writes to
+/// it) so `write_manifest` has a real `nova.yaml` to overwrite without
+/// touching anything tracked in git.
+fn temp_project(unique: &str) -> PathBuf {
+    let root = std::env::temp_dir().join(format!("nova-engine-write-manifest-test-{unique}"));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("collections")).unwrap();
+    std::fs::create_dir_all(root.join("envs")).unwrap();
+    std::fs::write(
+        root.join("nova.yaml"),
+        "version: 1\n\nproject:\n  name: Temp Project\n\ndefaults:\n  environment: local\n\ncollections:\n  path: collections\n\nenvironments:\n  path: envs\n",
+    )
+    .unwrap();
+    root
+}
+
+#[test]
+fn write_manifest_persists_edits_to_disk() {
+    let root = temp_project("persists-edits");
+    let project = NovaProject::load(root.clone()).unwrap();
+
+    let mut edited = project.manifest.clone();
+    edited.project.name = "Renamed Project".to_string();
+    edited.defaults.environment = Some("staging".to_string());
+    project
+        .write_manifest(&edited)
+        .expect("write should succeed");
+
+    let reloaded = NovaProject::load(root.clone()).unwrap();
+    assert_eq!(reloaded.manifest.project.name, "Renamed Project");
+    assert_eq!(
+        reloaded.manifest.defaults.environment.as_deref(),
+        Some("staging")
+    );
+    // Untouched fields survive the round trip.
+    assert_eq!(reloaded.manifest.collections.path, "collections");
+    assert_eq!(reloaded.manifest.environments.path, "envs");
+
+    let _ = std::fs::remove_dir_all(&root);
+}

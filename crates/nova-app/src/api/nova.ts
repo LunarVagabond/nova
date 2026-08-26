@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import type {
+  Manifest,
   NovaProject,
   ParsedCurlRequest,
   QueryParam,
@@ -74,6 +75,15 @@ export function createRequest(collectionPath: string, name: string): Promise<Req
 /** Parses a pasted `curl`/`wget` command into method/URL/headers/body. */
 export function parseCurlCommand(command: string): Promise<ParsedCurlRequest> {
   return invoke<ParsedCurlRequest>("parse_curl_command", { command });
+}
+
+/**
+ * Writes an edited manifest back to `projectRoot`'s `nova.yaml`, replacing
+ * it entirely. `projectRoot` is the project's Nova directory
+ * (`NovaProject.root`, e.g. `<repo>/nova`), not the outer repo root.
+ */
+export function saveManifest(projectRoot: string, manifest: Manifest): Promise<void> {
+  return invoke<void>("save_manifest", { projectRoot, manifest });
 }
 
 /** Opens the native folder picker and returns the chosen path, or null if cancelled. */
