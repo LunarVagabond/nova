@@ -11,6 +11,7 @@ mod execute;
 mod manifest;
 mod project;
 mod request;
+mod session;
 mod validate;
 
 pub use collection::Collection;
@@ -20,4 +21,5 @@ pub use execute::{execute, Response};
 pub use manifest::{Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION};
 pub use project::{NovaProject, MANIFEST_FILE_NAME};
 pub use request::{Header, MultipartField, ParsedRequest, RequestBody, RequestFile};
+pub use session::Session;
 pub use validate::{validate, ValidationIssue};
