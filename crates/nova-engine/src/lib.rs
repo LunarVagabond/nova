@@ -4,6 +4,7 @@
 //! should never reimplement parsing, discovery, or (later) execution logic
 //! themselves.
 
+mod assertion;
 mod auth;
 mod collection;
 mod environment;
@@ -15,6 +16,9 @@ mod request;
 mod session;
 mod validate;
 
+pub use assertion::{
+    evaluate, Assertion, AssertionOutcome, Op as AssertionOp, Term as AssertionTerm,
+};
 pub use collection::Collection;
 pub use environment::Environment;
 pub use error::{NovaError, NovaResult};
