@@ -158,6 +158,7 @@ impl Session {
         Environment {
             name: environment.name.clone(),
             variables,
+            auth: environment.auth.clone(),
             path: environment.path.clone(),
         }
     }

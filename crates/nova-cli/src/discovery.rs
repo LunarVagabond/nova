@@ -25,6 +25,7 @@ pub fn resolve_environment(
         .unwrap_or(Environment {
             name: "none".to_string(),
             variables: Default::default(),
+            auth: None,
             path: Default::default(),
         }))
 }

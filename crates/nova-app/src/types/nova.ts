@@ -24,9 +24,15 @@ export interface Manifest {
   environments: PathConfig;
 }
 
+export interface AuthDefault {
+  header: string;
+  value: string;
+}
+
 export interface NovaEnvironment {
   name: string;
   variables: Record<string, string>;
+  auth: AuthDefault | null;
   path: string;
 }
 
