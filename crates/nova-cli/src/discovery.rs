@@ -31,7 +31,7 @@ pub fn resolve_environment(
 }
 
 /// Find every request under `target`: a single request if it points
-/// directly at a `.http` file, or every request in its subtree if it
+/// directly at a `.nova` file, or every request in its subtree if it
 /// points at a collection directory.
 pub fn requests_at<'a>(
     root: &'a Collection,

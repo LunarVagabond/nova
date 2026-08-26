@@ -8,21 +8,21 @@ use crate::collection::Collection;
 use crate::error::{NovaError, NovaResult};
 use crate::manifest::{Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION};
 use crate::project::NovaProject;
-use crate::request::RequestBody;
+use crate::request::{Header, ParsedRequest, QueryParam, RequestBody};
 
-/// One `.http` file to be written under a project's collections directory.
+/// One `.nova` file to be written under a project's collections directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratedRequest {
     /// Collection path segments, e.g. `["users"]` for a request that
     /// belongs under `collections/users/`.
     pub collection: Vec<String>,
-    /// File name including `.http`, e.g. `get_users.http`.
+    /// File name including `.nova`, e.g. `get_users.nova`.
     pub file_name: String,
     pub contents: String,
 }
 
 /// A Nova project generated from an OpenAPI spec: a `nova.yaml` plus one
-/// `.http` file per operation. Nothing is written to disk here — the
+/// `.nova` file per operation. Nothing is written to disk here — the
 /// caller decides where (and whether) to write it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratedProject {
@@ -97,10 +97,10 @@ fn generate_request(
     // (`{{id}}`) — transform the path alone, before prepending the
     // already-correctly-doubled {{base_url}} placeholder.
     let path_with_nova_placeholders = path.replace('{', "{{").replace('}', "}}");
-    let mut url = format!("{{{{base_url}}}}{path_with_nova_placeholders}");
+    let url = format!("{{{{base_url}}}}{path_with_nova_placeholders}");
 
-    let mut header_lines = Vec::new();
-    let mut query_pairs = Vec::new();
+    let mut headers = Vec::new();
+    let mut query = Vec::new();
 
     for parameter_ref in &operation.parameters {
         let ReferenceOr::Item(parameter) = parameter_ref else {
@@ -108,16 +108,16 @@ fn generate_request(
         };
         match parameter {
             Parameter::Header { parameter_data, .. } => {
-                header_lines.push(format!(
-                    "{}: {{{{{}}}}}",
-                    parameter_data.name, parameter_data.name
-                ));
+                headers.push(Header {
+                    name: parameter_data.name.clone(),
+                    value: format!("{{{{{}}}}}", parameter_data.name),
+                });
             }
             Parameter::Query { parameter_data, .. } => {
-                query_pairs.push(format!(
-                    "{}={{{{{}}}}}",
-                    parameter_data.name, parameter_data.name
-                ));
+                query.push(QueryParam {
+                    name: parameter_data.name.clone(),
+                    value: format!("{{{{{}}}}}", parameter_data.name),
+                });
             }
             // Path params are already covered by the {{name}} substitution
             // above; cookies are rare enough on generated requests to skip
@@ -126,26 +126,33 @@ fn generate_request(
         }
     }
 
-    if !query_pairs.is_empty() {
-        url.push('?');
-        url.push_str(&query_pairs.join("&"));
-    }
+    let body_example = request_body_example(operation);
+    let body = match &body_example {
+        Some(example) => {
+            headers.push(Header {
+                name: "Content-Type".to_string(),
+                value: "application/json".to_string(),
+            });
+            serde_json::from_str(example)
+                .map(RequestBody::Json)
+                .unwrap_or_else(|_| RequestBody::Text(example.clone()))
+        }
+        None => RequestBody::None,
+    };
 
-    let body = request_body_example(operation);
-    if body.is_some() {
-        header_lines.push("Content-Type: application/json".to_string());
-    }
-
-    let mut contents = format!("{method} {url}\n");
-    for header in &header_lines {
-        contents.push_str(header);
-        contents.push('\n');
-    }
-    if let Some(body) = body {
-        contents.push('\n');
-        contents.push_str(&body);
-        contents.push('\n');
-    }
+    let generated = ParsedRequest {
+        method: method.to_string(),
+        url,
+        query,
+        headers,
+        body,
+        assertions: Vec::new(),
+        extractions: Vec::new(),
+        example_response: None,
+    };
+    let contents = generated
+        .to_nova_string()
+        .map_err(|message| NovaError::OpenApiParse { message })?;
 
     let collection = operation
         .tags
@@ -155,7 +162,7 @@ fn generate_request(
 
     Ok(GeneratedRequest {
         collection: vec![sanitize(&collection)],
-        file_name: format!("{}.http", file_stem(method, path, operation)),
+        file_name: format!("{}.nova", file_stem(method, path, operation)),
         contents,
     })
 }

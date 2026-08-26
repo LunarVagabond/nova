@@ -1,6 +1,11 @@
-POST {{base_url}}/auth/login
+[request]
+method: POST
+url: {{base_url}}/auth/login
+
+[headers]
 Content-Type: application/json
 
+[body]
 {
   "username": "{{username}}",
   "password": "{{password}}"

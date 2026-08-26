@@ -34,8 +34,8 @@ fn write_project(dir: &Path, base_url: &str, assertions: &str) {
     .unwrap();
 
     fs::write(
-        nova_dir.join("collections/hello.http"),
-        format!("GET {{{{base_url}}}}/hello\n\n###\n\n{assertions}\n"),
+        nova_dir.join("collections/hello.nova"),
+        format!("[request]\nmethod: GET\nurl: {{{{base_url}}}}/hello\n\n[assert]\n{assertions}\n"),
     )
     .unwrap();
 }
@@ -94,7 +94,7 @@ fn exits_nonzero_when_an_assertion_fails() {
     let output = Command::new(env!("CARGO_BIN_EXE_nova"))
         .args([
             "test",
-            dir.join("nova/collections/hello.http").to_str().unwrap(),
+            dir.join("nova/collections/hello.nova").to_str().unwrap(),
             "--environment",
             "test",
         ])

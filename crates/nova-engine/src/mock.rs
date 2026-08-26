@@ -15,7 +15,7 @@ pub enum PathSegment {
 
 /// A single route `nova mock` registers: one project request's method and
 /// path, plus the canned response to serve for it (if the request declared
-/// one via a `### response` section in its `.http` file).
+/// one via a `[response]` section in its `.nova` file).
 #[derive(Debug, Clone)]
 pub struct MockRoute {
     pub method: String,
@@ -25,7 +25,7 @@ pub struct MockRoute {
     /// any single incoming path segment.
     pub segments: Vec<PathSegment>,
     pub example_response: Option<ExampleResponse>,
-    /// The `.http` file this route was registered from, for diagnostics.
+    /// The `.nova` file this route was registered from, for diagnostics.
     pub source: PathBuf,
 }
 
@@ -51,7 +51,7 @@ impl MockRoute {
     }
 }
 
-/// Build the set of mock routes for `project`: one per discovered `.http`
+/// Build the set of mock routes for `project`: one per discovered `.nova`
 /// request, in the same deterministic order the collections were
 /// discovered in.
 ///

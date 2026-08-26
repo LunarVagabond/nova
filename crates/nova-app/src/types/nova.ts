@@ -82,13 +82,13 @@ export interface QueryParam {
 
 /**
  * Mirrors `nova_engine::RequestDraft` — a flattened, GUI-editable view of a
- * `.http` file's method/URL/query/headers/body. The body always comes back
+ * `.nova` file's method/URL/query/headers/body. The body always comes back
  * as plain text (the engine reduces whatever body shape the file declares
  * — JSON/XML/form/multipart/text — down to text via
  * `RequestBody::to_body_text`); saving sends that text straight back and
  * the engine re-infers the body's shape from the (possibly also edited)
  * `Content-Type` header via `RequestBody::from_text`, exactly like parsing
- * a `.http` file from scratch does.
+ * a `.nova` file from scratch does.
  *
  * `has_assertions`/`has_extractions`/`has_example_response` aren't
  * editable here — they just let the GUI say a file has more to it than

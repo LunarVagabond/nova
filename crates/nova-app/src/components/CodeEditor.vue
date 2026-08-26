@@ -10,7 +10,7 @@
 //
 // This component only formats and highlights what's already in `modelValue`
 // — it never invents or rewrites body content itself. Nothing here decides
-// *how* a body serializes to/from a `.http` file; that stays entirely in
+// *how* a body serializes to/from a `.nova` file; that stays entirely in
 // nova-engine (see `RequestBody::from_text`/`to_body_text`).
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { EditorState, type Extension } from "@codemirror/state";

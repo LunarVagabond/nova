@@ -1,0 +1,3 @@
+[request]
+method: DELETE
+url: {{base_url}}/users/{{user_id}}

@@ -72,10 +72,11 @@ fn env_with(vars: &[(&str, &str)]) -> Environment {
 #[test]
 fn bearer_token_from_a_variable_reaches_the_wire() {
     let (base_url, rx, handle) = mock_server();
-    let contents = "GET {{base_url}}/me\nAuthorization: Bearer {{token}}\n";
+    let contents =
+        "[request]\nmethod: GET\nurl: {{base_url}}/me\n\n[headers]\nAuthorization: Bearer {{token}}\n";
     let request = RequestFile {
         name: "me".to_string(),
-        path: write_temp_http("bearer", contents),
+        path: write_temp_nova("bearer", contents),
     };
     let env = env_with(&[("base_url", &base_url), ("token", "secret-token")]);
 
@@ -94,10 +95,11 @@ fn bearer_token_from_a_variable_reaches_the_wire() {
 #[test]
 fn api_key_as_a_header_reaches_the_wire() {
     let (base_url, rx, handle) = mock_server();
-    let contents = "GET {{base_url}}/me\nX-Api-Key: {{api_key}}\n";
+    let contents =
+        "[request]\nmethod: GET\nurl: {{base_url}}/me\n\n[headers]\nX-Api-Key: {{api_key}}\n";
     let request = RequestFile {
         name: "me".to_string(),
-        path: write_temp_http("api-key-header", contents),
+        path: write_temp_nova("api-key-header", contents),
     };
     let env = env_with(&[("base_url", &base_url), ("api_key", "abc123")]);
 
@@ -113,10 +115,11 @@ fn api_key_as_a_header_reaches_the_wire() {
 #[test]
 fn api_key_as_a_query_param_reaches_the_wire() {
     let (base_url, rx, handle) = mock_server();
-    let contents = "GET {{base_url}}/me?api_key={{api_key}}\n";
+    let contents =
+        "[request]\nmethod: GET\nurl: {{base_url}}/me\n\n[params]\napi_key: {{api_key}}\n";
     let request = RequestFile {
         name: "me".to_string(),
-        path: write_temp_http("api-key-query", contents),
+        path: write_temp_nova("api-key-query", contents),
     };
     let env = env_with(&[("base_url", &base_url), ("api_key", "abc123")]);
 
@@ -134,10 +137,10 @@ fn api_key_as_a_query_param_reaches_the_wire() {
 #[test]
 fn basic_auth_is_base64_encoded_on_the_wire() {
     let (base_url, rx, handle) = mock_server();
-    let contents = "GET {{base_url}}/me\nAuthorization: Basic {{username}}:{{password}}\n";
+    let contents = "[request]\nmethod: GET\nurl: {{base_url}}/me\n\n[headers]\nAuthorization: Basic {{username}}:{{password}}\n";
     let request = RequestFile {
         name: "me".to_string(),
-        path: write_temp_http("basic-auth", contents),
+        path: write_temp_nova("basic-auth", contents),
     };
     let env = env_with(&[
         ("base_url", &base_url),
@@ -165,10 +168,10 @@ fn basic_auth_is_base64_encoded_on_the_wire() {
 #[test]
 fn environment_default_auth_reaches_the_wire_when_the_request_declares_none() {
     let (base_url, rx, handle) = mock_server();
-    let contents = "GET {{base_url}}/me\n";
+    let contents = "[request]\nmethod: GET\nurl: {{base_url}}/me\n";
     let request = RequestFile {
         name: "me".to_string(),
-        path: write_temp_http("inherited-auth", contents),
+        path: write_temp_nova("inherited-auth", contents),
     };
     let mut env = env_with(&[("base_url", &base_url), ("token", "env-default-token")]);
     env.auth = Some(AuthDefault {
@@ -193,9 +196,9 @@ fn environment_default_auth_reaches_the_wire_when_the_request_declares_none() {
     handle.join().unwrap();
 }
 
-fn write_temp_http(name: &str, contents: &str) -> std::path::PathBuf {
+fn write_temp_nova(name: &str, contents: &str) -> std::path::PathBuf {
     let path = std::env::temp_dir().join(format!(
-        "nova-auth-test-{name}-{}-{}.http",
+        "nova-auth-test-{name}-{}-{}.nova",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

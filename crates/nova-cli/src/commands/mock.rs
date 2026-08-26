@@ -68,7 +68,7 @@ fn build_response(
 
     let Some(example) = &route.example_response else {
         return tiny_http::Response::from_string(format!(
-            "no example response defined for {} {} — add a \"### response\" section to {}\n",
+            "no example response defined for {} {} — add a \"[response]\" section to {}\n",
             route.method,
             route.path,
             route.source.display()

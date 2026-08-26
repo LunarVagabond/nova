@@ -1,1 +1,0 @@
-DELETE {{base_url}}/users/{{user_id}}

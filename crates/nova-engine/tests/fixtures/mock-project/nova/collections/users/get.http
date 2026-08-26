@@ -1,6 +1,0 @@
-GET {{base_url}}/users/{{user_id}}
-
-### response
-Content-Type: application/json
-
-{"id": "1", "name": "Ada"}

@@ -4,7 +4,7 @@ use std::path::Path;
 use nova_engine::generate_from_spec;
 
 /// Generate a Nova project from an OpenAPI 3.x spec and write it under
-/// `output/nova/` (`nova.yaml` plus one `.http` file per operation under
+/// `output/nova/` (`nova.yaml` plus one `.nova` file per operation under
 /// `collections/`).
 pub fn run(spec: &Path, output: &Path) -> Result<(), String> {
     let spec_text = fs::read_to_string(spec)

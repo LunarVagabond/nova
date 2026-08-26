@@ -1,6 +1,8 @@
-GET {{base_url}}/users
+[request]
+method: GET
+url: {{base_url}}/users
 
-### response 200
+[response 200]
 Content-Type: application/json
 
 [{"id": "1", "name": "Ada"}]

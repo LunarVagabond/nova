@@ -29,12 +29,13 @@ fn generates_a_project_from_the_petstore_spec() {
     let list_pets = project
         .requests
         .iter()
-        .find(|r| r.file_name == "listpets.http")
+        .find(|r| r.file_name == "listpets.nova")
         .expect("listPets operation should generate a request");
     assert_eq!(list_pets.collection, vec!["pets".to_string()]);
     assert!(list_pets
         .contents
-        .starts_with("GET {{base_url}}/pets?limit={{limit}}"));
+        .starts_with("[request]\nmethod: GET\nurl: {{base_url}}/pets\n"));
+    assert!(list_pets.contents.contains("[params]\nlimit: {{limit}}"));
     assert!(list_pets
         .contents
         .contains("X-Request-Id: {{X-Request-Id}}"));
@@ -42,7 +43,7 @@ fn generates_a_project_from_the_petstore_spec() {
     let create_pet = project
         .requests
         .iter()
-        .find(|r| r.file_name == "createpet.http")
+        .find(|r| r.file_name == "createpet.nova")
         .expect("createPet operation should generate a request");
     assert!(create_pet
         .contents
@@ -52,15 +53,15 @@ fn generates_a_project_from_the_petstore_spec() {
     let get_pet = project
         .requests
         .iter()
-        .find(|r| r.file_name == "getpet.http")
+        .find(|r| r.file_name == "getpet.nova")
         .expect("getPet operation should generate a request");
     assert!(get_pet
         .contents
-        .starts_with("GET {{base_url}}/pets/{{petId}}"));
+        .starts_with("[request]\nmethod: GET\nurl: {{base_url}}/pets/{{petId}}\n"));
 }
 
 #[test]
-fn generated_requests_parse_back_through_novas_own_http_parser() {
+fn generated_requests_parse_back_through_novas_own_nova_parser() {
     let spec = fixture("petstore.yaml");
     let project = generate_from_spec(&spec).unwrap();
 
