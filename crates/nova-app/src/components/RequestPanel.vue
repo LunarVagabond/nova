@@ -43,8 +43,11 @@ const auth = ref<AuthScheme | null>(null);
 // rewrites the Content-Type header (see `handleBodyTypeChange`).
 const syncContentType = ref(true);
 
-type FieldTab = "params" | "auth" | "headers" | "body";
-const activeTab = ref<FieldTab>("params");
+type FieldTab = "auth" | "headers" | "params" | "body";
+const activeTab = ref<FieldTab>("auth");
+
+type ResponseTab = "headers" | "raw" | "preview";
+const activeResponseTab = ref<ResponseTab>("preview");
 
 type BodyType = "none" | "json" | "xml" | "form" | "multipart" | "text";
 
@@ -239,6 +242,14 @@ const responseLanguage = computed<EditorLanguage>(() => {
   return languageForContentType(contentType);
 });
 
+// Drives the Preview tab: HTML responses get rendered in a sandboxed iframe
+// (like a browser would show them) rather than just syntax-highlighted text.
+const isHtmlResponse = computed(() => {
+  const contentType = response.value?.headers.find((h) => h.name.toLowerCase() === "content-type")?.value ?? "";
+  const essence = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+  return essence === "text/html";
+});
+
 // Pretty-print JSON response bodies before handing them to the editor;
 // leave everything else (including malformed JSON) exactly as returned.
 const responseBody = computed(() => {
@@ -334,6 +345,7 @@ async function handleSend() {
   sendError.value = null;
   try {
     response.value = await sendRequest(props.request.path, props.selectedEnvironment);
+    activeResponseTab.value = "preview";
   } catch (e) {
     response.value = null;
     sendError.value = String(e);
@@ -416,16 +428,6 @@ defineExpose({ dirty, save: handleSave });
           type="button"
           role="tab"
           class="request-panel__tab"
-          :class="{ 'request-panel__tab--active': activeTab === 'params' }"
-          :aria-selected="activeTab === 'params'"
-          @click="activeTab = 'params'"
-        >
-          Params<span v-if="query.length > 0" class="request-panel__tab-count">{{ query.length }}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          class="request-panel__tab"
           :class="{ 'request-panel__tab--active': activeTab === 'auth' }"
           :aria-selected="activeTab === 'auth'"
           @click="activeTab = 'auth'"
@@ -446,6 +448,16 @@ defineExpose({ dirty, save: handleSave });
           type="button"
           role="tab"
           class="request-panel__tab"
+          :class="{ 'request-panel__tab--active': activeTab === 'params' }"
+          :aria-selected="activeTab === 'params'"
+          @click="activeTab = 'params'"
+        >
+          Params<span v-if="query.length > 0" class="request-panel__tab-count">{{ query.length }}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="request-panel__tab"
           :class="{ 'request-panel__tab--active': activeTab === 'body' }"
           :aria-selected="activeTab === 'body'"
           @click="activeTab = 'body'"
@@ -454,16 +466,16 @@ defineExpose({ dirty, save: handleSave });
         </button>
       </div>
 
-      <div v-if="activeTab === 'params'" class="request-panel__tab-panel">
-        <KeyValueEditor v-model="query" name-placeholder="param" value-placeholder="value" />
-      </div>
-
-      <div v-else-if="activeTab === 'auth'" class="request-panel__tab-panel">
+      <div v-if="activeTab === 'auth'" class="request-panel__tab-panel">
         <AuthEditor v-model="auth" id-prefix="request-auth" />
       </div>
 
       <div v-else-if="activeTab === 'headers'" class="request-panel__tab-panel">
         <KeyValueEditor v-model="headers" name-placeholder="Header" value-placeholder="Value" mode="headers" />
+      </div>
+
+      <div v-else-if="activeTab === 'params'" class="request-panel__tab-panel">
+        <KeyValueEditor v-model="query" name-placeholder="param" value-placeholder="value" />
       </div>
 
       <div v-else class="request-panel__tab-panel">
@@ -505,23 +517,71 @@ defineExpose({ dirty, save: handleSave });
           <span class="response-summary__elapsed">{{ response.elapsed_ms }}ms</span>
         </div>
 
-        <h3 class="response-pane__section-title">Headers</h3>
-        <ul v-if="response.headers.length > 0" class="response-headers">
-          <li v-for="header in response.headers" :key="header.name" class="response-headers__item">
-            <span class="response-headers__name">{{ header.name }}</span>
-            <span class="response-headers__value">{{ header.value }}</span>
-          </li>
-        </ul>
-        <p v-else class="response-pane__hint">No headers.</p>
+        <div class="request-panel__tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            class="request-panel__tab"
+            :class="{ 'request-panel__tab--active': activeResponseTab === 'preview' }"
+            :aria-selected="activeResponseTab === 'preview'"
+            @click="activeResponseTab = 'preview'"
+          >
+            Preview
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="request-panel__tab"
+            :class="{ 'request-panel__tab--active': activeResponseTab === 'raw' }"
+            :aria-selected="activeResponseTab === 'raw'"
+            @click="activeResponseTab = 'raw'"
+          >
+            Raw Response
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="request-panel__tab"
+            :class="{ 'request-panel__tab--active': activeResponseTab === 'headers' }"
+            :aria-selected="activeResponseTab === 'headers'"
+            @click="activeResponseTab = 'headers'"
+          >
+            Headers<span v-if="response.headers.length > 0" class="request-panel__tab-count">{{
+              response.headers.length
+            }}</span>
+          </button>
+        </div>
 
-        <h3 class="response-pane__section-title">Body</h3>
-        <CodeEditor
-          v-if="response.body"
-          :model-value="responseBody"
-          :language="responseLanguage"
-          readonly
-        />
-        <p v-else class="response-pane__hint">Empty body.</p>
+        <div v-if="activeResponseTab === 'headers'" class="request-panel__tab-panel">
+          <ul v-if="response.headers.length > 0" class="response-headers">
+            <li v-for="header in response.headers" :key="header.name" class="response-headers__item">
+              <span class="response-headers__name">{{ header.name }}</span>
+              <span class="response-headers__value">{{ header.value }}</span>
+            </li>
+          </ul>
+          <p v-else class="response-pane__hint">No headers.</p>
+        </div>
+
+        <div v-else-if="activeResponseTab === 'raw'" class="request-panel__tab-panel">
+          <CodeEditor v-if="response.body" :model-value="response.body" language="text" readonly />
+          <p v-else class="response-pane__hint">Empty body.</p>
+        </div>
+
+        <div v-else class="request-panel__tab-panel">
+          <iframe
+            v-if="response.body && isHtmlResponse"
+            class="response-preview-frame"
+            sandbox=""
+            :srcdoc="response.body"
+          ></iframe>
+          <CodeEditor
+            v-else-if="response.body"
+            :model-value="responseBody"
+            :language="responseLanguage"
+            readonly
+          />
+          <p v-else class="response-pane__hint">Empty body.</p>
+        </div>
       </template>
 
       <p v-else class="response-pane__hint">Click Send to execute this request.</p>
