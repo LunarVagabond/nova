@@ -5,11 +5,33 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+.sidebar-header__project-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $spacing-sm;
+}
+
 .sidebar-header__project {
   font-weight: 600;
   font-size: $font-size-lg;
   margin: 0 0 $spacing-sm;
   word-break: break-word;
+}
+
+.sidebar-header__switch {
+  flex-shrink: 0;
+  padding: $spacing-xs $spacing-sm;
+  border-radius: $radius-sm;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-raised);
+  color: var(--color-text-muted);
+  font-size: $font-size-sm;
+
+  &:hover {
+    color: var(--color-text);
+    border-color: var(--color-accent);
+  }
 }
 
 .sidebar-header__env-select {

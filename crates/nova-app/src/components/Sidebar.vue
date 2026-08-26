@@ -11,6 +11,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "update:selectedEnvironment", value: string): void;
   (e: "selectRequest", request: RequestFile): void;
+  (e: "switchProject"): void;
 }>();
 
 function onEnvironmentChange(event: Event) {
@@ -21,7 +22,17 @@ function onEnvironmentChange(event: Event) {
 <template>
   <div>
     <div class="sidebar-header">
-      <p class="sidebar-header__project">{{ project.manifest.project.name }}</p>
+      <div class="sidebar-header__project-row">
+        <p class="sidebar-header__project">{{ project.manifest.project.name }}</p>
+        <button
+          type="button"
+          class="sidebar-header__switch"
+          title="Switch project"
+          @click="emit('switchProject')"
+        >
+          Switch
+        </button>
+      </div>
 
       <select
         v-if="project.environments.length > 0"
