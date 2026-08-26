@@ -9,6 +9,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AuthScheme,
   Collection,
+  GitStatusMap,
   InitOutcome,
   Manifest,
   NovaEnvironment,
@@ -47,6 +48,14 @@ export function initProject(
 
 export function validateProject(path: string): Promise<string[]> {
   return invoke<string[]>("validate_project", { path });
+}
+
+/**
+ * Per-file git status for the project at `path`, keyed by absolute path —
+ * `null` when `path` isn't inside a git repository at all.
+ */
+export function gitStatus(path: string): Promise<GitStatusMap | null> {
+  return invoke<GitStatusMap | null>("git_status", { path });
 }
 
 /** Parses, resolves, and executes the `.nova` file at `requestPath`. */
@@ -129,14 +138,20 @@ export function createEnvironment(environmentsDir: string, name: string): Promis
 
 /**
  * Writes an edited environment's name/variables/default auth scheme back
- * to the file at `environmentPath`, replacing whatever was there.
+ * to the file at `environmentPath`, replacing whatever was there. If the
+ * name changed and this was the project's default environment,
+ * `projectRoot`'s manifest is updated to follow the rename.
  */
 export function saveEnvironment(
+  projectRoot: string,
   environmentPath: string,
+  previousName: string,
   environment: { name: string; variables: Record<string, string>; auth: AuthScheme | null },
 ): Promise<void> {
   return invoke<void>("save_environment", {
+    projectRoot,
     environmentPath,
+    previousName,
     name: environment.name,
     variables: environment.variables,
     auth: environment.auth,

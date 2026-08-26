@@ -15,9 +15,22 @@
   --color-border: #dcdcdc;
   --color-text: #0f0f0f;
   --color-text-muted: #6b6b6b;
-  --color-accent: #396cd8;
-  --color-danger: #c0392b;
-  --color-warning: #b5890a;
+
+  // The app's fixed "supernova" palette — four colors, used everywhere
+  // something needs to be colored (buttons, links, badges, method tags,
+  // git status) instead of one-off hex values. Don't introduce a fifth.
+  //   --color-accent (violet)  — primary/interactive: buttons, links, the
+  //     active tab, POST, an untracked file.
+  //   --color-warning (amber)  — caution/in-progress: PUT/PATCH, an
+  //     unstaged change.
+  //   --color-success (teal)   — safe/complete: GET, a staged change, a 2xx
+  //     response.
+  //   --color-danger (rose)    — destructive/error: DELETE, a 4xx/5xx
+  //     response, delete actions.
+  --color-accent: #7c5cff;
+  --color-warning: #e8960a;
+  --color-success: #0f9d8e;
+  --color-danger: #e8437a;
 
   // Code editor token colors (request body syntax highlighting).
   --color-code-key: #a626a4;
@@ -40,9 +53,11 @@
     --color-border: #3a3a3a;
     --color-text: #f2f2f2;
     --color-text-muted: #9a9a9a;
-    --color-accent: #6a9bff;
-    --color-danger: #ff6b5e;
-    --color-warning: #e0b23c;
+
+    --color-accent: #9b85ff;
+    --color-warning: #f5b942;
+    --color-success: #2dd4bf;
+    --color-danger: #ff6b90;
 
     --color-code-key: #c678dd;
     --color-code-string: #98c379;
@@ -83,4 +98,11 @@ select {
 
 button {
   cursor: pointer;
+}
+
+.icon {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  vertical-align: -0.125em;
 }

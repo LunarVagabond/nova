@@ -1,0 +1,86 @@
+@use "../variables" as *;
+
+// The persistent top bar (currently just the environment selector, the
+// project-wide equivalent of a browser's "which profile" switcher), the
+// open-request tab strip below it, and the breadcrumb shown above the
+// active tab's request panel — see `App.vue`'s
+// `openTabs`/`activeBreadcrumb`/`selectedEnvironment`.
+
+.main-topbar {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+  margin: (-$spacing-lg) (-$spacing-lg) $spacing-md;
+  padding: $spacing-sm $spacing-lg;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.main-topbar__spacer {
+  flex: 1;
+}
+
+.main-topbar__env-select {
+  padding: $spacing-xs $spacing-sm;
+  border-radius: $radius-sm;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-raised);
+  font-size: $font-size-sm;
+}
+
+.tab-strip {
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--color-border);
+  margin: (-$spacing-lg) (-$spacing-lg) $spacing-md;
+}
+
+.tab-strip__tab {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  flex-shrink: 0;
+  padding: $spacing-sm $spacing-md;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: $font-size-sm;
+  cursor: pointer;
+  max-width: 12rem;
+
+  &:hover {
+    color: var(--color-text);
+    background-color: var(--color-bg-raised);
+  }
+}
+
+.tab-strip__tab--active {
+  color: var(--color-text);
+  border-bottom-color: var(--color-accent);
+}
+
+.tab-strip__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-strip__close {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  line-height: 1;
+  border-radius: $radius-sm;
+  color: var(--color-text-muted);
+
+  &:hover {
+    color: var(--color-danger);
+  }
+}
+
+.request-breadcrumb {
+  color: var(--color-text-muted);
+  font-size: $font-size-sm;
+  margin: 0 0 $spacing-md;
+}

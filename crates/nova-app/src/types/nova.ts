@@ -61,6 +61,8 @@ export interface NovaEnvironment {
 export interface RequestFile {
   name: string;
   path: string;
+  /** This request's HTTP method (e.g. `"GET"`), for the sidebar's method badge. Empty if unparseable. */
+  method: string;
 }
 
 export interface Collection {
@@ -78,6 +80,17 @@ export interface NovaProject {
   environments_dir: string;
   collections: Collection;
 }
+
+/** Mirrors `nova_engine::GitFileStatus`. */
+export type GitFileStatus = "untracked" | "unstaged" | "staged" | "committed";
+
+/**
+ * Per-file git status for a project, keyed by absolute path (matching
+ * `RequestFile.path`/`Collection.path` exactly) — only non-clean files are
+ * present, so a missing entry means "committed"/clean. `null` when the
+ * project isn't inside a git repository at all.
+ */
+export type GitStatusMap = Record<string, GitFileStatus>;
 
 /**
  * Mirrors `nova_engine::OpenProjectOutcome` — opening a directory that

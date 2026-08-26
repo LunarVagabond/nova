@@ -11,6 +11,7 @@ mod curl;
 mod environment;
 mod error;
 mod execute;
+mod git_status;
 mod init;
 mod manifest;
 mod mock;
@@ -31,6 +32,7 @@ pub use curl::{parse_curl, ParsedCurlRequest};
 pub use environment::{create_environment, delete_environment, Environment};
 pub use error::{NovaError, NovaResult};
 pub use execute::{execute, Response};
+pub use git_status::{git_status, GitFileStatus};
 pub use init::{
     default_project_name, init_project, install_secret_check_hook, scaffold_project,
     GitignoreOutcome, HookOutcome, InitOptions, InitOutcome, ScaffoldedProject, GITIGNORE_ENTRY,

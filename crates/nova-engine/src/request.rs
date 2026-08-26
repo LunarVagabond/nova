@@ -14,6 +14,13 @@ pub struct RequestFile {
     /// `login.nova`.
     pub name: String,
     pub path: PathBuf,
+    /// This request's `[request]` `method:` (e.g. `"GET"`), read eagerly at
+    /// discovery time so the GUI can show a method badge in the collection
+    /// tree without a round trip per request. Empty when the file couldn't
+    /// be parsed (e.g. mid-edit) — a discovery-time parse failure shouldn't
+    /// break loading the whole tree, just leave this one request's badge
+    /// blank.
+    pub method: String,
 }
 
 impl RequestFile {
@@ -117,7 +124,11 @@ impl RequestFile {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
 
-        Ok(RequestFile { name, path })
+        Ok(RequestFile {
+            name,
+            path,
+            method: "GET".to_string(),
+        })
     }
 }
 

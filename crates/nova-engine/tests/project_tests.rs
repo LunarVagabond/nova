@@ -202,3 +202,58 @@ fn write_manifest_persists_edits_to_disk() {
 
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// Regression test: renaming the project's *default* environment (via the
+/// GUI's environment editor, which just edits `Environment.name` freely)
+/// must not silently strand `defaults.environment` pointing at a name that
+/// no longer exists — see `NovaProject::save_environment`.
+#[test]
+fn renaming_the_default_environment_updates_the_manifest_default() {
+    let root = temp_project("renames-default-env");
+    std::fs::write(root.join("envs/local.yaml"), "name: local\nvariables: {}\n").unwrap();
+    let project = NovaProject::load(root.clone()).unwrap();
+    // `temp_project` sets up `defaults.environment: local`.
+    let mut local = project.environment("local").unwrap().clone();
+    local.name = "default".to_string();
+
+    project.save_environment("local", &local).unwrap();
+
+    let reloaded = NovaProject::load(root.clone()).unwrap();
+    assert_eq!(
+        reloaded.manifest.defaults.environment.as_deref(),
+        Some("default"),
+        "the manifest default should follow the rename"
+    );
+    assert_eq!(
+        reloaded.default_environment().map(|e| e.name.as_str()),
+        Some("default"),
+        "default_environment() should still resolve after the rename"
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Renaming a *non*-default environment must leave `defaults.environment`
+/// alone.
+#[test]
+fn renaming_a_non_default_environment_does_not_touch_the_manifest_default() {
+    let root = temp_project("renames-non-default-env");
+    std::fs::write(
+        root.join("envs/staging.yaml"),
+        "name: staging\nvariables: {}\n",
+    )
+    .unwrap();
+    let project = NovaProject::load(root.clone()).unwrap();
+    let mut staging = project.environment("staging").unwrap().clone();
+    staging.name = "prod".to_string();
+
+    project.save_environment("staging", &staging).unwrap();
+
+    let reloaded = NovaProject::load(root.clone()).unwrap();
+    assert_eq!(
+        reloaded.manifest.defaults.environment.as_deref(),
+        Some("local")
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}

@@ -23,6 +23,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "dirtyChange", dirty: boolean): void;
+  (e: "saved"): void;
 }>();
 
 const loading = ref(false);
@@ -323,6 +324,7 @@ async function handleSave(): Promise<boolean> {
     };
     await saveRequest(props.request.path, draft);
     original.value = draft;
+    emit("saved");
     return true;
   } catch (e) {
     saveError.value = String(e);
@@ -371,7 +373,6 @@ defineExpose({ dirty, save: handleSave });
           {{ request.name }}
           <span v-if="dirty" class="request-panel__dirty-dot" title="Unsaved changes"></span>
         </p>
-        <p class="request-panel__path">{{ request.path }}</p>
       </div>
       <div class="request-panel__actions">
         <button

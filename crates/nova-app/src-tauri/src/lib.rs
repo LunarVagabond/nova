@@ -9,6 +9,7 @@ pub fn run() {
             commands::open_project,
             commands::init_project,
             commands::validate_project,
+            commands::git_status,
             commands::send_request,
             commands::read_request,
             commands::save_request,

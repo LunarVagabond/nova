@@ -215,6 +215,7 @@ fn generated_requests_parse_back_through_novas_own_nova_parser() {
         let result = RequestFile {
             name: request.file_name.clone(),
             path: path.clone(),
+            method: String::new(),
         }
         .parse();
 
@@ -241,6 +242,7 @@ fn multipart_body_round_trips_through_the_nova_parser() {
     let parsed = RequestFile {
         name: "upload_avatar".to_string(),
         path: path.clone(),
+        method: String::new(),
     }
     .parse();
     std::fs::remove_file(&path).unwrap();

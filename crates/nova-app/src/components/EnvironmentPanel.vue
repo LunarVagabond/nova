@@ -8,6 +8,7 @@ import KeyValueEditor from "./KeyValueEditor.vue";
 
 const props = defineProps<{
   environment: NovaEnvironment;
+  projectRoot: string;
 }>();
 
 const emit = defineEmits<{
@@ -82,7 +83,7 @@ async function handleSave(): Promise<boolean> {
   try {
     const variableRecord = rowsToRecord(variables.value);
     const authScheme = auth.value ? { ...auth.value } : null;
-    await saveEnvironment(original.value.path, {
+    await saveEnvironment(props.projectRoot, original.value.path, original.value.name, {
       name: name.value,
       variables: variableRecord,
       auth: authScheme,

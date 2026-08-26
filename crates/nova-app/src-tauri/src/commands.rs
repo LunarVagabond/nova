@@ -6,11 +6,12 @@
 //! `tauri::command` return types must be serializable.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use nova_engine::{
-    parse_curl, AuthScheme, Collection, Environment, InitOptions, InitOutcome, Manifest,
-    NovaProject, OpenProjectOutcome, ParsedCurlRequest, RequestDraft, RequestFile, Response,
-    Session,
+    parse_curl, AuthScheme, Collection, Environment, GitFileStatus, InitOptions, InitOutcome,
+    Manifest, NovaProject, OpenProjectOutcome, ParsedCurlRequest, RequestDraft, RequestFile,
+    Response, Session,
 };
 
 /// Open the project at `path`. A directory with no project in it comes
@@ -37,6 +38,15 @@ pub fn init_project(
         InitOptions { name, install_hook },
     )
     .map_err(|e| e.to_string())
+}
+
+/// Per-file git status for the project at `path`, keyed by absolute path —
+/// `None` when `path` isn't inside a git repository at all, since Nova
+/// projects don't require git. See [`nova_engine::git_status`].
+#[tauri::command]
+pub fn git_status(path: String) -> Result<Option<HashMap<PathBuf, GitFileStatus>>, String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    nova_engine::git_status(&project.root).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -71,6 +81,7 @@ pub fn send_request(request_path: String, environment: Option<String>) -> Result
     let request_file = RequestFile {
         name: String::new(),
         path: path.to_path_buf(),
+        method: String::new(),
     };
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
 
@@ -89,6 +100,7 @@ pub fn read_request(request_path: String) -> Result<RequestDraft, String> {
     let request_file = RequestFile {
         name: String::new(),
         path: path.to_path_buf(),
+        method: String::new(),
     };
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
     parsed.to_draft().map_err(|e| e.to_string())
@@ -104,6 +116,7 @@ pub fn save_request(request_path: String, draft: RequestDraft) -> Result<(), Str
     let request_file = RequestFile {
         name: String::new(),
         path: std::path::PathBuf::from(&request_path),
+        method: String::new(),
     };
     request_file.write(&draft).map_err(|e| e.to_string())
 }
@@ -190,22 +203,30 @@ pub fn create_environment(environments_dir: String, name: String) -> Result<Envi
 }
 
 /// Write an edited environment's name/variables/default auth scheme back
-/// to the file at `environment_path`, replacing whatever was there — see
-/// [`nova_engine::Environment::write`].
+/// to the file at `environment_path`, replacing whatever was there. If
+/// `name` differs from `previous_name` and this was the project's default
+/// environment, the manifest's `defaults.environment` follows the rename
+/// too — see [`nova_engine::NovaProject::save_environment`].
 #[tauri::command]
 pub fn save_environment(
+    project_root: String,
     environment_path: String,
+    previous_name: String,
     name: String,
     variables: HashMap<String, String>,
     auth: Option<AuthScheme>,
 ) -> Result<(), String> {
+    let project =
+        NovaProject::load(std::path::PathBuf::from(&project_root)).map_err(|e| e.to_string())?;
     let environment = Environment {
         name,
         variables,
         auth,
         path: std::path::PathBuf::from(&environment_path),
     };
-    environment.write().map_err(|e| e.to_string())
+    project
+        .save_environment(&previous_name, &environment)
+        .map_err(|e| e.to_string())
 }
 
 /// Delete the environment file at `environment_path` — see

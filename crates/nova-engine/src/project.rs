@@ -89,6 +89,31 @@ impl NovaProject {
             .and_then(|name| self.environment(name))
     }
 
+    /// Writes an edited environment back to its file (see
+    /// [`Environment::write`]), and if its name changed and this project's
+    /// `defaults.environment` was pointing at the old name, updates the
+    /// manifest to follow the rename too. Without this, renaming the
+    /// project's default environment leaves `defaults.environment` stale —
+    /// [`Self::default_environment`] silently stops finding it on the next
+    /// load, since nothing else keeps the two in sync.
+    pub fn save_environment(
+        &self,
+        previous_name: &str,
+        environment: &Environment,
+    ) -> NovaResult<()> {
+        environment.write()?;
+
+        if previous_name != environment.name
+            && self.manifest.defaults.environment.as_deref() == Some(previous_name)
+        {
+            let mut manifest = self.manifest.clone();
+            manifest.defaults.environment = Some(environment.name.clone());
+            self.write_manifest(&manifest)?;
+        }
+
+        Ok(())
+    }
+
     /// Serialize `manifest` and write it back to this project's
     /// `nova.yaml`, replacing whatever was there — the GUI's manifest
     /// editor goes through this (via [`Manifest::to_yaml_string`]) rather

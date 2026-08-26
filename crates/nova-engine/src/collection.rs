@@ -72,7 +72,15 @@ fn load_collection_dir(dir: &Path) -> NovaResult<Collection> {
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            requests.push(RequestFile { name, path });
+            let method = RequestFile {
+                name: name.clone(),
+                path: path.clone(),
+                method: String::new(),
+            }
+            .parse()
+            .map(|parsed| parsed.method)
+            .unwrap_or_default();
+            requests.push(RequestFile { name, path, method });
         }
     }
 

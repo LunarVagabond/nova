@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, reactive, ref } from "vue";
 
 import {
   createCollection,
@@ -7,28 +7,55 @@ import {
   createRequest,
   deleteCollection,
   deleteEnvironment,
+  gitStatus as fetchGitStatus,
   initProject,
   openProject,
   pickProjectDirectory,
   renameCollection,
   validateProject,
 } from "./api/nova";
-import type { Collection, NovaEnvironment, NovaProject, RequestFile } from "./types/nova";
+import type {
+  Collection,
+  GitStatusMap,
+  NovaEnvironment,
+  NovaProject,
+  RequestFile,
+} from "./types/nova";
 import Sidebar from "./components/Sidebar.vue";
 import ProjectPanel from "./components/ProjectPanel.vue";
 import RequestPanel from "./components/RequestPanel.vue";
 import EnvironmentPanel from "./components/EnvironmentPanel.vue";
 import EmptyState from "./components/EmptyState.vue";
 import Modal from "./components/Modal.vue";
+import Icon from "./components/Icon.vue";
 
 const project = ref<NovaProject | null>(null);
 const validationIssues = ref<string[]>([]);
 const selectedEnvironment = ref<string | null>(null);
-const selectedRequest = ref<RequestFile | null>(null);
+
+// Open request tabs — each keeps its own live `RequestPanel` instance (see
+// the `v-show` block in the template) so switching tabs never discards an
+// in-progress edit, only closing a dirty tab (or switching projects) does.
+const openTabs = ref<RequestFile[]>([]);
+const activeRequestPath = ref<string | null>(null);
+const tabDirty = reactive<Record<string, boolean>>({});
+
+// Per-file git status for the open project, keyed by absolute path —
+// `null` when there's no project open or it isn't inside a git repo.
+const gitStatus = ref<GitStatusMap | null>(null);
+
 // The environment currently open for editing (variables/auth default) in
 // the main panel — distinct from `selectedEnvironment` above, which is
 // just which environment requests are sent against.
 const managedEnvironment = ref<NovaEnvironment | null>(null);
+
+// Which of the three main-panel views is on screen. Explicit (rather than
+// inferred from `managedEnvironment`/`openTabs.length`) so there's always a
+// way back to "project" — e.g. a sidebar/header nav action — instead of it
+// only being reachable as an implicit fallback.
+type MainView = "request" | "environment" | "project";
+const mainView = ref<MainView>("project");
+
 const error = ref<string | null>(null);
 const createError = ref<string | null>(null);
 
@@ -44,11 +71,9 @@ const initInstallHook = ref(false);
 const initError = ref<string | null>(null);
 const initializing = ref(false);
 
-// Tracks whether the currently-open RequestPanel/ProjectPanel/
-// EnvironmentPanel has unsaved edits, so switching requests/projects can
-// confirm before discarding them rather than silently losing an
-// in-progress edit.
-const requestPanelDirty = ref(false);
+// Tracks whether the currently-open ProjectPanel/EnvironmentPanel (each a
+// single remounted-on-switch instance, unlike the open request tabs above)
+// has unsaved edits, so switching away can confirm before discarding them.
 const projectPanelDirty = ref(false);
 const environmentPanelDirty = ref(false);
 
@@ -56,10 +81,9 @@ const environmentPanelDirty = ref(false);
 // Tauri's webview on some platforms, and can't be styled to match the app.
 const pendingDiscardConfirm = ref<((choice: boolean) => void) | null>(null);
 
-function confirmDiscardIfDirty(): Promise<boolean> {
-  if (!requestPanelDirty.value && !projectPanelDirty.value && !environmentPanelDirty.value) {
-    return Promise.resolve(true);
-  }
+/** Resolves immediately when `isDirty` is false; otherwise waits on the discard-confirm modal. */
+function confirmDiscard(isDirty: boolean): Promise<boolean> {
+  if (!isDirty) return Promise.resolve(true);
   return new Promise((resolve) => {
     pendingDiscardConfirm.value = resolve;
   });
@@ -71,12 +95,29 @@ function resolveDiscardConfirm(choice: boolean) {
 }
 
 async function handleOpen() {
-  if (!(await confirmDiscardIfDirty())) return;
+  const anyTabDirty = Object.values(tabDirty).some(Boolean);
+  if (!(await confirmDiscard(anyTabDirty || projectPanelDirty.value || environmentPanelDirty.value))) {
+    return;
+  }
 
   const path = await pickProjectDirectory();
   if (!path) return;
 
   await loadProject(path);
+}
+
+/** Refreshes the per-file git status badges for the currently open project. */
+async function refreshGitStatus() {
+  if (!project.value) {
+    gitStatus.value = null;
+    return;
+  }
+  try {
+    gitStatus.value = await fetchGitStatus(project.value.root);
+  } catch {
+    // Git status is a supplementary indicator — never block on it.
+    gitStatus.value = null;
+  }
 }
 
 /**
@@ -99,11 +140,14 @@ async function loadProject(path: string) {
     project.value = loaded;
     selectedEnvironment.value =
       loaded.manifest.defaults.environment ?? loaded.environments[0]?.name ?? null;
-    selectedRequest.value = null;
+    openTabs.value = [];
+    activeRequestPath.value = null;
+    for (const key of Object.keys(tabDirty)) delete tabDirty[key];
     managedEnvironment.value = null;
-    requestPanelDirty.value = false;
+    mainView.value = "project";
     projectPanelDirty.value = false;
     environmentPanelDirty.value = false;
+    await refreshGitStatus();
   } catch (e) {
     // Keep whatever project was already loaded (if any) so a failed
     // "switch project" attempt doesn't kick the user back to the empty
@@ -164,17 +208,66 @@ async function submitInit() {
   }
 }
 
+/**
+ * Opens `request` as a tab (or just activates it if already open). Also
+ * used by the tab strip itself to switch the active tab, since re-opening
+ * an already-open request is a no-op push.
+ */
 async function handleSelectRequest(request: RequestFile) {
-  if (request.path === selectedRequest.value?.path) return;
-  if (!(await confirmDiscardIfDirty())) return;
-  selectedRequest.value = request;
-  managedEnvironment.value = null;
-  requestPanelDirty.value = false;
-  // ProjectPanel/EnvironmentPanel (and any unsaved edits in them) unmount
-  // once a request is selected, so their dirty flags no longer reflect
-  // anything on screen.
-  projectPanelDirty.value = false;
-  environmentPanelDirty.value = false;
+  // The EnvironmentPanel/ProjectPanel view (and any unsaved edits in it)
+  // unmounts once a request tab becomes the active view, so leaving either
+  // one needs the same discard-confirm other view switches go through —
+  // open tabs themselves are never discarded by this, only hidden.
+  if (mainView.value === "environment") {
+    if (!(await confirmDiscard(environmentPanelDirty.value))) return;
+    managedEnvironment.value = null;
+    environmentPanelDirty.value = false;
+  } else if (mainView.value === "project") {
+    if (!(await confirmDiscard(projectPanelDirty.value))) return;
+    projectPanelDirty.value = false;
+  }
+  if (!openTabs.value.some((t) => t.path === request.path)) {
+    openTabs.value.push(request);
+  }
+  activeRequestPath.value = request.path;
+  mainView.value = "request";
+}
+
+/** Closes `request`'s tab, confirming first if it has unsaved edits. */
+async function requestCloseTab(request: RequestFile) {
+  if (!(await confirmDiscard(!!tabDirty[request.path]))) return;
+  closeTabImmediate(request.path);
+}
+
+function closeTabImmediate(path: string) {
+  const index = openTabs.value.findIndex((t) => t.path === path);
+  if (index === -1) return;
+  openTabs.value.splice(index, 1);
+  delete tabDirty[path];
+  if (activeRequestPath.value === path) {
+    activeRequestPath.value = openTabs.value[openTabs.value.length - 1]?.path ?? null;
+    // Nothing left to show as a request tab — fall back to the project
+    // view rather than a blank main panel.
+    if (activeRequestPath.value === null && mainView.value === "request") {
+      mainView.value = "project";
+    }
+  }
+}
+
+/**
+ * Switches to the project settings/manifest view — the sidebar's "Project
+ * settings" action, and the only explicit way back to it once a request
+ * tab or the environment editor is open (previously only reachable as a
+ * fallback when nothing else was selected).
+ */
+async function showProjectSettings() {
+  if (mainView.value === "project") return;
+  if (mainView.value === "environment") {
+    if (!(await confirmDiscard(environmentPanelDirty.value))) return;
+    managedEnvironment.value = null;
+    environmentPanelDirty.value = false;
+  }
+  mainView.value = "project";
 }
 
 /** Recursively looks for a request at `path` anywhere in `collection`'s tree. */
@@ -182,6 +275,33 @@ function findRequestPath(collection: Collection, path: string): boolean {
   if (collection.requests.some((r) => r.path === path)) return true;
   return collection.children.some((child) => findRequestPath(child, path));
 }
+
+/**
+ * Recursively finds the chain of collection names from `collection` down to
+ * the one containing `targetPath`'s request, or `null` if it's not in this
+ * subtree. Doesn't include `collection`'s own name — the root collection
+ * itself has no label (mirrors `CollectionNode.vue`'s `isRoot`).
+ */
+function collectionBreadcrumb(
+  collection: Collection,
+  targetPath: string,
+  trail: string[] = [],
+): string[] | null {
+  if (collection.requests.some((r) => r.path === targetPath)) return trail;
+  for (const child of collection.children) {
+    const found = collectionBreadcrumb(child, targetPath, [...trail, child.name]);
+    if (found) return found;
+  }
+  return null;
+}
+
+const activeBreadcrumb = computed(() => {
+  if (!project.value || !activeRequestPath.value) return null;
+  const chain = collectionBreadcrumb(project.value.collections, activeRequestPath.value);
+  if (!chain) return null;
+  const tab = openTabs.value.find((t) => t.path === activeRequestPath.value);
+  return tab ? [...chain, tab.name] : chain;
+});
 
 async function refreshProjectTree() {
   if (!project.value) return;
@@ -195,29 +315,46 @@ async function refreshProjectTree() {
       return;
     }
     project.value = outcome.found;
+    await refreshGitStatus();
   } catch (e) {
     error.value = String(e);
     return;
   }
 
-  // The refreshed tree may no longer contain the currently-selected
-  // request if its collection (or an ancestor) was just renamed or
-  // deleted out from under it — clear the selection rather than leaving a
-  // dangling reference the request panel would fail to load.
-  if (selectedRequest.value && !findRequestPath(project.value.collections, selectedRequest.value.path)) {
-    selectedRequest.value = null;
-    requestPanelDirty.value = false;
+  // The refreshed tree may no longer contain a given open tab's request if
+  // its collection (or an ancestor) was just renamed or deleted out from
+  // under it — close it rather than leaving a dangling reference the
+  // request panel would fail to load.
+  for (const tab of [...openTabs.value]) {
+    if (!findRequestPath(project.value.collections, tab.path)) {
+      closeTabImmediate(tab.path);
+    }
   }
 
   // Same idea for the environment currently open in EnvironmentPanel: if
-  // it was just deleted, drop the reference; otherwise re-point at the
-  // freshly reloaded copy (its name may have changed) and keep the
-  // environment picker's selection following it.
+  // it was just deleted, drop the reference and fall back to the project
+  // view; otherwise re-point at the freshly reloaded copy (its name may
+  // have changed). Editing an environment no longer implicitly changes
+  // which one requests are sent against — that's the top-bar env selector's
+  // job alone — so this doesn't touch `selectedEnvironment`.
   if (managedEnvironment.value) {
     const reloaded = project.value.environments.find((e) => e.path === managedEnvironment.value?.path);
     managedEnvironment.value = reloaded ?? null;
-    if (!reloaded) environmentPanelDirty.value = false;
-    else if (selectedEnvironment.value !== reloaded.name) selectedEnvironment.value = reloaded.name;
+    if (!reloaded) {
+      environmentPanelDirty.value = false;
+      if (mainView.value === "environment") mainView.value = "project";
+    }
+  }
+
+  // If the environment requests are sent against was renamed elsewhere,
+  // follow it by path so sending doesn't silently start failing with a
+  // stale name — mirrors what the engine now does for `defaults.environment`.
+  if (selectedEnvironment.value) {
+    const stillExists = project.value.environments.some((e) => e.name === selectedEnvironment.value);
+    if (!stillExists && project.value.environments.length > 0) {
+      selectedEnvironment.value =
+        project.value.manifest.defaults.environment ?? project.value.environments[0].name;
+    }
   }
 }
 
@@ -246,8 +383,12 @@ async function submitCreateRequest() {
   try {
     const created = await createRequest(collectionPath, name);
     await refreshProjectTree();
-    selectedRequest.value = created;
-    requestPanelDirty.value = false;
+    managedEnvironment.value = null;
+    if (!openTabs.value.some((t) => t.path === created.path)) {
+      openTabs.value.push(created);
+    }
+    activeRequestPath.value = created.path;
+    mainView.value = "request";
     newRequestCollectionPath.value = null;
   } catch (e) {
     createError.value = String(e);
@@ -348,12 +489,17 @@ async function handleManageEnvironment(name: string) {
   const environment = project.value?.environments.find((e) => e.name === name);
   if (!environment) return;
   if (environment.path === managedEnvironment.value?.path) return;
-  if (!(await confirmDiscardIfDirty())) return;
+  const isDirty =
+    mainView.value === "project"
+      ? projectPanelDirty.value
+      : mainView.value === "environment"
+        ? environmentPanelDirty.value
+        : false;
+  if (!(await confirmDiscard(isDirty))) return;
 
-  selectedRequest.value = null;
-  requestPanelDirty.value = false;
   projectPanelDirty.value = false;
   managedEnvironment.value = environment;
+  mainView.value = "environment";
   environmentPanelDirty.value = false;
 }
 
@@ -386,11 +532,10 @@ async function submitCreateEnvironment() {
     await refreshProjectTree();
     // Jump straight into editing the new environment, the same way
     // creating a request immediately opens it.
-    selectedRequest.value = null;
-    requestPanelDirty.value = false;
     projectPanelDirty.value = false;
     selectedEnvironment.value = created.name;
     managedEnvironment.value = project.value.environments.find((e) => e.path === created.path) ?? created;
+    mainView.value = "environment";
     environmentPanelDirty.value = false;
     creatingEnvironment.value = false;
   } catch (e) {
@@ -437,10 +582,13 @@ async function confirmDeleteEnvironment() {
       <Sidebar
         v-if="project"
         :project="project"
-        v-model:selected-environment="selectedEnvironment"
-        :selected-request-path="selectedRequest?.path"
+        :selected-environment="selectedEnvironment"
+        :selected-request-path="activeRequestPath"
+        :git-status="gitStatus"
+        :showing-project-settings="mainView === 'project'"
         @select-request="handleSelectRequest"
         @switch-project="handleOpen"
+        @project-settings="showProjectSettings"
         @create-request="handleCreateRequest"
         @create-collection="handleCreateCollection"
         @rename-collection="handleRenameCollection"
@@ -451,30 +599,69 @@ async function confirmDeleteEnvironment() {
     </aside>
 
     <main class="app-shell__main">
+      <div v-if="project && project.environments.length > 0" class="main-topbar">
+        <div class="main-topbar__spacer"></div>
+        <select
+          v-model="selectedEnvironment"
+          class="main-topbar__env-select"
+          title="Environment requests are sent against"
+        >
+          <option v-for="env in project.environments" :key="env.name" :value="env.name">
+            {{ env.name }}
+          </option>
+        </select>
+      </div>
+
       <p v-if="project && error" class="app-shell__error">{{ error }}</p>
-      <RequestPanel
-        v-if="project && selectedRequest"
-        :key="selectedRequest.path"
-        :request="selectedRequest"
-        :selected-environment="selectedEnvironment"
-        @dirty-change="requestPanelDirty = $event"
-      />
+
+      <div v-if="project && openTabs.length > 0" class="tab-strip">
+        <button
+          v-for="tab in openTabs"
+          :key="tab.path"
+          type="button"
+          class="tab-strip__tab"
+          :class="{ 'tab-strip__tab--active': mainView === 'request' && tab.path === activeRequestPath }"
+          @click="handleSelectRequest(tab)"
+        >
+          <span class="tab-strip__name">{{ tab.name }}</span>
+          <span v-if="tabDirty[tab.path]" class="request-panel__dirty-dot"></span>
+          <span class="tab-strip__close" title="Close" @click.stop="requestCloseTab(tab)">
+            <Icon name="x" />
+          </span>
+        </button>
+      </div>
+
+      <p v-if="mainView === 'request' && activeBreadcrumb" class="request-breadcrumb">
+        {{ activeBreadcrumb.join(" / ") }}
+      </p>
+
+      <template v-for="tab in openTabs" :key="tab.path">
+        <RequestPanel
+          v-show="project && mainView === 'request' && tab.path === activeRequestPath"
+          :request="tab"
+          :selected-environment="selectedEnvironment"
+          @dirty-change="tabDirty[tab.path] = $event"
+          @saved="refreshGitStatus"
+        />
+      </template>
+
       <EnvironmentPanel
-        v-else-if="project && managedEnvironment"
+        v-if="project && mainView === 'environment' && managedEnvironment"
         :key="managedEnvironment.path"
         :environment="managedEnvironment"
+        :project-root="project.root"
         @dirty-change="environmentPanelDirty = $event"
         @saved="handleEnvironmentSaved"
         @delete="handleDeleteEnvironment"
       />
       <ProjectPanel
-        v-else-if="project"
+        v-else-if="project && mainView === 'project'"
         :project="project"
         :validation-issues="validationIssues"
         @dirty-change="projectPanelDirty = $event"
         @saved="refreshProjectTree"
       />
-      <EmptyState v-else :error="error" @open="handleOpen" />
+      <EmptyState v-else-if="!project" :error="error" @open="handleOpen" />
     </main>
 
     <Modal v-if="notFoundPath !== null" title="No Nova project here" @cancel="cancelNotFound">
@@ -527,7 +714,7 @@ async function confirmDeleteEnvironment() {
       title="Discard unsaved changes?"
       @cancel="resolveDiscardConfirm(false)"
     >
-      <p>This request has unsaved changes. Discard them?</p>
+      <p>You have unsaved changes. Discard them?</p>
       <template #actions>
         <button type="button" class="button button--secondary" @click="resolveDiscardConfirm(false)">
           Cancel

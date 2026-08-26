@@ -80,6 +80,7 @@ fn generated_requests_parse_back_through_novas_own_nova_parser() {
         let result = RequestFile {
             name: request.file_name.clone(),
             path: path.clone(),
+            method: String::new(),
         }
         .parse();
 

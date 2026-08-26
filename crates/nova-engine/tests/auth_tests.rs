@@ -128,6 +128,7 @@ impl TempRequest {
         TempRequest(RequestFile {
             name: name.to_string(),
             path,
+            method: String::new(),
         })
     }
 }

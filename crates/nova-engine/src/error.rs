@@ -101,6 +101,9 @@ pub enum NovaError {
     #[error("failed to install the git pre-commit hook: {message}")]
     HookInstall { message: String },
 
+    #[error("failed to read git status: {message}")]
+    GitStatus { message: String },
+
     /// The repository sets `core.hooksPath`, so the default `.git/hooks`
     /// wouldn't take effect and the override may point somewhere shared
     /// across repositories. Carries the ready-to-paste `script` rather

@@ -21,59 +21,47 @@
 
 .sidebar-header__switch {
   flex-shrink: 0;
-  padding: $spacing-xs $spacing-sm;
-  border-radius: $radius-sm;
-  border: 1px solid var(--color-border);
-  background-color: var(--color-bg-raised);
-  color: var(--color-text-muted);
-  font-size: $font-size-sm;
-
-  &:hover {
-    color: var(--color-text);
-    border-color: var(--color-accent);
-  }
-}
-
-.sidebar-header__env-row {
   display: flex;
   align-items: center;
-  gap: $spacing-xs;
-}
-
-.sidebar-header__env-select {
-  flex: 1;
-  min-width: 0;
-  padding: $spacing-xs $spacing-sm;
-  border-radius: $radius-sm;
-  border: 1px solid var(--color-border);
-  background-color: var(--color-bg-raised);
-}
-
-.sidebar-header__env-empty {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  padding: $spacing-xs 0;
-  color: var(--color-text-muted);
-  font-size: $font-size-sm;
-}
-
-.sidebar-header__env-action {
-  flex-shrink: 0;
-  width: 1.5rem;
-  height: 1.5rem;
-  line-height: 1;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
   padding: 0;
   border-radius: $radius-sm;
   border: 1px solid var(--color-border);
   background-color: var(--color-bg-raised);
   color: var(--color-text-muted);
-  font-weight: 600;
+  font-size: $font-size-base;
 
   &:hover {
     color: var(--color-accent);
     border-color: var(--color-accent);
   }
+}
+
+.sidebar-header__settings {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  width: 100%;
+  margin-top: $spacing-sm;
+  padding: $spacing-xs $spacing-sm;
+  border: none;
+  border-radius: $radius-sm;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: $font-size-sm;
+  text-align: left;
+
+  &:hover {
+    color: var(--color-text);
+    background-color: var(--color-bg-raised);
+  }
+}
+
+.sidebar-header__settings--active {
+  color: var(--color-accent);
+  background-color: var(--color-bg-raised);
 }
 
 .sidebar-section-title {
@@ -85,34 +73,33 @@
   color: var(--color-text-muted);
 }
 
-.collection-tree {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.sidebar-section-title--collapsible {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  width: 100%;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-text);
+  }
 }
 
-.collection-tree__node {
-  padding-left: $spacing-md;
-}
-
-.collection-tree__label {
+.sidebar-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: $spacing-xs;
-  padding: $spacing-xs $spacing-md;
-  font-size: $font-size-sm;
-  font-weight: 600;
-  color: var(--color-text-muted);
+  padding-right: $spacing-md;
 }
 
-.collection-tree__label-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.sidebar-section-header .sidebar-section-title--collapsible {
+  flex: 1;
 }
 
-.collection-tree__new-request {
+.sidebar-section-header__action {
   flex-shrink: 0;
   width: 1.25rem;
   height: 1.25rem;
@@ -130,20 +117,130 @@
   }
 }
 
-.collection-tree__new-request--root {
-  width: auto;
-  height: auto;
-  display: block;
-  margin: $spacing-xs $spacing-md;
-  padding: $spacing-xs $spacing-sm;
-  text-align: left;
+.environment-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 $spacing-sm;
+}
+
+.environment-list__empty {
+  padding: $spacing-xs $spacing-md;
+  color: var(--color-text-muted);
   font-size: $font-size-sm;
-  border: 1px dashed var(--color-border);
+}
+
+.environment-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-xs;
+  margin: 0 $spacing-sm;
+  padding: $spacing-xs $spacing-sm;
+  border-radius: $radius-sm;
+  font-size: $font-size-base;
+  color: var(--color-text);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-bg-raised);
+  }
+}
+
+.environment-list__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.environment-list__active-mark {
+  flex-shrink: 0;
+  color: var(--color-success);
+}
+
+.collection-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.collection-tree__node {
+  padding-left: $spacing-md;
+}
+
+.collection-tree__label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-xs;
+  width: 100%;
+  padding: $spacing-xs $spacing-md;
+  border: none;
+  background: none;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-text);
+  }
+}
+
+.collection-tree__label-main {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  overflow: hidden;
+}
+
+.collection-tree__chevron {
+  flex-shrink: 0;
+  width: 0.7em;
+  height: 0.7em;
+  transition: transform 0.1s ease;
+}
+
+.collection-tree__label--collapsed .collection-tree__chevron,
+.sidebar-section-title--collapsed .collection-tree__chevron {
+  transform: rotate(-90deg);
+}
+
+.collection-tree__folder-icon {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.collection-tree__label-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .collection-tree__root-actions {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: $spacing-xs;
+  margin: $spacing-sm $spacing-md;
+}
+
+.collection-tree__root-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border-radius: $radius-sm;
+  border: 1px dashed var(--color-border);
+  background: none;
+  color: var(--color-text-muted);
+
+  &:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+    border-style: solid;
+  }
 }
 
 .collection-tree__actions {
@@ -188,7 +285,10 @@
 }
 
 .collection-tree__request {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-xs;
   padding: $spacing-xs $spacing-md;
   font-size: $font-size-base;
   border-radius: $radius-sm;
@@ -200,6 +300,19 @@
   }
 }
 
+.collection-tree__request-main {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  overflow: hidden;
+}
+
+.collection-tree__request-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .collection-tree__request--selected {
   background-color: var(--color-accent);
   color: #ffffff;
@@ -207,4 +320,66 @@
   &:hover {
     background-color: var(--color-accent);
   }
+}
+
+// Small dot indicating a file's git status — three colors for the
+// non-clean states; a request or collection with nothing uncommitted
+// simply doesn't render one at all (see CollectionNode.vue).
+.collection-tree__git-badge {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-text-muted);
+}
+
+.collection-tree__git-badge--untracked {
+  background-color: var(--color-accent);
+}
+
+.collection-tree__git-badge--unstaged {
+  background-color: var(--color-warning);
+}
+
+.collection-tree__git-badge--staged {
+  background-color: var(--color-success);
+}
+
+// A short, colored HTTP-method tag — reuses the app's fixed 4-color
+// palette (see _base.scss) rather than a per-method color of its own.
+.method-badge {
+  flex-shrink: 0;
+  min-width: 2.6em;
+  padding: 1px $spacing-xs;
+  border-radius: $radius-sm;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: center;
+  font-family: $font-family-mono;
+}
+
+.method-badge--get {
+  color: var(--color-success);
+  background-color: rgba(15, 157, 142, 0.14);
+}
+
+.method-badge--post {
+  color: var(--color-accent);
+  background-color: rgba(124, 92, 255, 0.14);
+}
+
+.method-badge--modify {
+  color: var(--color-warning);
+  background-color: rgba(232, 150, 10, 0.14);
+}
+
+.method-badge--delete {
+  color: var(--color-danger);
+  background-color: rgba(232, 67, 122, 0.14);
+}
+
+.method-badge--neutral {
+  color: var(--color-text-muted);
+  background-color: var(--color-bg-raised);
 }
