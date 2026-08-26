@@ -143,6 +143,47 @@ function languageForContentType(contentType: string): EditorLanguage {
   return "text";
 }
 
+// Two-way sync between the URL field and the Params tab: `url` itself
+// always stays the bare base URL (what actually gets saved as
+// `[request].url`), and `query` is the single source of truth for
+// parameters — the URL *input*'s displayed/edited text is a derived view
+// (`urlDisplay` below) that merges the two back together for display and
+// splits them back apart on edit, so either surface can be used and the
+// other stays in sync.
+function serializeQuery(params: QueryParam[]): string {
+  const usp = new URLSearchParams();
+  for (const param of params) {
+    if (param.name === "" && param.value === "") continue;
+    usp.append(param.name, param.value);
+  }
+  return usp.toString();
+}
+
+function parseQueryString(queryString: string): QueryParam[] {
+  return Array.from(new URLSearchParams(queryString).entries()).map(([name, value]) => ({
+    name,
+    value,
+  }));
+}
+
+function splitUrlAndQuery(raw: string): { base: string; query: QueryParam[] } {
+  const index = raw.indexOf("?");
+  if (index === -1) return { base: raw, query: [] };
+  return { base: raw.slice(0, index), query: parseQueryString(raw.slice(index + 1)) };
+}
+
+const urlDisplay = computed<string>({
+  get() {
+    const queryString = serializeQuery(query.value);
+    return queryString ? `${url.value}?${queryString}` : url.value;
+  },
+  set(raw) {
+    const split = splitUrlAndQuery(raw);
+    url.value = split.base;
+    query.value = split.query;
+  },
+});
+
 const responseLanguage = computed<EditorLanguage>(() => {
   const contentType = response.value?.headers.find((h) => h.name.toLowerCase() === "content-type")?.value ?? "";
   return languageForContentType(contentType);
@@ -170,10 +211,17 @@ async function load() {
   saveError.value = null;
   try {
     const draft = await readRequest(props.request.path);
-    original.value = draft;
+    // `url:` isn't supposed to carry its own query string, but nothing on
+    // the engine side enforces that — if it does anyway, split it out here
+    // rather than letting the URL field display the same params twice
+    // (once embedded, once from `[params]`). `original` is normalized the
+    // same way so dirty-tracking compares like with like.
+    const { base, query: embeddedQuery } = splitUrlAndQuery(draft.url);
+    const normalizedQuery = [...draft.query.map((q) => ({ ...q })), ...embeddedQuery];
+    original.value = { ...draft, url: base, query: normalizedQuery };
     method.value = draft.method;
-    url.value = draft.url;
-    query.value = draft.query.map((q) => ({ ...q }));
+    url.value = base;
+    query.value = normalizedQuery.map((q) => ({ ...q }));
     headers.value = draft.headers.map((h) => ({ ...h }));
     bodyText.value = draft.body_text;
     bodyType.value = detectBodyType(headers.value, bodyText.value);
@@ -299,7 +347,7 @@ defineExpose({ dirty, save: handleSave });
           <option v-for="m in HTTP_METHODS" :key="m" :value="m">{{ m }}</option>
         </select>
         <input
-          v-model="url"
+          v-model="urlDisplay"
           type="text"
           class="request-panel__url-input"
           placeholder="{{base_url}}/path"
