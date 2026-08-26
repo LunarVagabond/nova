@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
+use crate::environment::Environment;
 use crate::error::{NovaError, NovaResult};
 
 /// A discovered `.http` request file.
@@ -72,6 +73,118 @@ impl ParsedRequest {
             .find(|h| h.name.eq_ignore_ascii_case(name))
             .map(|h| h.value.as_str())
     }
+
+    /// Resolve `{{variable}}` placeholders in the URL, header values, and
+    /// body against `environment`'s variables, returning a fully-resolved
+    /// request ready for execution.
+    ///
+    /// A reference to a variable the environment doesn't define is a typed
+    /// error naming the variable, not a silent empty-string substitution.
+    pub fn resolve(&self, environment: &Environment) -> NovaResult<ParsedRequest> {
+        let headers = self
+            .headers
+            .iter()
+            .map(|h| {
+                Ok(Header {
+                    name: h.name.clone(),
+                    value: substitute(&h.value, environment)?,
+                })
+            })
+            .collect::<NovaResult<Vec<_>>>()?;
+
+        Ok(ParsedRequest {
+            method: self.method.clone(),
+            url: substitute(&self.url, environment)?,
+            headers,
+            body: substitute_body(&self.body, environment)?,
+        })
+    }
+}
+
+/// Replace every `{{name}}` placeholder in `text` with the matching
+/// variable from `environment`. A placeholder with no closing `}}` is left
+/// as literal text; a placeholder naming a variable the environment doesn't
+/// define is a typed error.
+fn substitute(text: &str, environment: &Environment) -> NovaResult<String> {
+    let mut result = String::with_capacity(text.len());
+    let mut rest = text;
+
+    while let Some(start) = rest.find("{{") {
+        result.push_str(&rest[..start]);
+        let after_open = &rest[start + 2..];
+
+        let Some(end) = after_open.find("}}") else {
+            result.push_str(&rest[start..]);
+            rest = "";
+            break;
+        };
+
+        let name = after_open[..end].trim();
+        let value =
+            environment
+                .variables
+                .get(name)
+                .ok_or_else(|| NovaError::UndefinedVariable {
+                    name: name.to_string(),
+                    environment: environment.name.clone(),
+                })?;
+        result.push_str(value);
+        rest = &after_open[end + 2..];
+    }
+    result.push_str(rest);
+
+    Ok(result)
+}
+
+fn substitute_body(body: &RequestBody, environment: &Environment) -> NovaResult<RequestBody> {
+    Ok(match body {
+        RequestBody::None => RequestBody::None,
+        RequestBody::Text(text) => RequestBody::Text(substitute(text, environment)?),
+        RequestBody::Json(value) => RequestBody::Json(substitute_json(value, environment)?),
+        RequestBody::Form(pairs) => RequestBody::Form(
+            pairs
+                .iter()
+                .map(|(k, v)| Ok((k.clone(), substitute(v, environment)?)))
+                .collect::<NovaResult<Vec<_>>>()?,
+        ),
+        RequestBody::Multipart(fields) => RequestBody::Multipart(
+            fields
+                .iter()
+                .map(|field| {
+                    Ok(MultipartField {
+                        name: field.name.clone(),
+                        filename: field.filename.clone(),
+                        content_type: field.content_type.clone(),
+                        value: substitute(&field.value, environment)?,
+                    })
+                })
+                .collect::<NovaResult<Vec<_>>>()?,
+        ),
+    })
+}
+
+fn substitute_json(
+    value: &serde_json::Value,
+    environment: &Environment,
+) -> NovaResult<serde_json::Value> {
+    Ok(match value {
+        serde_json::Value::String(s) => serde_json::Value::String(substitute(s, environment)?),
+        serde_json::Value::Array(items) => serde_json::Value::Array(
+            items
+                .iter()
+                .map(|item| substitute_json(item, environment))
+                .collect::<NovaResult<Vec<_>>>()?,
+        ),
+        serde_json::Value::Object(map) => {
+            let mut resolved = serde_json::Map::with_capacity(map.len());
+            for (key, val) in map {
+                resolved.insert(key.clone(), substitute_json(val, environment)?);
+            }
+            serde_json::Value::Object(resolved)
+        }
+        // Numbers, bools, and null can't contain a placeholder.
+        other => other.clone(),
+    })
 }
 
 /// Parse a `.http` file's raw contents into a [`ParsedRequest`].
@@ -378,5 +491,75 @@ mod tests {
             parsed.body,
             RequestBody::Text("<note>hi</note>".to_string())
         );
+    }
+
+    fn test_environment(name: &str, vars: &[(&str, &str)]) -> Environment {
+        Environment {
+            name: name.to_string(),
+            variables: vars
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            path: PathBuf::new(),
+        }
+    }
+
+    #[test]
+    fn resolves_variables_in_url_headers_and_body() {
+        let contents = "POST {{base_url}}/auth/login\nAuthorization: Bearer {{token}}\nContent-Type: application/json\n\n{\n  \"username\": \"{{username}}\"\n}\n";
+        let parsed = parse_http(contents).unwrap();
+        let env = test_environment(
+            "local",
+            &[
+                ("base_url", "http://localhost:8080"),
+                ("token", "secret-token"),
+                ("username", "developer"),
+            ],
+        );
+
+        let resolved = parsed.resolve(&env).unwrap();
+
+        assert_eq!(resolved.url, "http://localhost:8080/auth/login");
+        assert_eq!(
+            resolved.header("Authorization"),
+            Some("Bearer secret-token")
+        );
+        assert_eq!(
+            resolved.body,
+            RequestBody::Json(serde_json::json!({"username": "developer"}))
+        );
+    }
+
+    #[test]
+    fn same_request_resolves_differently_per_environment() {
+        let contents = "GET {{base_url}}/users\n";
+        let parsed = parse_http(contents).unwrap();
+
+        let local = test_environment("local", &[("base_url", "http://localhost:8080")]);
+        let staging = test_environment("staging", &[("base_url", "https://staging.example.com")]);
+
+        assert_eq!(
+            parsed.resolve(&local).unwrap().url,
+            "http://localhost:8080/users"
+        );
+        assert_eq!(
+            parsed.resolve(&staging).unwrap().url,
+            "https://staging.example.com/users"
+        );
+    }
+
+    #[test]
+    fn undefined_variable_is_a_typed_error() {
+        let contents = "GET {{base_url}}/users\n";
+        let parsed = parse_http(contents).unwrap();
+        let env = test_environment("local", &[]);
+
+        let err = parsed.resolve(&env).unwrap_err();
+
+        assert!(matches!(
+            err,
+            NovaError::UndefinedVariable { name, environment }
+                if name == "base_url" && environment == "local"
+        ));
     }
 }
