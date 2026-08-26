@@ -1,5 +1,5 @@
 .PHONY: help install build build-engine build-cli build-app dev run test test-engine \
-        validate fmt fmt-check lint clean stop
+        test-cli validate fmt fmt-check lint clean stop
 
 APP_DIR := crates/nova-app
 FIXTURE := crates/nova-engine/tests/fixtures/basic-project
@@ -34,10 +34,13 @@ run: build-cli ## Run the CLI against the bundled example fixture project (use A
 validate: build-cli ## Validate the example fixture project (use ARGS="path/to/project" for another project)
 	cargo run -q -p nova-cli -- validate $(if $(ARGS),$(ARGS),$(FIXTURE))
 
-test: test-engine ## Run all Rust tests
+test: test-engine test-cli ## Run all Rust tests
 
 test-engine: ## Run nova-engine's test suite
 	cargo test -p nova-engine
+
+test-cli: ## Run nova-cli's test suite
+	cargo test -p nova-cli
 
 fmt: ## Format all Rust code
 	cargo fmt --all

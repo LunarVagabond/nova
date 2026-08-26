@@ -14,5 +14,5 @@ implementation-level content once there's more to document.
   for the convention, or query `is:issue label:decision` on the repo directly.
 
 More sections (architecture, specs, developer onboarding) will be added here as
-the engine grows past its current discovery/validation milestone — see the
-README's "Initial Development Scope" for what's next.
+the need for them comes up — see the README's "Longer-Term Opportunities" for
+what's next once the core HTTP workflow is solid.

@@ -199,7 +199,15 @@ production
 
 Switching environments changes variables without modifying requests.
 
-Secrets can be supplied locally, through environment variables, or eventually through external secret providers.
+`nova init` gitignores a new project's environment files by default, since they
+commonly hold local secrets — and `nova validate` (CLI and desktop app alike) flags
+a request whose `[auth]` field or `Authorization` header has no `{{variable}}`
+reference at all, since request files themselves are always committed. An opt-in
+git pre-commit hook (`nova install-hook`, or `nova init --with-hook`) can enforce
+the same check before a commit is even made. Where the underlying secret value
+should actually live long-term — beyond a plain, locally gitignored environment
+file — is still an open question; external secret-provider integration remains a
+longer-term opportunity.
 
 ### Authentication
 
@@ -490,6 +498,10 @@ nova test --environment staging
 nova mock
 
 nova validate
+
+nova check-secrets --staged
+
+nova install-hook
 ```
 
 This makes Nova usable locally, over SSH, inside containers, and within CI/CD pipelines.

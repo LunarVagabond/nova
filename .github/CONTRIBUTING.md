@@ -80,9 +80,9 @@ already assigned, treat it as taken; comment to ask if it looks stalled instead 
 opening a competing PR. Epics don't work this way — find the specific sub-issue you
 want and claim that instead.
 
-*There is no bot enforcing this yet (no CI/Actions are set up for Nova yet — see
-[Milestones & Releases](../docs/project-management/milestones-and-releases.md)), so
-for now this is a courtesy convention, not something a check blocks on.*
+*This is enforced automatically, not just a courtesy convention — see
+[Issue Workflow](../docs/project-management/issue-workflow.md) for how claiming and
+the check that verifies it actually work.*
 
 ## Commits And Pull Requests
 
