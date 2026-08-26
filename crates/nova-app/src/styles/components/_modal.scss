@@ -50,6 +50,26 @@
   font-family: $font-family-base;
 }
 
+/// Explanatory line above a form in a modal, for a dialog whose action
+/// has side effects worth spelling out before it's taken.
+.modal__hint {
+  margin: 0 0 $spacing-md;
+  font-size: $font-size-sm;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.modal__checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: $spacing-sm;
+  margin-top: $spacing-md;
+  font-size: $font-size-sm;
+  color: var(--color-text);
+  line-height: 1.4;
+  cursor: pointer;
+}
+
 .modal__error {
   margin: $spacing-sm 0 0;
   color: var(--color-danger);

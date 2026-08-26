@@ -110,6 +110,43 @@ impl NovaProject {
     }
 }
 
+/// The result of trying to open a project at a path a user picked: either
+/// a loaded project, or "there simply isn't one here yet."
+///
+/// This exists so a caller can tell "nothing here yet" (an opportunity to
+/// offer `init`) apart from "something's actually wrong" (a malformed
+/// manifest, an unreadable file) — which a bare `Err` can't express.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+// Boxing `NovaProject` here would buy nothing: exactly one of these
+// exists per open-a-project attempt, and it's unwrapped immediately.
+// Keeping it unboxed leaves the type as pleasant to match on as
+// `Option<NovaProject>` would be.
+#[allow(clippy::large_enum_variant)]
+pub enum OpenProjectOutcome {
+    Found(NovaProject),
+    NotFound,
+}
+
+/// Like [`NovaProject::discover`], but reports "no project found starting
+/// from here" as [`OpenProjectOutcome::NotFound`] instead of an error.
+/// Every other failure — a manifest that won't parse, an unsupported
+/// manifest version, a missing collections directory — still comes back
+/// as `Err`, because those describe a project that exists and is broken,
+/// not the absence of one.
+pub fn discover_or_not_found(start: &Path) -> NovaResult<OpenProjectOutcome> {
+    match NovaProject::discover(start) {
+        Ok(project) => Ok(OpenProjectOutcome::Found(project)),
+        // `ManifestNotFound` is the same "nothing to open" case seen from
+        // one level down: a project root was identified but its manifest
+        // vanished between the walk and the load.
+        Err(NovaError::ProjectNotFound(_)) | Err(NovaError::ManifestNotFound(_)) => {
+            Ok(OpenProjectOutcome::NotFound)
+        }
+        Err(other) => Err(other),
+    }
+}
+
 /// Walk upward from `start` looking for a Nova project.
 fn find_project_root(start: &Path) -> NovaResult<PathBuf> {
     let start = if start.is_absolute() {

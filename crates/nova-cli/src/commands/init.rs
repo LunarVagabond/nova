@@ -1,23 +1,26 @@
-use std::fs;
-use std::io::ErrorKind;
+use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 
-use nova_engine::scaffold_project;
+use nova_engine::{
+    default_project_name, init_project, GitignoreOutcome, InitOptions, GITIGNORE_ENTRY,
+};
 
-/// The `.gitignore` line `nova init` adds so a newly-scaffolded project's
-/// environment files (which commonly hold dev secrets) aren't committed
-/// by default.
-const GITIGNORE_ENTRY: &str = "nova/envs/";
-
-/// Scaffold a brand-new Nova project under `path/nova/`: a `nova.yaml`
-/// with a default manifest, an empty `collections/` directory, and a
-/// starter `envs/` directory with one example environment. Also appends
-/// `nova/envs/` to `path/.gitignore` (creating it if needed), since
-/// environment files commonly hold dev secrets. Refuses to overwrite an
-/// existing `nova/` directory. `with_hook` additionally installs the same
-/// pre-commit hook `nova install-hook` sets up on its own — opt-in here
-/// too, never on by default.
-pub fn run(path: &Path, name: Option<&str>, with_hook: bool) -> Result<(), String> {
+/// Scaffold a brand-new Nova project under `path/nova/` — see
+/// [`nova_engine::init_project`], which does all of the work (writing the
+/// project files, adding `nova/envs/` to `.gitignore`, and optionally
+/// installing the pre-commit hook). This command only decides *what to
+/// ask for* and reports what the engine did.
+///
+/// Anything not given as a flag is prompted for when stdin is a terminal:
+/// the project name (defaulting to the target directory's name) and
+/// whether to install the pre-commit hook (defaulting to no). When stdin
+/// isn't a terminal — CI, a script, piped input — nothing is prompted for
+/// and those same defaults apply, so non-interactive usage behaves
+/// exactly as it always has.
+pub fn run(path: &Path, name: Option<&str>, with_hook: bool, no_hook: bool) -> Result<(), String> {
+    // The engine refuses to overwrite an existing project too, and is the
+    // authority on that; checking here as well only avoids prompting a
+    // developer for answers that were never going to be used.
     let nova_dir = path.join("nova");
     if nova_dir.exists() {
         return Err(format!(
@@ -26,95 +29,92 @@ pub fn run(path: &Path, name: Option<&str>, with_hook: bool) -> Result<(), Strin
         ));
     }
 
-    let project_name = name
-        .map(str::to_string)
-        .unwrap_or_else(|| default_project_name(path));
+    let interactive = io::stdin().is_terminal();
 
-    let scaffold = scaffold_project(&project_name).map_err(|e| e.to_string())?;
-
-    fs::create_dir_all(&nova_dir)
-        .map_err(|source| format!("failed to create {}: {source}", nova_dir.display()))?;
-
-    let manifest_path = nova_dir.join("nova.yaml");
-    fs::write(&manifest_path, &scaffold.manifest)
-        .map_err(|source| format!("failed to write {}: {source}", manifest_path.display()))?;
-
-    let collections_dir = nova_dir.join("collections");
-    fs::create_dir_all(&collections_dir)
-        .map_err(|source| format!("failed to create {}: {source}", collections_dir.display()))?;
-
-    let envs_dir = nova_dir.join("envs");
-    fs::create_dir_all(&envs_dir)
-        .map_err(|source| format!("failed to create {}: {source}", envs_dir.display()))?;
-
-    let env_path = envs_dir.join(&scaffold.environment_file_name);
-    fs::write(&env_path, &scaffold.environment)
-        .map_err(|source| format!("failed to write {}: {source}", env_path.display()))?;
-
-    update_gitignore(path)?;
-
-    println!("Initialized a new Nova project at {}", nova_dir.display());
-
-    if with_hook {
-        crate::commands::install_hook::run(path)?;
-    } else {
-        println!(
-            "Tip: run `nova install-hook` to block commits that add a hardcoded credential to a \
-             .nova file."
-        );
-    }
-
-    Ok(())
-}
-
-/// Default the project name to the target directory's name, falling back
-/// to a generic name when that can't be determined (e.g. `path` is `.`
-/// and its canonical form has no file name, such as the filesystem root).
-fn default_project_name(path: &Path) -> String {
-    let resolved = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    resolved
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "My Nova Project".to_string())
-}
-
-/// Append `nova/envs/` to `path/.gitignore`, creating the file if it
-/// doesn't exist yet and leaving it untouched if the line is already
-/// present. Prints a line explaining what happened, since silently
-/// editing a developer's `.gitignore` would be surprising.
-fn update_gitignore(path: &Path) -> Result<(), String> {
-    let gitignore_path = path.join(".gitignore");
-
-    let existing = match fs::read_to_string(&gitignore_path) {
-        Ok(contents) => contents,
-        Err(source) if source.kind() == ErrorKind::NotFound => String::new(),
-        Err(source) => {
-            return Err(format!(
-                "failed to read {}: {source}",
-                gitignore_path.display()
-            ))
-        }
+    let name = match name {
+        Some(given) => Some(given.to_string()),
+        None if interactive => prompt_for_name(path)?,
+        None => None,
     };
 
-    if existing.lines().any(|line| line.trim() == GITIGNORE_ENTRY) {
-        return Ok(());
-    }
+    // `--with-hook`/`--no-hook` are mutually exclusive at the clap level;
+    // an explicit answer either way means there's nothing to ask about.
+    let install_hook = if with_hook {
+        true
+    } else if no_hook || !interactive {
+        false
+    } else {
+        prompt_for_hook()?
+    };
 
-    let mut updated = existing;
-    if !updated.is_empty() && !updated.ends_with('\n') {
-        updated.push('\n');
-    }
-    updated.push_str(GITIGNORE_ENTRY);
-    updated.push('\n');
+    let outcome = init_project(path, InitOptions { name, install_hook })
+        .map_err(|source| source.to_string())?;
 
-    fs::write(&gitignore_path, updated)
-        .map_err(|source| format!("failed to write {}: {source}", gitignore_path.display()))?;
+    match outcome.gitignore {
+        GitignoreOutcome::Created | GitignoreOutcome::Appended => println!(
+            "Added `{GITIGNORE_ENTRY}` to {} — env files often hold secrets, so they aren't \
+             committed by default. Remove that line if you'd rather commit them intentionally.",
+            path.join(".gitignore").display()
+        ),
+        GitignoreOutcome::AlreadyPresent => {}
+    }
 
     println!(
-        "Added `{GITIGNORE_ENTRY}` to {} — env files often hold secrets, so they aren't committed \
-         by default. Remove that line if you'd rather commit them intentionally.",
-        gitignore_path.display()
+        "Initialized a new Nova project at {}",
+        outcome.project_root.display()
     );
 
+    match outcome.hook {
+        Some(Ok(hook)) => crate::commands::install_hook::report(&hook),
+        // The project itself scaffolded fine; the hook is what failed.
+        // Still a non-zero exit, since the hook was explicitly asked for.
+        Some(Err(message)) => return Err(message),
+        None => println!(
+            "Tip: run `nova install-hook` to block commits that add a hardcoded credential to a \
+             .nova file."
+        ),
+    }
+
     Ok(())
+}
+
+/// Ask for the project name, showing the default the engine would pick.
+/// An empty answer accepts that default (returned as `None`, leaving the
+/// choice with the engine rather than re-deriving it here).
+fn prompt_for_name(path: &Path) -> Result<Option<String>, String> {
+    let default = default_project_name(path);
+    let answer = prompt(&format!("Project name [{default}]: "))?;
+    let answer = answer.trim();
+    Ok(if answer.is_empty() {
+        None
+    } else {
+        Some(answer.to_string())
+    })
+}
+
+/// Ask whether to install the pre-commit hook. Anything but an explicit
+/// yes means no — matching the flag's own default, so a developer who
+/// just hits enter gets today's behavior.
+fn prompt_for_hook() -> Result<bool, String> {
+    let answer = prompt(
+        "Install a git pre-commit hook that blocks commits containing a hardcoded credential? \
+         [y/N]: ",
+    )?;
+    let answer = answer.trim().to_ascii_lowercase();
+    Ok(answer == "y" || answer == "yes")
+}
+
+/// Write a prompt and read one line back. A closed stdin (EOF) reads as an
+/// empty line, which every prompt here treats as "take the default".
+fn prompt(question: &str) -> Result<String, String> {
+    print!("{question}");
+    io::stdout()
+        .flush()
+        .map_err(|source| format!("failed to write prompt: {source}"))?;
+
+    let mut answer = String::new();
+    io::stdin()
+        .read_line(&mut answer)
+        .map_err(|source| format!("failed to read input: {source}"))?;
+    Ok(answer)
 }

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use nova_engine::{NovaError, NovaProject};
+use nova_engine::{discover_or_not_found, NovaError, NovaProject, OpenProjectOutcome};
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -41,6 +41,53 @@ fn discovers_project_from_nested_subdirectory() {
 fn missing_project_is_a_typed_error() {
     let result = NovaProject::discover(Path::new("/definitely/not/a/real/nova/project"));
     assert!(matches!(result, Err(NovaError::ProjectNotFound(_))));
+}
+
+#[test]
+fn discover_or_not_found_reports_an_absent_project_as_not_found() {
+    let outcome = discover_or_not_found(Path::new("/definitely/not/a/real/nova/project"))
+        .expect("an absent project is not an error here");
+    assert!(matches!(outcome, OpenProjectOutcome::NotFound));
+}
+
+#[test]
+fn discover_or_not_found_returns_a_project_that_is_there() {
+    let outcome = discover_or_not_found(&fixture("basic-project")).unwrap();
+    match outcome {
+        OpenProjectOutcome::Found(project) => {
+            assert_eq!(project.manifest.project.name, "WorldZero API")
+        }
+        OpenProjectOutcome::NotFound => panic!("basic-project should have been found"),
+    }
+}
+
+/// `nova-app`'s `types/nova.ts` mirrors this shape by hand.
+#[test]
+fn open_project_outcome_serializes_the_shape_the_desktop_app_mirrors() {
+    let not_found = serde_json::to_value(OpenProjectOutcome::NotFound).unwrap();
+    assert_eq!(not_found, serde_json::json!("not_found"));
+
+    let found = discover_or_not_found(&fixture("basic-project")).unwrap();
+    let json = serde_json::to_value(&found).unwrap();
+    assert_eq!(
+        json["found"]["manifest"]["project"]["name"],
+        "WorldZero API"
+    );
+}
+
+/// A project that exists but is broken stays an error — only "there isn't
+/// one here" becomes `NotFound`, or a caller would offer to scaffold over
+/// a project that's merely misconfigured.
+#[test]
+fn discover_or_not_found_still_errors_on_a_malformed_manifest() {
+    let result = discover_or_not_found(&fixture("malformed-manifest"));
+    assert!(matches!(result, Err(NovaError::ManifestParse { .. })));
+}
+
+#[test]
+fn discover_or_not_found_still_errors_on_a_missing_collections_dir() {
+    let result = discover_or_not_found(&fixture("missing-collections"));
+    assert!(matches!(result, Err(NovaError::CollectionsDirNotFound(_))));
 }
 
 #[test]

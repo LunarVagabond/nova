@@ -7,6 +7,7 @@ import {
   createRequest,
   deleteCollection,
   deleteEnvironment,
+  initProject,
   openProject,
   pickProjectDirectory,
   renameCollection,
@@ -30,6 +31,18 @@ const selectedRequest = ref<RequestFile | null>(null);
 const managedEnvironment = ref<NovaEnvironment | null>(null);
 const error = ref<string | null>(null);
 const createError = ref<string | null>(null);
+
+// The directory a user picked that turned out to have no Nova project in
+// it — non-null while the "open another / create one here" choice is up.
+const notFoundPath = ref<string | null>(null);
+// The directory the init form is filling in options for, once they've
+// chosen to create a project. Kept separate from `notFoundPath` so the
+// first dialog closes as the second one opens.
+const initPath = ref<string | null>(null);
+const initName = ref("");
+const initInstallHook = ref(false);
+const initError = ref<string | null>(null);
+const initializing = ref(false);
 
 // Tracks whether the currently-open RequestPanel/ProjectPanel/
 // EnvironmentPanel has unsaved edits, so switching requests/projects can
@@ -63,11 +76,27 @@ async function handleOpen() {
   const path = await pickProjectDirectory();
   if (!path) return;
 
+  await loadProject(path);
+}
+
+/**
+ * Opens the project at `path` and makes it the one on screen. A directory
+ * with no project in it isn't an error — it opens the "there's nothing
+ * here yet" choice instead, which can scaffold one on the spot.
+ */
+async function loadProject(path: string) {
   error.value = null;
   try {
-    const [loaded, issues] = await Promise.all([openProject(path), validateProject(path)]);
+    const outcome = await openProject(path);
+    if (outcome === "not_found") {
+      notFoundPath.value = path;
+      return;
+    }
+
+    const loaded = outcome.found;
+    // Only worth validating once we know there's something to validate.
+    validationIssues.value = await validateProject(path);
     project.value = loaded;
-    validationIssues.value = issues;
     selectedEnvironment.value =
       loaded.manifest.defaults.environment ?? loaded.environments[0]?.name ?? null;
     selectedRequest.value = null;
@@ -80,6 +109,58 @@ async function handleOpen() {
     // "switch project" attempt doesn't kick the user back to the empty
     // state and lose their current project.
     error.value = String(e);
+  }
+}
+
+function startInit() {
+  initPath.value = notFoundPath.value;
+  // Blank means "use the directory's own name", which the engine decides
+  // — the same default `nova init` uses.
+  initName.value = "";
+  initInstallHook.value = false;
+  initError.value = null;
+  notFoundPath.value = null;
+}
+
+function cancelNotFound() {
+  notFoundPath.value = null;
+}
+
+function cancelInit() {
+  initPath.value = null;
+  initError.value = null;
+}
+
+/** "Pick a different folder" — re-runs the folder picker from the choice. */
+async function chooseAnotherFolder() {
+  notFoundPath.value = null;
+  const path = await pickProjectDirectory();
+  if (!path) return;
+  await loadProject(path);
+}
+
+async function submitInit() {
+  const path = initPath.value;
+  if (path === null || initializing.value) return;
+
+  initializing.value = true;
+  initError.value = null;
+  try {
+    const outcome = await initProject(path, {
+      name: initName.value.trim() || null,
+      installHook: initInstallHook.value,
+    });
+    // The project itself is on disk even if the (opt-in) hook failed, so
+    // open it either way and surface the hook problem alongside it.
+    const hookError =
+      outcome.hook && "Err" in outcome.hook ? `Project created, but: ${outcome.hook.Err}` : null;
+    initPath.value = null;
+    await loadProject(outcome.project_root);
+    if (hookError) error.value = hookError;
+  } catch (e) {
+    initError.value = String(e);
+  } finally {
+    initializing.value = false;
   }
 }
 
@@ -105,7 +186,15 @@ function findRequestPath(collection: Collection, path: string): boolean {
 async function refreshProjectTree() {
   if (!project.value) return;
   try {
-    project.value = await openProject(project.value.root);
+    const outcome = await openProject(project.value.root);
+    // This project was open a moment ago, so "not found" here means it
+    // was moved or deleted out from under the app — an unexpected error,
+    // not an invitation to scaffold a new one over it.
+    if (outcome === "not_found") {
+      error.value = `The project at ${project.value.root} is no longer there.`;
+      return;
+    }
+    project.value = outcome.found;
   } catch (e) {
     error.value = String(e);
     return;
@@ -387,6 +476,51 @@ async function confirmDeleteEnvironment() {
       />
       <EmptyState v-else :error="error" @open="handleOpen" />
     </main>
+
+    <Modal v-if="notFoundPath !== null" title="No Nova project here" @cancel="cancelNotFound">
+      <p>
+        <code>{{ notFoundPath }}</code> doesn't contain a
+        <code>nova/nova.yaml</code> manifest, and neither does any directory above it.
+      </p>
+      <template #actions>
+        <button type="button" class="button button--secondary" @click="cancelNotFound">
+          Cancel
+        </button>
+        <button type="button" class="button button--secondary" @click="chooseAnotherFolder">
+          Choose another folder
+        </button>
+        <button type="button" class="button" @click="startInit">Create a project here</button>
+      </template>
+    </Modal>
+
+    <Modal v-if="initPath !== null" title="Create a project" @cancel="cancelInit">
+      <p class="modal__hint">
+        Creates <code>nova/</code> in <code>{{ initPath }}</code> with a starter environment,
+        and adds <code>nova/envs/</code> to that directory's <code>.gitignore</code> — env
+        files often hold secrets.
+      </p>
+      <label class="modal__label" for="init-name">Project name</label>
+      <input
+        id="init-name"
+        v-model="initName"
+        class="modal__input"
+        type="text"
+        placeholder="Defaults to the folder's name"
+        autofocus
+        @keydown.enter="submitInit"
+      />
+      <label class="modal__checkbox" for="init-install-hook">
+        <input id="init-install-hook" v-model="initInstallHook" type="checkbox" />
+        Install a git pre-commit hook that blocks commits containing a hardcoded credential
+      </label>
+      <p v-if="initError" class="modal__error">{{ initError }}</p>
+      <template #actions>
+        <button type="button" class="button button--secondary" @click="cancelInit">Cancel</button>
+        <button type="button" class="button" :disabled="initializing" @click="submitInit">
+          {{ initializing ? "Creating…" : "Create project" }}
+        </button>
+      </template>
+    </Modal>
 
     <Modal
       v-if="pendingDiscardConfirm"

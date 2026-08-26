@@ -1,3 +1,11 @@
+//! `nova install-hook` is a thin wrapper over
+//! `nova_engine::install_secret_check_hook` — how the hook file is
+//! written, appended to, and refused when `core.hooksPath` is set is
+//! covered by `nova-engine`'s own `init_tests`. What's checked here is
+//! that the command calls through, reports each outcome, exits non-zero
+//! on refusal, and that the hook it leaves behind really does block a
+//! commit.
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -64,66 +72,60 @@ fn init_git_repo(dir: &Path) {
 }
 
 #[test]
-fn install_hook_writes_an_executable_pre_commit_hook() {
+fn install_hook_reports_installing_and_then_already_installed() {
     let dir = temp_dir("basic");
     init_git_repo(&dir);
 
-    let output = nova(&dir, &["install-hook", "."]);
+    let first = nova(&dir, &["install-hook", "."]);
+    assert!(
+        first.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert!(String::from_utf8_lossy(&first.stdout).contains("Installed a pre-commit hook at"));
+
+    assert!(dir.join(".git/hooks/pre-commit").is_file());
+
+    let second = nova(&dir, &["install-hook", "."]);
+    assert!(second.status.success());
+    assert!(String::from_utf8_lossy(&second.stdout).contains("already installed"));
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// `nova init --with-hook` installs the same hook through the same engine
+/// call, and says the same thing about it.
+#[test]
+fn init_with_hook_installs_the_hook_too() {
+    let dir = temp_dir("init-with-hook");
+    init_git_repo(&dir);
+
+    let output = nova(&dir, &["init", ".", "--with-hook"]);
     assert!(
         output.status.success(),
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-
-    let hook_path = dir.join(".git/hooks/pre-commit");
-    assert!(hook_path.is_file());
-    let contents = fs::read_to_string(&hook_path).unwrap();
-    assert!(contents.contains("nova check-secrets --staged"));
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = fs::metadata(&hook_path).unwrap().permissions().mode();
-        assert_ne!(mode & 0o111, 0, "hook should be executable");
-    }
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Installed a pre-commit hook at"));
+    assert!(dir.join(".git/hooks/pre-commit").is_file());
 
     fs::remove_dir_all(&dir).unwrap();
 }
 
+/// `--no-hook` is just an explicit spelling of the default, and must
+/// leave the repository's hooks alone.
 #[test]
-fn install_hook_is_idempotent() {
-    let dir = temp_dir("idempotent");
+fn init_with_no_hook_installs_nothing() {
+    let dir = temp_dir("init-no-hook");
     init_git_repo(&dir);
 
-    assert!(nova(&dir, &["install-hook", "."]).status.success());
-    assert!(nova(&dir, &["install-hook", "."]).status.success());
-
-    let hook_path = dir.join(".git/hooks/pre-commit");
-    let contents = fs::read_to_string(&hook_path).unwrap();
-    let marker_count = contents.matches("nova install-hook: check-secrets").count();
-    assert_eq!(marker_count, 1, "hook block should not be duplicated");
-
-    fs::remove_dir_all(&dir).unwrap();
-}
-
-#[test]
-fn install_hook_preserves_an_existing_custom_hook() {
-    let dir = temp_dir("preserves-existing");
-    init_git_repo(&dir);
-
-    let hooks_dir = dir.join(".git/hooks");
-    fs::create_dir_all(&hooks_dir).unwrap();
-    fs::write(
-        hooks_dir.join("pre-commit"),
-        "#!/bin/sh\necho custom-hook-marker\n",
-    )
-    .unwrap();
-
-    assert!(nova(&dir, &["install-hook", "."]).status.success());
-
-    let contents = fs::read_to_string(hooks_dir.join("pre-commit")).unwrap();
-    assert!(contents.contains("custom-hook-marker"));
-    assert!(contents.contains("nova check-secrets --staged"));
+    let output = nova(&dir, &["init", ".", "--no-hook"]);
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!dir.join(".git/hooks/pre-commit").exists());
 
     fs::remove_dir_all(&dir).unwrap();
 }

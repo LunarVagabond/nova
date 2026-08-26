@@ -8,13 +8,35 @@
 use std::collections::HashMap;
 
 use nova_engine::{
-    parse_curl, AuthScheme, Collection, Environment, Manifest, NovaProject, ParsedCurlRequest,
-    RequestDraft, RequestFile, Response, Session,
+    parse_curl, AuthScheme, Collection, Environment, InitOptions, InitOutcome, Manifest,
+    NovaProject, OpenProjectOutcome, ParsedCurlRequest, RequestDraft, RequestFile, Response,
+    Session,
 };
 
+/// Open the project at `path`. A directory with no project in it comes
+/// back as [`OpenProjectOutcome::NotFound`] rather than an error, so the
+/// UI can offer to create one there; anything genuinely broken (a
+/// malformed manifest, say) still fails.
 #[tauri::command]
-pub fn open_project(path: String) -> Result<NovaProject, String> {
-    NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())
+pub fn open_project(path: String) -> Result<OpenProjectOutcome, String> {
+    nova_engine::discover_or_not_found(std::path::Path::new(&path)).map_err(|e| e.to_string())
+}
+
+/// Scaffold a brand-new Nova project under `path/nova/`, the same way
+/// `nova init` does — see [`nova_engine::init_project`]. `name` defaults
+/// to the target directory's name when null or blank; `install_hook` adds
+/// the opt-in `check-secrets` git pre-commit hook.
+#[tauri::command]
+pub fn init_project(
+    path: String,
+    name: Option<String>,
+    install_hook: bool,
+) -> Result<InitOutcome, String> {
+    nova_engine::init_project(
+        std::path::Path::new(&path),
+        InitOptions { name, install_hook },
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -31,12 +31,16 @@ pub use curl::{parse_curl, ParsedCurlRequest};
 pub use environment::{create_environment, delete_environment, Environment};
 pub use error::{NovaError, NovaResult};
 pub use execute::{execute, Response};
-pub use init::{scaffold_project, ScaffoldedProject};
+pub use init::{
+    default_project_name, init_project, install_secret_check_hook, scaffold_project,
+    GitignoreOutcome, HookOutcome, InitOptions, InitOutcome, ScaffoldedProject, GITIGNORE_ENTRY,
+    HOOK_MARKER,
+};
 pub use manifest::{Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION};
 pub use mock::{mock_routes, MockRoute, PathSegment};
 pub use openapi::{export_to_spec, generate_from_spec, GeneratedProject, GeneratedRequest};
 pub use postman::generate_from_postman_collection;
-pub use project::{NovaProject, MANIFEST_FILE_NAME};
+pub use project::{discover_or_not_found, NovaProject, OpenProjectOutcome, MANIFEST_FILE_NAME};
 pub use request::{
     ExampleResponse, Header, MultipartField, ParsedRequest, QueryParam, RequestBody, RequestDraft,
     RequestFile,

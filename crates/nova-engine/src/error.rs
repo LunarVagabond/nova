@@ -91,6 +91,28 @@ pub enum NovaError {
 
     #[error("environment not found at {0}")]
     EnvironmentNotFound(PathBuf),
+
+    #[error("{0} already exists — refusing to overwrite an existing Nova project")]
+    ProjectAlreadyExists(PathBuf),
+
+    #[error("{0} doesn't look like it's inside a git repository")]
+    NotAGitRepository(PathBuf),
+
+    #[error("failed to install the git pre-commit hook: {message}")]
+    HookInstall { message: String },
+
+    /// The repository sets `core.hooksPath`, so the default `.git/hooks`
+    /// wouldn't take effect and the override may point somewhere shared
+    /// across repositories. Carries the ready-to-paste `script` rather
+    /// than guessing where the hook belongs.
+    #[error(
+        "this repository has core.hooksPath set to {hooks_path:?} — installing into the default \
+         .git/hooks wouldn't take effect, and this won't guess at writing into a path that may be \
+         shared across other repositories. Add this to a `pre-commit` file under {hooks_path:?} \
+         yourself (or append the block below to one that's already there and make it \
+         executable):\n\n{script}"
+    )]
+    HooksPathOverridden { hooks_path: String, script: String },
 }
 
 pub type NovaResult<T> = Result<T, NovaError>;
