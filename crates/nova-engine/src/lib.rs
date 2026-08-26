@@ -4,6 +4,7 @@
 //! should never reimplement parsing, discovery, or (later) execution logic
 //! themselves.
 
+mod auth;
 mod collection;
 mod environment;
 mod error;
