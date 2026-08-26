@@ -21,7 +21,7 @@ pub use assertion::{
     evaluate, Assertion, AssertionOutcome, Extraction, Op as AssertionOp, Term as AssertionTerm,
 };
 pub use collection::Collection;
-pub use environment::Environment;
+pub use environment::{AuthDefault, Environment};
 pub use error::{NovaError, NovaResult};
 pub use execute::{execute, Response};
 pub use manifest::{Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION};

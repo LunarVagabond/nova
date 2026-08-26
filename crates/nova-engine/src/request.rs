@@ -113,7 +113,7 @@ impl ParsedRequest {
     /// A reference to a variable the environment doesn't define is a typed
     /// error naming the variable, not a silent empty-string substitution.
     pub fn resolve(&self, environment: &Environment) -> NovaResult<ParsedRequest> {
-        let headers = self
+        let mut headers = self
             .headers
             .iter()
             .map(|h| {
@@ -123,6 +123,22 @@ impl ParsedRequest {
                 })
             })
             .collect::<NovaResult<Vec<_>>>()?;
+
+        // An environment-declared default auth header only applies when
+        // the request hasn't already declared its own — explicit always
+        // wins over inherited.
+        if let Some(auth) = &environment.auth {
+            let already_declared = headers
+                .iter()
+                .any(|h| h.name.eq_ignore_ascii_case(&auth.header));
+            if !already_declared {
+                headers.push(Header {
+                    name: auth.header.clone(),
+                    value: substitute(&auth.value, environment)?,
+                });
+            }
+        }
+
         let headers = crate::auth::encode_basic_auth(headers);
 
         let query = self
@@ -690,6 +706,91 @@ mod tests {
         );
     }
 
+    fn test_environment_with_auth(
+        name: &str,
+        vars: &[(&str, &str)],
+        auth: crate::environment::AuthDefault,
+    ) -> Environment {
+        let mut env = test_environment(name, vars);
+        env.auth = Some(auth);
+        env
+    }
+
+    #[test]
+    fn inherits_a_default_auth_header_from_the_environment() {
+        let contents = "GET {{base_url}}/me\n";
+        let parsed = parse_http(contents).unwrap();
+        let env = test_environment_with_auth(
+            "local",
+            &[("base_url", "http://localhost:8080"), ("token", "abc123")],
+            crate::environment::AuthDefault {
+                header: "Authorization".to_string(),
+                value: "Bearer {{token}}".to_string(),
+            },
+        );
+
+        let resolved = parsed.resolve(&env).unwrap();
+
+        assert_eq!(resolved.header("Authorization"), Some("Bearer abc123"));
+    }
+
+    #[test]
+    fn a_requests_own_auth_header_overrides_the_inherited_default() {
+        let contents = "GET {{base_url}}/me\nAuthorization: Bearer request-token\n";
+        let parsed = parse_http(contents).unwrap();
+        let env = test_environment_with_auth(
+            "local",
+            &[("base_url", "http://localhost:8080")],
+            crate::environment::AuthDefault {
+                header: "Authorization".to_string(),
+                value: "Bearer env-default-token".to_string(),
+            },
+        );
+
+        let resolved = parsed.resolve(&env).unwrap();
+
+        assert_eq!(
+            resolved.header("Authorization"),
+            Some("Bearer request-token")
+        );
+    }
+
+    #[test]
+    fn no_auth_header_added_when_neither_request_nor_environment_declares_one() {
+        let contents = "GET {{base_url}}/me\n";
+        let parsed = parse_http(contents).unwrap();
+        let env = test_environment("local", &[("base_url", "http://localhost:8080")]);
+
+        let resolved = parsed.resolve(&env).unwrap();
+
+        assert_eq!(resolved.header("Authorization"), None);
+    }
+
+    #[test]
+    fn inherited_basic_auth_default_is_base64_encoded() {
+        let contents = "GET {{base_url}}/me\n";
+        let parsed = parse_http(contents).unwrap();
+        let env = test_environment_with_auth(
+            "local",
+            &[
+                ("base_url", "http://localhost:8080"),
+                ("username", "developer"),
+                ("password", "hunter2"),
+            ],
+            crate::environment::AuthDefault {
+                header: "Authorization".to_string(),
+                value: "Basic {{username}}:{{password}}".to_string(),
+            },
+        );
+
+        let resolved = parsed.resolve(&env).unwrap();
+
+        assert_eq!(
+            resolved.header("Authorization"),
+            Some("Basic ZGV2ZWxvcGVyOmh1bnRlcjI=")
+        );
+    }
+
     #[test]
     fn a_hash_hash_hash_line_splits_body_from_assertions() {
         let contents = "POST {{base_url}}/users\nContent-Type: application/json\n\n{\n  \"name\": \"John\"\n}\n\n###\n\nstatus == 200\nresponse.name exists\n";
@@ -828,6 +929,7 @@ mod tests {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
+            auth: None,
             path: PathBuf::new(),
         }
     }

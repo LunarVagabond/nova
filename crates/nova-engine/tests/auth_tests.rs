@@ -1,6 +1,6 @@
 use std::thread;
 
-use nova_engine::{execute, Environment, RequestFile};
+use nova_engine::{execute, AuthDefault, Environment, RequestFile};
 
 /// What the mock server actually received, captured and sent back over a
 /// channel *after* it has already responded — `execute()` blocks until a
@@ -64,6 +64,7 @@ fn env_with(vars: &[(&str, &str)]) -> Environment {
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect(),
+        auth: None,
         path: Default::default(),
     }
 }
@@ -156,6 +157,37 @@ fn basic_auth_is_base64_encoded_on_the_wire() {
     assert_eq!(
         received.header("Authorization"),
         Some("Basic ZGV2ZWxvcGVyOmh1bnRlcjI=")
+    );
+    std::fs::remove_file(&request.path).unwrap();
+    handle.join().unwrap();
+}
+
+#[test]
+fn environment_default_auth_reaches_the_wire_when_the_request_declares_none() {
+    let (base_url, rx, handle) = mock_server();
+    let contents = "GET {{base_url}}/me\n";
+    let request = RequestFile {
+        name: "me".to_string(),
+        path: write_temp_http("inherited-auth", contents),
+    };
+    let mut env = env_with(&[("base_url", &base_url), ("token", "env-default-token")]);
+    env.auth = Some(AuthDefault {
+        header: "Authorization".to_string(),
+        value: "Bearer {{token}}".to_string(),
+    });
+
+    let resolved = request.parse().unwrap().resolve(&env).unwrap();
+    assert_eq!(
+        resolved.header("Authorization"),
+        Some("Bearer env-default-token")
+    );
+
+    execute(&resolved).unwrap();
+
+    let received = rx.recv().unwrap();
+    assert_eq!(
+        received.header("Authorization"),
+        Some("Bearer env-default-token")
     );
     std::fs::remove_file(&request.path).unwrap();
     handle.join().unwrap();

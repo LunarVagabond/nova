@@ -15,11 +15,31 @@ pub struct Environment {
     #[serde(default)]
     pub variables: HashMap<String, String>,
 
+    /// A default auth header applied to every request resolved against
+    /// this environment, unless the request already declares its own
+    /// header of the same name. `value` goes through the same
+    /// `{{variable}}` substitution and Basic-auth base64 encoding as a
+    /// request's own auth header (see `auth.rs`).
+    #[serde(default)]
+    pub auth: Option<AuthDefault>,
+
     /// Where this environment was loaded from, for diagnostics and
     /// "open in editor" style GUI actions. Not part of the YAML shape, but
     /// still sent to frontends when serialized.
     #[serde(skip_deserializing)]
     pub path: PathBuf,
+}
+
+/// An environment-level default auth header, e.g.:
+/// ```yaml
+/// auth:
+///   header: Authorization
+///   value: "Bearer {{token}}"
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthDefault {
+    pub header: String,
+    pub value: String,
 }
 
 /// Load every environment file (`*.yaml` / `*.yml`) directly inside

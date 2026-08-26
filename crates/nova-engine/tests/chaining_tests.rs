@@ -10,6 +10,7 @@ fn env_with(vars: &[(&str, &str)]) -> Environment {
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect(),
+        auth: None,
         path: Default::default(),
     }
 }
