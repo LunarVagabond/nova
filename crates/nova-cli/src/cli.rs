@@ -79,4 +79,24 @@ pub enum Command {
         #[arg(long)]
         output: Option<PathBuf>,
     },
+
+    /// Start a local mock server serving each request's example response.
+    ///
+    /// For every `.http` request found under `path`, registers a route
+    /// matching its method and path. A request with a `### response`
+    /// section serves that example verbatim; a request without one still
+    /// gets a route, but it always answers `501` explaining that no
+    /// example response is defined.
+    Mock {
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Host/IP to bind the mock server to.
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+
+        /// Port to bind the mock server to. `0` picks any available port.
+        #[arg(long, default_value_t = 4010)]
+        port: u16,
+    },
 }

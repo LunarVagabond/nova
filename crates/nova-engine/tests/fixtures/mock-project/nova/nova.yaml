@@ -1,0 +1,13 @@
+version: 1
+
+project:
+  name: Mock Fixture
+
+defaults:
+  environment: local
+
+collections:
+  path: collections
+
+environments:
+  path: envs

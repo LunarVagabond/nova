@@ -65,8 +65,20 @@ pub enum RequestBody {
     Multipart(Vec<MultipartField>),
 }
 
-/// A `.http` file parsed into its method, URL, headers, body, and any
-/// assertions declared after a `###` line.
+/// An explicit, hand-written example response declared in a `.http` file's
+/// `### response` section — a fixture the request's author wrote down, not
+/// one produced by actually executing the request. This is the "canned
+/// response" `nova mock` serves for the request.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ExampleResponse {
+    pub status: u16,
+    pub headers: Vec<Header>,
+    pub body: String,
+}
+
+/// A `.http` file parsed into its method, URL, headers, body, any
+/// assertions declared after a `###` line, and an optional example
+/// response declared after a `### response` line.
 ///
 /// `url` is the base URL only — scheme/host/path, with no query string.
 /// Query parameters live separately in `query`, structured rather than
@@ -81,6 +93,7 @@ pub struct ParsedRequest {
     pub body: RequestBody,
     pub assertions: Vec<crate::assertion::Assertion>,
     pub extractions: Vec<crate::assertion::Extraction>,
+    pub example_response: Option<ExampleResponse>,
 }
 
 impl ParsedRequest {
@@ -158,11 +171,12 @@ impl ParsedRequest {
             query,
             headers,
             body: substitute_body(&self.body, environment)?,
-            // Assertions and extractions reference the response/request,
-            // not environment variables, so they carry through resolution
-            // unchanged.
+            // Assertions, extractions, and the example response don't
+            // reference environment variables, so they carry through
+            // resolution unchanged.
             assertions: self.assertions.clone(),
             extractions: self.extractions.clone(),
+            example_response: self.example_response.clone(),
         })
     }
 }
@@ -339,26 +353,60 @@ fn parse_http(contents: &str) -> Result<ParsedRequest, String> {
         });
     }
 
-    // A line that's exactly `###` ends the body and starts an assertions
-    // section (README's "Testing & Assertions" syntax) — everything after
-    // it is assertion lines, not body content.
+    // A line starting with `###` ends the current section and starts a new
+    // one. Bare `###` (or `### assert`) starts an assertions section
+    // (README's "Testing & Assertions" syntax); `### response [<status>]`
+    // starts an example/canned response section — the fixture response
+    // `nova mock` serves for this request. Everything before the first
+    // `###` line is the request body.
+    enum Section {
+        Body,
+        Assertions,
+        Response,
+    }
+
     let mut real_body_lines = Vec::new();
     let mut assertion_lines = Vec::new();
-    let mut in_assertions = false;
+    let mut response_section: Option<(String, Vec<&str>)> = None;
+    let mut current = Section::Body;
+
     for line in body_lines {
-        if !in_assertions && line.trim() == "###" {
-            in_assertions = true;
+        if let Some(rest) = line.trim_start().strip_prefix("###") {
+            let mut tokens = rest.split_whitespace();
+            current = match tokens.next() {
+                None => Section::Assertions,
+                Some(token) if token.eq_ignore_ascii_case("assert") => Section::Assertions,
+                Some(token) if token.eq_ignore_ascii_case("response") => {
+                    let status_text = tokens.next().unwrap_or("").to_string();
+                    response_section = Some((status_text, Vec::new()));
+                    Section::Response
+                }
+                Some(other) => {
+                    return Err(format!(
+                        "unknown section marker \"### {other}\" (expected \"###\", \"### assert\", or \"### response [status]\")"
+                    ));
+                }
+            };
             continue;
         }
-        if in_assertions {
-            assertion_lines.push(line);
-        } else {
-            real_body_lines.push(line);
+
+        match current {
+            Section::Body => real_body_lines.push(line),
+            Section::Assertions => assertion_lines.push(line),
+            Section::Response => {
+                if let Some((_, lines)) = response_section.as_mut() {
+                    lines.push(line);
+                }
+            }
         }
     }
 
     let (assertions, extractions) =
         crate::assertion::parse_directives(&assertion_lines.join("\n"))?;
+
+    let example_response = response_section
+        .map(|(status_text, lines)| parse_response_section(&status_text, &lines))
+        .transpose()?;
 
     let body_text = real_body_lines.join("\n");
     let body_text = body_text.trim();
@@ -413,6 +461,49 @@ fn parse_http(contents: &str) -> Result<ParsedRequest, String> {
         body,
         assertions,
         extractions,
+        example_response,
+    })
+}
+
+/// Parse an `### response [<status>]` section into an [`ExampleResponse`]:
+/// optional `Name: Value` header lines, a blank line, then the raw response
+/// body. The status code comes from the section marker itself (`###
+/// response 201`); when omitted it defaults to `200`.
+fn parse_response_section(status_text: &str, lines: &[&str]) -> Result<ExampleResponse, String> {
+    let status: u16 = if status_text.is_empty() {
+        200
+    } else {
+        status_text
+            .parse()
+            .map_err(|_| format!("invalid response status code: {status_text:?}"))?
+    };
+
+    let mut headers = Vec::new();
+    let mut body_lines = Vec::new();
+    let mut in_body = false;
+
+    for line in lines {
+        if in_body {
+            body_lines.push(*line);
+            continue;
+        }
+        if line.trim().is_empty() {
+            in_body = true;
+            continue;
+        }
+        let (name, value) = line.split_once(':').ok_or_else(|| {
+            format!("malformed response header line (expected \"Name: Value\"): {line:?}")
+        })?;
+        headers.push(Header {
+            name: name.trim().to_string(),
+            value: value.trim().to_string(),
+        });
+    }
+
+    Ok(ExampleResponse {
+        status,
+        headers,
+        body: body_lines.join("\n").trim().to_string(),
     })
 }
 

@@ -36,6 +36,7 @@ fn executes_a_request_and_captures_the_response() {
         body: RequestBody::None,
         assertions: vec![],
         extractions: vec![],
+        example_response: None,
     };
 
     let response = execute(&request).unwrap();
@@ -65,6 +66,7 @@ fn non_2xx_status_is_still_a_successful_response() {
         body: RequestBody::None,
         assertions: vec![],
         extractions: vec![],
+        example_response: None,
     };
 
     let response = execute(&request).unwrap();
@@ -119,6 +121,7 @@ fn sends_json_body_on_the_wire() {
         body: RequestBody::Json(serde_json::json!({"name": "John"})),
         assertions: vec![],
         extractions: vec![],
+        example_response: None,
     };
 
     execute(&request).unwrap();
@@ -143,6 +146,7 @@ fn sends_xml_body_on_the_wire() {
         }),
         assertions: vec![],
         extractions: vec![],
+        example_response: None,
     };
 
     execute(&request).unwrap();
@@ -176,6 +180,7 @@ fn sends_multipart_body_with_boundary_on_the_wire() {
         ]),
         assertions: vec![],
         extractions: vec![],
+        example_response: None,
     };
 
     execute(&request).unwrap();
@@ -201,6 +206,7 @@ fn network_failure_is_a_typed_error() {
         body: RequestBody::None,
         assertions: vec![],
         extractions: vec![],
+        example_response: None,
     };
 
     let err = execute(&request).unwrap_err();

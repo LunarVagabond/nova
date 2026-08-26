@@ -254,13 +254,37 @@ An existing API specification could immediately generate browsable and executabl
 
 ### Mocking
 
-Nova could expose project definitions as a local mock server:
+Nova exposes project definitions as a local mock server:
 
 ```bash
 nova mock
 ```
 
-allowing frontend development before a backend implementation is complete.
+For every `.http` request in the project, this registers a route matching its
+method and path. A request declares the canned response for its route in a
+`### response` section, in the same shape as the request itself:
+
+```http
+POST {{base_url}}/users
+Content-Type: application/json
+
+{ "name": "John" }
+
+### response 201
+Content-Type: application/json
+
+{ "id": "usr_1234", "name": "John" }
+```
+
+The status code is taken from the `### response` line itself and defaults to
+`200` when omitted. A request with no `### response` section still gets a
+route — it just always answers `501`, explaining that no example response is
+defined, rather than being silently left out of the mock server.
+
+This allows frontend development before a backend implementation is complete.
+
+Mocking is static: nothing a mocked request does affects a later mocked
+request's response.
 
 ---
 

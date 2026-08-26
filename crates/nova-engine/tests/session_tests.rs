@@ -47,6 +47,7 @@ fn persists_cookies_across_requests_in_the_same_session() {
         body: RequestBody::None,
         assertions: vec![],
         extractions: vec![],
+        example_response: None,
     };
     session.execute(&login_request).unwrap();
 
@@ -58,6 +59,7 @@ fn persists_cookies_across_requests_in_the_same_session() {
         body: RequestBody::None,
         assertions: vec![],
         extractions: vec![],
+        example_response: None,
     };
     session.execute(&me_request).unwrap();
 
@@ -104,6 +106,7 @@ fn a_fresh_session_does_not_carry_cookies_from_another_session() {
         body: RequestBody::None,
         assertions: vec![],
         extractions: vec![],
+        example_response: None,
     };
     first_session.execute(&login_request).unwrap();
 
@@ -116,6 +119,7 @@ fn a_fresh_session_does_not_carry_cookies_from_another_session() {
         body: RequestBody::None,
         assertions: vec![],
         extractions: vec![],
+        example_response: None,
     };
     second_session.execute(&check_request).unwrap();
 

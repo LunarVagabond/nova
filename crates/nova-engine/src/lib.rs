@@ -11,6 +11,7 @@ mod environment;
 mod error;
 mod execute;
 mod manifest;
+mod mock;
 mod openapi;
 mod project;
 mod request;
@@ -26,9 +27,12 @@ pub use environment::{AuthDefault, Environment};
 pub use error::{NovaError, NovaResult};
 pub use execute::{execute, Response};
 pub use manifest::{Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION};
+pub use mock::{mock_routes, MockRoute, PathSegment};
 pub use openapi::{export_to_spec, generate_from_spec, GeneratedProject, GeneratedRequest};
 pub use project::{NovaProject, MANIFEST_FILE_NAME};
-pub use request::{Header, MultipartField, ParsedRequest, QueryParam, RequestBody, RequestFile};
+pub use request::{
+    ExampleResponse, Header, MultipartField, ParsedRequest, QueryParam, RequestBody, RequestFile,
+};
 pub use session::Session;
 pub use validate::{validate, ValidationIssue};
 pub use xml::{XmlElement, XmlNode};
