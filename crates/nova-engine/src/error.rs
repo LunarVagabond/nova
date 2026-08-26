@@ -43,6 +43,9 @@ pub enum NovaError {
 
     #[error("environments directory not found at {0}")]
     EnvironmentsDirNotFound(PathBuf),
+
+    #[error("failed to parse request at {path}: {message}")]
+    RequestParse { path: PathBuf, message: String },
 }
 
 pub type NovaResult<T> = Result<T, NovaError>;
