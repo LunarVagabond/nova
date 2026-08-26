@@ -35,6 +35,12 @@ pub enum Command {
         /// target directory's name.
         #[arg(long)]
         name: Option<String>,
+
+        /// Also install the git pre-commit hook `install-hook` sets up, so
+        /// this project starts out blocking hardcoded credentials from
+        /// being committed.
+        #[arg(long)]
+        with_hook: bool,
     },
 
     /// Open a project and print its structure (same as bare `nova <path>`).
@@ -115,5 +121,33 @@ pub enum Command {
         /// Port to bind the mock server to. `0` picks any available port.
         #[arg(long, default_value_t = 4010)]
         port: u16,
+    },
+
+    /// Check every request for a possible hardcoded credential — an
+    /// `[auth]` field or `Authorization` header with no `{{variable}}`
+    /// reference at all (see `nova validate`'s same check). Exits non-zero
+    /// if any are found.
+    CheckSecrets {
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Only report issues in `.nova` files currently staged in git,
+        /// rather than every request in the project — what the hook
+        /// `install-hook` sets up actually runs, so an unrelated
+        /// pre-existing issue elsewhere in the project never blocks a
+        /// commit that doesn't touch it.
+        #[arg(long)]
+        staged: bool,
+    },
+
+    /// Install a git pre-commit hook that runs `check-secrets --staged`
+    /// before every commit, blocking it if a staged `.nova` file has a
+    /// possible hardcoded credential. Opt-in — never installed
+    /// automatically. Appends to an existing pre-commit hook rather than
+    /// overwriting it, and is safe to run again (does nothing if already
+    /// installed).
+    InstallHook {
+        #[arg(default_value = ".")]
+        path: PathBuf,
     },
 }

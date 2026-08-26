@@ -11,7 +11,11 @@ fn main() {
 
     let result = match cli.command {
         None => commands::inspect::run(&cli.path),
-        Some(Command::Init { path, name }) => commands::init::run(&path, name.as_deref()),
+        Some(Command::Init {
+            path,
+            name,
+            with_hook,
+        }) => commands::init::run(&path, name.as_deref(), with_hook),
         Some(Command::Open { path }) => commands::inspect::run(&path),
         Some(Command::Inspect { path }) => commands::inspect::run(&path),
         Some(Command::Validate { path }) => commands::validate::run(&path),
@@ -25,6 +29,8 @@ fn main() {
         Some(Command::Generate { input, output }) => commands::generate::run(&input, &output),
         Some(Command::Export { path, output }) => commands::export::run(&path, output.as_deref()),
         Some(Command::Mock { path, host, port }) => commands::mock::run(&path, &host, port),
+        Some(Command::CheckSecrets { path, staged }) => commands::check_secrets::run(&path, staged),
+        Some(Command::InstallHook { path }) => commands::install_hook::run(&path),
     };
 
     if let Err(message) = result {

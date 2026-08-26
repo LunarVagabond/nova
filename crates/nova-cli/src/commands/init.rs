@@ -14,8 +14,10 @@ const GITIGNORE_ENTRY: &str = "nova/envs/";
 /// starter `envs/` directory with one example environment. Also appends
 /// `nova/envs/` to `path/.gitignore` (creating it if needed), since
 /// environment files commonly hold dev secrets. Refuses to overwrite an
-/// existing `nova/` directory.
-pub fn run(path: &Path, name: Option<&str>) -> Result<(), String> {
+/// existing `nova/` directory. `with_hook` additionally installs the same
+/// pre-commit hook `nova install-hook` sets up on its own — opt-in here
+/// too, never on by default.
+pub fn run(path: &Path, name: Option<&str>, with_hook: bool) -> Result<(), String> {
     let nova_dir = path.join("nova");
     if nova_dir.exists() {
         return Err(format!(
@@ -52,6 +54,15 @@ pub fn run(path: &Path, name: Option<&str>) -> Result<(), String> {
     update_gitignore(path)?;
 
     println!("Initialized a new Nova project at {}", nova_dir.display());
+
+    if with_hook {
+        crate::commands::install_hook::run(path)?;
+    } else {
+        println!(
+            "Tip: run `nova install-hook` to block commits that add a hardcoded credential to a \
+             .nova file."
+        );
+    }
 
     Ok(())
 }
