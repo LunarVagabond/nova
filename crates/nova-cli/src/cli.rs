@@ -60,10 +60,12 @@ pub enum Command {
         environment: Option<String>,
     },
 
-    /// Generate a Nova project from an OpenAPI 3.x spec (YAML or JSON).
+    /// Generate a Nova project from an OpenAPI 3.x spec (YAML or JSON) or a
+    /// Postman Collection Format v2.1 export (JSON) — which one is detected
+    /// automatically from the file's own contents.
     Generate {
-        /// Path to the OpenAPI spec file.
-        spec: PathBuf,
+        /// Path to the OpenAPI spec or Postman collection export file.
+        input: PathBuf,
 
         /// Directory to generate the project into (a `nova/` directory is
         /// created inside it).

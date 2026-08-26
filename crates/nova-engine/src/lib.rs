@@ -13,6 +13,7 @@ mod execute;
 mod manifest;
 mod mock;
 mod openapi;
+mod postman;
 mod project;
 mod request;
 mod session;
@@ -29,6 +30,7 @@ pub use execute::{execute, Response};
 pub use manifest::{Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION};
 pub use mock::{mock_routes, MockRoute, PathSegment};
 pub use openapi::{export_to_spec, generate_from_spec, GeneratedProject, GeneratedRequest};
+pub use postman::generate_from_postman_collection;
 pub use project::{NovaProject, MANIFEST_FILE_NAME};
 pub use request::{
     ExampleResponse, Header, MultipartField, ParsedRequest, QueryParam, RequestBody, RequestDraft,

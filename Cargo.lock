@@ -2250,6 +2250,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "nova-engine",
+ "serde_json",
  "tiny_http",
  "ureq",
 ]
