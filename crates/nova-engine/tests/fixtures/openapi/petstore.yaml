@@ -1,0 +1,52 @@
+openapi: 3.0.0
+info:
+  title: Petstore
+  version: 1.0.0
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      tags:
+        - pets
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: X-Request-Id
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+    post:
+      operationId: createPet
+      tags:
+        - pets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+            example:
+              name: Rex
+              tag: dog
+      responses:
+        "201":
+          description: Created
+  /pets/{petId}:
+    get:
+      operationId: getPet
+      tags:
+        - pets
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK

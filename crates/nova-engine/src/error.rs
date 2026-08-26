@@ -55,6 +55,9 @@ pub enum NovaError {
 
     #[error("extraction {name:?} = response.{path} did not match anything in the response")]
     ExtractionFailed { name: String, path: String },
+
+    #[error("failed to parse OpenAPI spec: {message}")]
+    OpenApiParse { message: String },
 }
 
 pub type NovaResult<T> = Result<T, NovaError>;
