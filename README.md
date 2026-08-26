@@ -17,11 +17,11 @@ my-project/
 ├── src/
 ├── nova/
 │   ├── auth/
-│   │   ├── login.http
-│   │   └── refresh.http
+│   │   ├── login.nova
+│   │   └── refresh.nova
 │   ├── users/
-│   │   ├── create.http
-│   │   └── get.http
+│   │   ├── create.nova
+│   │   └── get.nova
 │   └── environments/
 │       ├── local.yaml
 │       └── staging.yaml
@@ -93,7 +93,7 @@ This allows the same request to execute identically from the GUI:
 or terminal:
 
 ```bash
-nova run nova/users/create.http
+nova run nova/users/create.nova
 ```
 
 or CI:
@@ -108,20 +108,33 @@ The desktop application is therefore primarily a visual interface over the same 
 
 # Request Format
 
-Requests should favor a simple text-based format.
+Requests should favor a simple text-based format with explicit, labeled
+sections, so a diff makes it obvious which line is the method/URL, which
+are headers, and which is body.
 
 For example:
 
-```http
-POST {{base_url}}/users
+```text
+[request]
+method: POST
+url: {{base_url}}/users
+
+[headers]
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
+[body]
 {
   "name": "John",
   "email": "john@example.com"
 }
 ```
+
+Only `[request]` is required; `[params]`, `[headers]`, `[body]`, `[assert]`,
+and `[response]` are all optional. Query parameters live in their own
+`[params]` section as `key: value` lines (repeat a key for a multi-value
+parameter) rather than embedded in the URL, so `[request]`'s `url:` is
+always just the bare path.
 
 Environment configuration could remain equally straightforward:
 
@@ -191,22 +204,30 @@ extract user_id
 Get User
 ```
 
-concretely, a request declares an extraction in its own `###` section, and a
+concretely, a request declares an extraction in its own `[assert]` section, and a
 later request in the same run references it like any other variable:
 
-```http
-POST {{base_url}}/auth/login
+```text
+[request]
+method: POST
+url: {{base_url}}/auth/login
+
+[headers]
 Content-Type: application/json
 
+[body]
 { "username": "{{username}}", "password": "{{password}}" }
 
-###
-
+[assert]
 access_token = response.access_token
 ```
 
-```http
-POST {{base_url}}/users
+```text
+[request]
+method: POST
+url: {{base_url}}/users
+
+[headers]
 Authorization: Bearer {{access_token}}
 ```
 
@@ -223,16 +244,20 @@ response.user.email == input.email
 response.time < 500ms
 ```
 
-placed after a `###` line following the request body:
+placed under a request's `[assert]` section:
 
-```http
-POST {{base_url}}/users
+```text
+[request]
+method: POST
+url: {{base_url}}/users
+
+[headers]
 Content-Type: application/json
 
+[body]
 { "email": "john@example.com" }
 
-###
-
+[assert]
 status == 201
 response.email == input.email
 ```
@@ -260,26 +285,31 @@ Nova exposes project definitions as a local mock server:
 nova mock
 ```
 
-For every `.http` request in the project, this registers a route matching its
+For every `.nova` request in the project, this registers a route matching its
 method and path. A request declares the canned response for its route in a
-`### response` section, in the same shape as the request itself:
+`[response <status>]` section, in the same shape as the request itself:
 
-```http
-POST {{base_url}}/users
+```text
+[request]
+method: POST
+url: {{base_url}}/users
+
+[headers]
 Content-Type: application/json
 
+[body]
 { "name": "John" }
 
-### response 201
+[response 201]
 Content-Type: application/json
 
 { "id": "usr_1234", "name": "John" }
 ```
 
-The status code is taken from the `### response` line itself and defaults to
-`200` when omitted. A request with no `### response` section still gets a
-route — it just always answers `501`, explaining that no example response is
-defined, rather than being silently left out of the mock server.
+The status code is taken from the `[response <status>]` marker itself and
+defaults to `200` when omitted. A request with no `[response]` section still
+gets a route — it just always answers `501`, explaining that no example
+response is defined, rather than being silently left out of the mock server.
 
 This allows frontend development before a backend implementation is complete.
 
@@ -364,7 +394,7 @@ The CLI makes Nova useful beyond its desktop application.
 ```bash
 nova init
 
-nova run nova/auth/login.http
+nova run nova/auth/login.nova
 
 nova run nova/users/
 

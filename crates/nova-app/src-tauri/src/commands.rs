@@ -21,7 +21,7 @@ pub fn validate_project(path: String) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// Parse, resolve, and execute the `.http` file at `request_path`, against
+/// Parse, resolve, and execute the `.nova` file at `request_path`, against
 /// `environment` if named (else the project's default). One fresh
 /// [`Session`] per call — request chaining across multiple Send clicks is
 /// out of scope for this command.
@@ -54,7 +54,7 @@ pub fn send_request(request_path: String, environment: Option<String>) -> Result
     Ok(response)
 }
 
-/// Parse the `.http` file at `request_path` into a [`RequestDraft`] for
+/// Parse the `.nova` file at `request_path` into a [`RequestDraft`] for
 /// the GUI's editable request panel.
 #[tauri::command]
 pub fn read_request(request_path: String) -> Result<RequestDraft, String> {
@@ -67,7 +67,7 @@ pub fn read_request(request_path: String) -> Result<RequestDraft, String> {
     parsed.to_draft().map_err(|e| e.to_string())
 }
 
-/// Write edited method/URL/query/headers/body back to the `.http` file at
+/// Write edited method/URL/query/headers/body back to the `.nova` file at
 /// `request_path`. Any assertions, extractions, and example response
 /// already in the file are preserved unchanged — see
 /// [`nova_engine::RequestFile::write`].
@@ -89,7 +89,7 @@ pub fn save_request(
         .map_err(|e| e.to_string())
 }
 
-/// Create a new `.http` file named `name` (a `.http` suffix is added if
+/// Create a new `.nova` file named `name` (a `.nova` suffix is added if
 /// missing) directly inside the collection directory at `collection_path`,
 /// with a minimal default request body. Returns the new [`RequestFile`] so
 /// the GUI can open it for editing immediately.
@@ -106,10 +106,10 @@ pub fn create_request(collection_path: String, name: String) -> Result<RequestFi
         return Err("request name cannot contain path separators".to_string());
     }
 
-    let file_name = if file_name.ends_with(".http") {
+    let file_name = if file_name.ends_with(".nova") {
         file_name.to_string()
     } else {
-        format!("{file_name}.http")
+        format!("{file_name}.nova")
     };
 
     let path = std::path::Path::new(&collection_path).join(file_name);

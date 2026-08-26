@@ -44,7 +44,7 @@ pub enum Command {
 
     /// Execute a single request file.
     Run {
-        /// Path to a `.http` file, or a directory of them.
+        /// Path to a `.nova` file, or a directory of them.
         request: PathBuf,
 
         #[arg(long)]
@@ -82,8 +82,8 @@ pub enum Command {
 
     /// Start a local mock server serving each request's example response.
     ///
-    /// For every `.http` request found under `path`, registers a route
-    /// matching its method and path. A request with a `### response`
+    /// For every `.nova` request found under `path`, registers a route
+    /// matching its method and path. A request with a `[response]`
     /// section serves that example verbatim; a request without one still
     /// gets a route, but it always answers `501` explaining that no
     /// example response is defined.

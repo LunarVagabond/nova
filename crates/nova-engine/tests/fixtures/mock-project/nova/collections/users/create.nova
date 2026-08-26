@@ -1,9 +1,14 @@
-POST {{base_url}}/users
+[request]
+method: POST
+url: {{base_url}}/users
+
+[headers]
 Content-Type: application/json
 
+[body]
 {"name": "New User"}
 
-### response 201
+[response 201]
 Content-Type: application/json
 
 {"id": "2", "name": "New User"}

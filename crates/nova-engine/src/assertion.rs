@@ -4,8 +4,8 @@ use serde_json::Value;
 use crate::execute::Response;
 use crate::request::{ParsedRequest, RequestBody};
 
-/// A single assertion parsed from a `.http` file's `###`-delimited
-/// assertions section. See README's "Testing & Assertions" section for the
+/// A single assertion parsed from a `.nova` file's `[assert]`
+/// section. See README's "Testing & Assertions" section for the
 /// target syntax:
 /// ```text
 /// status == 200
@@ -29,7 +29,7 @@ pub enum Assertion {
 
 impl Assertion {
     /// The assertion line as originally written, regardless of variant —
-    /// used to re-emit a `.http` file's assertions section verbatim when
+    /// used to re-emit a `.nova` file's `[assert]` section verbatim when
     /// serializing a [`crate::request::ParsedRequest`] back to text.
     pub fn raw(&self) -> &str {
         match self {
@@ -90,8 +90,8 @@ pub struct Extraction {
     pub path: Vec<String>,
 }
 
-/// Parse a `.http` file's directives section (the part after a `###` line)
-/// into its assertions and extractions. Blank lines and lines starting
+/// Parse a `.nova` file's `[assert]` section into its assertions and
+/// extractions. Blank lines and lines starting
 /// with `#` are skipped (comments); every other line must be a well-formed
 /// assertion (`<term> <op> <term>` / `<term> exists`) or extraction
 /// (`<name> = response.<path>`).

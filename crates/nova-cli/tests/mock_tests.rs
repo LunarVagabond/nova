@@ -34,14 +34,14 @@ fn write_project(dir: &Path) {
     .unwrap();
 
     fs::write(
-        nova_dir.join("collections/hello.http"),
-        "GET {{base_url}}/hello\n\n### response 200\nContent-Type: text/plain\n\nhi there\n",
+        nova_dir.join("collections/hello.nova"),
+        "[request]\nmethod: GET\nurl: {{base_url}}/hello\n\n[response 200]\nContent-Type: text/plain\n\nhi there\n",
     )
     .unwrap();
 
     fs::write(
-        nova_dir.join("collections/missing.http"),
-        "GET {{base_url}}/missing\n",
+        nova_dir.join("collections/missing.nova"),
+        "[request]\nmethod: GET\nurl: {{base_url}}/missing\n",
     )
     .unwrap();
 }

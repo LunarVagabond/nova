@@ -8,7 +8,7 @@ use crate::request::RequestFile;
 /// A directory beneath the project's collections root.
 ///
 /// The filesystem hierarchy maps directly onto this tree: each
-/// subdirectory becomes a child `Collection`, and each `.http` file
+/// subdirectory becomes a child `Collection`, and each `.nova` file
 /// directly inside a directory becomes one of its `requests`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Collection {
@@ -33,7 +33,7 @@ impl Collection {
 /// Recursively discover the collection tree rooted at `collections_dir`.
 ///
 /// Developers never register requests in the manifest; they simply add
-/// `.http` files and directories on disk, and this walk finds them.
+/// `.nova` files and directories on disk, and this walk finds them.
 pub fn load_collections(collections_dir: &Path) -> NovaResult<Collection> {
     if !collections_dir.is_dir() {
         return Err(NovaError::CollectionsDirNotFound(
@@ -66,7 +66,7 @@ fn load_collection_dir(dir: &Path) -> NovaResult<Collection> {
     for path in paths {
         if path.is_dir() {
             children.push(load_collection_dir(&path)?);
-        } else if path.extension().and_then(|ext| ext.to_str()) == Some("http") {
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("nova") {
             let name = path
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())

@@ -23,7 +23,7 @@ export function validateProject(path: string): Promise<string[]> {
   return invoke<string[]>("validate_project", { path });
 }
 
-/** Parses, resolves, and executes the `.http` file at `requestPath`. */
+/** Parses, resolves, and executes the `.nova` file at `requestPath`. */
 export function sendRequest(
   requestPath: string,
   environment: string | null,
@@ -31,13 +31,13 @@ export function sendRequest(
   return invoke<RequestResponse>("send_request", { requestPath, environment });
 }
 
-/** Parses the `.http` file at `requestPath` into an editable draft. */
+/** Parses the `.nova` file at `requestPath` into an editable draft. */
 export function readRequest(requestPath: string): Promise<RequestDraft> {
   return invoke<RequestDraft>("read_request", { requestPath });
 }
 
 /**
- * Writes edited method/URL/query/headers/body back to the `.http` file at
+ * Writes edited method/URL/query/headers/body back to the `.nova` file at
  * `requestPath`. Any assertions, extractions, and example response
  * already in the file are preserved unchanged.
  */
@@ -62,7 +62,7 @@ export function saveRequest(
 }
 
 /**
- * Creates a new `.http` file named `name` (a `.http` suffix is added if
+ * Creates a new `.nova` file named `name` (a `.nova` suffix is added if
  * missing) directly inside the collection directory at `collectionPath`,
  * with a minimal default request, and returns its `RequestFile` handle.
  */

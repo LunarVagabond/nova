@@ -10,7 +10,7 @@ fn fixture(name: &str) -> PathBuf {
 
 /// A scratch directory under the OS temp dir, unique per call, cleaned up
 /// when dropped. Used for tests that write real files to disk (editing/
-/// creating `.http` files) without mutating the checked-in fixtures.
+/// creating `.nova` files) without mutating the checked-in fixtures.
 struct TempDir(PathBuf);
 
 impl TempDir {
@@ -90,7 +90,7 @@ fn writes_edited_fields_back_to_disk_and_preserves_the_example_response() {
         after.body,
         RequestBody::Json(serde_json::json!({"name": "Someone New"}))
     );
-    // The `### response 201` section wasn't touched by this edit and must
+    // The `[response 201]` section wasn't touched by this edit and must
     // survive the save untouched.
     assert_eq!(after.example_response, before.example_response);
 }
@@ -98,10 +98,10 @@ fn writes_edited_fields_back_to_disk_and_preserves_the_example_response() {
 #[test]
 fn write_preserves_assertions_and_extractions_on_an_unrelated_edit() {
     let temp = TempDir::new("write-directives");
-    let request_path = temp.0.join("request.http");
+    let request_path = temp.0.join("request.nova");
     std::fs::write(
         &request_path,
-        "GET {{base_url}}/users/{{user_id}}\nAccept: application/json\n\n###\nstatus == 200\nuser_id = response.id\n",
+        "[request]\nmethod: GET\nurl: {{base_url}}/users/{{user_id}}\n\n[headers]\nAccept: application/json\n\n[assert]\nstatus == 200\nuser_id = response.id\n",
     )
     .unwrap();
 
@@ -139,7 +139,7 @@ fn write_preserves_assertions_and_extractions_on_an_unrelated_edit() {
 #[test]
 fn create_writes_a_minimal_default_request_and_refuses_to_overwrite() {
     let temp = TempDir::new("create");
-    let path = temp.0.join("subdir").join("new-request.http");
+    let path = temp.0.join("subdir").join("new-request.nova");
 
     let created = RequestFile::create(path.clone()).unwrap();
     assert_eq!(created.name, "new-request");

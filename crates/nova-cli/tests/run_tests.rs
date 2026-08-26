@@ -34,13 +34,13 @@ fn write_project(dir: &Path, base_url: &str) {
     .unwrap();
 
     fs::write(
-        nova_dir.join("collections/hello.http"),
-        "GET {{base_url}}/hello\n",
+        nova_dir.join("collections/hello.nova"),
+        "[request]\nmethod: GET\nurl: {{base_url}}/hello\n",
     )
     .unwrap();
     fs::write(
-        nova_dir.join("collections/world.http"),
-        "GET {{base_url}}/world\n",
+        nova_dir.join("collections/world.nova"),
+        "[request]\nmethod: GET\nurl: {{base_url}}/world\n",
     )
     .unwrap();
 }
@@ -73,7 +73,7 @@ fn runs_a_single_request_file_and_prints_the_response() {
     let output = Command::new(env!("CARGO_BIN_EXE_nova"))
         .args([
             "run",
-            dir.join("nova/collections/hello.http").to_str().unwrap(),
+            dir.join("nova/collections/hello.nova").to_str().unwrap(),
             "--environment",
             "test",
         ])
@@ -132,7 +132,7 @@ fn exits_nonzero_when_a_request_fails_to_execute() {
     let output = Command::new(env!("CARGO_BIN_EXE_nova"))
         .args([
             "run",
-            dir.join("nova/collections/hello.http").to_str().unwrap(),
+            dir.join("nova/collections/hello.nova").to_str().unwrap(),
             "--environment",
             "test",
         ])

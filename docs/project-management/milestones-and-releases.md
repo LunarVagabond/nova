@@ -3,7 +3,7 @@
 Three GitHub milestones currently map the engine work README's "Core Features"
 section describes but `nova-engine` doesn't implement yet:
 
-- **Core HTTP Engine** — `.http` parsing, HTTP execution, auth schemes,
+- **Core HTTP Engine** — `.nova` parsing, HTTP execution, auth schemes,
   environment/secret substitution. The baseline that makes `nova run` actually
   execute a request end to end.
 - **Testing & Chaining** — the assertions engine and request chaining/value

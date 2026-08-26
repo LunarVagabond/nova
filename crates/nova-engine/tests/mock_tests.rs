@@ -41,7 +41,7 @@ fn builds_one_route_per_request_with_its_example_response() {
             PathSegment::Param("user_id".to_string()),
         ]
     );
-    // A bare "### response" (no status) defaults to 200.
+    // A bare "[response]" (no status) defaults to 200.
     assert_eq!(get.example_response.as_ref().unwrap().status, 200);
 
     let create = routes
@@ -56,7 +56,7 @@ fn builds_one_route_per_request_with_its_example_response() {
         .expect("DELETE route should exist");
     assert!(
         delete.example_response.is_none(),
-        "a request with no \"### response\" section should have no example response"
+        "a request with no \"[response]\" section should have no example response"
     );
 }
 

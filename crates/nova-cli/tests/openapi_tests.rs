@@ -61,8 +61,8 @@ fn write_project(dir: &Path, base_url: &str) {
     .unwrap();
 
     fs::write(
-        nova_dir.join("collections/hello.http"),
-        "GET {{base_url}}/hello\n",
+        nova_dir.join("collections/hello.nova"),
+        "[request]\nmethod: GET\nurl: {{base_url}}/hello\n",
     )
     .unwrap();
 }
@@ -94,13 +94,13 @@ fn generate_writes_a_manifest_and_request_files() {
     let manifest = fs::read_to_string(&manifest_path).unwrap();
     assert!(manifest.contains("Petstore"));
 
-    let list_pets_path = output_dir.join("nova/collections/pets/listpets.http");
+    let list_pets_path = output_dir.join("nova/collections/pets/listpets.nova");
     assert!(
         list_pets_path.is_file(),
         "expected {} to exist",
         list_pets_path.display()
     );
-    let create_pet_path = output_dir.join("nova/collections/pets/createpet.http");
+    let create_pet_path = output_dir.join("nova/collections/pets/createpet.nova");
     assert!(create_pet_path.is_file());
     let contents = fs::read_to_string(&create_pet_path).unwrap();
     assert!(contents.contains("POST"));
