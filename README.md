@@ -191,6 +191,25 @@ extract user_id
 Get User
 ```
 
+concretely, a request declares an extraction in its own `###` section, and a
+later request in the same run references it like any other variable:
+
+```http
+POST {{base_url}}/auth/login
+Content-Type: application/json
+
+{ "username": "{{username}}", "password": "{{password}}" }
+
+###
+
+access_token = response.access_token
+```
+
+```http
+POST {{base_url}}/users
+Authorization: Bearer {{access_token}}
+```
+
 This makes realistic API workflows reproducible rather than requiring developers to manually copy values between requests.
 
 ### Testing & Assertions

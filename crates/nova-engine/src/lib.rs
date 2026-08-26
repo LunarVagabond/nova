@@ -17,7 +17,7 @@ mod session;
 mod validate;
 
 pub use assertion::{
-    evaluate, Assertion, AssertionOutcome, Op as AssertionOp, Term as AssertionTerm,
+    evaluate, Assertion, AssertionOutcome, Extraction, Op as AssertionOp, Term as AssertionTerm,
 };
 pub use collection::Collection;
 pub use environment::Environment;

@@ -65,16 +65,52 @@ pub struct AssertionOutcome {
     pub failure: Option<String>,
 }
 
-/// Parse a `.http` file's assertions section (the part after a `###` line)
-/// into a list of assertions. Blank lines and lines starting with `#` are
-/// skipped (comments); everything else must be a single well-formed
-/// assertion line.
-pub(crate) fn parse_assertions(text: &str) -> Result<Vec<Assertion>, String> {
-    text.lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        .map(parse_assertion_line)
-        .collect()
+/// `<name> = response.<path>` — declares that a later request in the same
+/// run can reference `{{<name>}}`, filled in from this request's response
+/// once it's actually run. See README's "Request Chaining" section.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Extraction {
+    pub raw: String,
+    pub name: String,
+    /// Path segments after `response.` (extraction only ever reads from
+    /// this request's own response — reading `input.*` would just be
+    /// copying a value the caller already has).
+    pub path: Vec<String>,
+}
+
+/// Parse a `.http` file's directives section (the part after a `###` line)
+/// into its assertions and extractions. Blank lines and lines starting
+/// with `#` are skipped (comments); every other line must be a well-formed
+/// assertion (`<term> <op> <term>` / `<term> exists`) or extraction
+/// (`<name> = response.<path>`).
+pub(crate) fn parse_directives(text: &str) -> Result<(Vec<Assertion>, Vec<Extraction>), String> {
+    let mut assertions = Vec::new();
+    let mut extractions = Vec::new();
+
+    for line in text.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let tokens = tokenize(line);
+        if let [name, op, rest] = tokens.as_slice() {
+            if op == "=" {
+                let path = rest.strip_prefix("response.").ok_or_else(|| {
+                    format!("extraction must reference response.<path> (got {rest:?}): {line:?}")
+                })?;
+                extractions.push(Extraction {
+                    raw: line.to_string(),
+                    name: name.clone(),
+                    path: path.split('.').map(str::to_string).collect(),
+                });
+                continue;
+            }
+        }
+
+        assertions.push(parse_assertion_line(line)?);
+    }
+
+    Ok((assertions, extractions))
 }
 
 fn parse_assertion_line(line: &str) -> Result<Assertion, String> {
@@ -281,6 +317,20 @@ fn resolve(term: &Term, context: &Context) -> Resolved {
     }
 }
 
+/// Resolve an [`Extraction`]'s `response.<path>` against a response body,
+/// returning the value as a string ready to store as a chained variable
+/// (matching `{{variable}}` substitution, which is always string-valued).
+/// `None` if the path isn't found or the body isn't JSON.
+pub(crate) fn resolve_extraction(response_body: &str, path: &[String]) -> Option<String> {
+    let response_json: Value = serde_json::from_str(response_body).ok()?;
+    match resolve_path(Some(&response_json), path) {
+        Resolved::Number(n) => Some(n.to_string()),
+        Resolved::Bool(b) => Some(b.to_string()),
+        Resolved::Str(s) => Some(s),
+        Resolved::Missing => None,
+    }
+}
+
 fn resolve_path(root: Option<&Value>, path: &[String]) -> Resolved {
     let mut current = match root {
         Some(value) => value,
@@ -386,12 +436,13 @@ mod tests {
             headers: vec![],
             body: RequestBody::Json(body),
             assertions: vec![],
+            extractions: vec![],
         }
     }
 
     #[test]
     fn parses_and_evaluates_status_equality() {
-        let assertions = parse_assertions("status == 200").unwrap();
+        let assertions = parse_directives("status == 200").unwrap().0;
         let response = response(200, "", 10);
         let request = json_request(Value::Null);
 
@@ -402,7 +453,7 @@ mod tests {
 
     #[test]
     fn status_mismatch_reports_expected_vs_actual() {
-        let assertions = parse_assertions("status == 200").unwrap();
+        let assertions = parse_directives("status == 200").unwrap().0;
         let response = response(404, "", 10);
         let request = json_request(Value::Null);
 
@@ -416,7 +467,7 @@ mod tests {
 
     #[test]
     fn evaluates_json_path_existence() {
-        let assertions = parse_assertions("response.user.id exists").unwrap();
+        let assertions = parse_directives("response.user.id exists").unwrap().0;
         let response = response(200, r#"{"user": {"id": 42}}"#, 10);
         let request = json_request(Value::Null);
 
@@ -427,7 +478,7 @@ mod tests {
 
     #[test]
     fn missing_json_path_fails_existence() {
-        let assertions = parse_assertions("response.user.id exists").unwrap();
+        let assertions = parse_directives("response.user.id exists").unwrap().0;
         let response = response(200, r#"{"user": {}}"#, 10);
         let request = json_request(Value::Null);
 
@@ -443,7 +494,7 @@ mod tests {
 
     #[test]
     fn evaluates_response_time_comparison() {
-        let assertions = parse_assertions("response.time < 500ms").unwrap();
+        let assertions = parse_directives("response.time < 500ms").unwrap().0;
         let fast = response(200, "", 100);
         let slow = response(200, "", 900);
         let request = json_request(Value::Null);
@@ -454,7 +505,9 @@ mod tests {
 
     #[test]
     fn evaluates_response_field_against_input_field() {
-        let assertions = parse_assertions("response.user.email == input.email").unwrap();
+        let assertions = parse_directives("response.user.email == input.email")
+            .unwrap()
+            .0;
         let response = response(200, r#"{"user": {"email": "john@example.com"}}"#, 10);
         let request = json_request(serde_json::json!({"email": "john@example.com"}));
 
@@ -465,7 +518,9 @@ mod tests {
 
     #[test]
     fn mismatched_response_field_against_input_field_fails() {
-        let assertions = parse_assertions("response.user.email == input.email").unwrap();
+        let assertions = parse_directives("response.user.email == input.email")
+            .unwrap()
+            .0;
         let response = response(200, r#"{"user": {"email": "wrong@example.com"}}"#, 10);
         let request = json_request(serde_json::json!({"email": "john@example.com"}));
 
@@ -476,19 +531,51 @@ mod tests {
 
     #[test]
     fn malformed_assertion_line_is_a_typed_error() {
-        let err = parse_assertions("this is not valid").unwrap_err();
+        let err = parse_directives("this is not valid").unwrap_err();
         assert!(err.contains("malformed assertion line"), "{err}");
     }
 
     #[test]
     fn unknown_operator_is_a_typed_error() {
-        let err = parse_assertions("status ~= 200").unwrap_err();
+        let err = parse_directives("status ~= 200").unwrap_err();
         assert!(err.contains("unknown operator"), "{err}");
     }
 
     #[test]
     fn comments_and_blank_lines_are_skipped() {
-        let assertions = parse_assertions("# a comment\n\nstatus == 200\n").unwrap();
+        let assertions = parse_directives("# a comment\n\nstatus == 200\n")
+            .unwrap()
+            .0;
         assert_eq!(assertions.len(), 1);
+    }
+
+    #[test]
+    fn parses_an_extraction() {
+        let (assertions, extractions) = parse_directives("access_token = response.token").unwrap();
+        assert!(assertions.is_empty());
+        assert_eq!(extractions.len(), 1);
+        assert_eq!(extractions[0].name, "access_token");
+        assert_eq!(extractions[0].path, vec!["token".to_string()]);
+    }
+
+    #[test]
+    fn extraction_must_reference_response() {
+        let err = parse_directives("access_token = input.token").unwrap_err();
+        assert!(err.contains("must reference response"), "{err}");
+    }
+
+    #[test]
+    fn resolves_an_extraction_from_a_response_body() {
+        let value = resolve_extraction(
+            r#"{"user": {"id": 42}}"#,
+            &["user".to_string(), "id".to_string()],
+        );
+        assert_eq!(value, Some("42".to_string()));
+    }
+
+    #[test]
+    fn resolving_a_missing_extraction_path_returns_none() {
+        let value = resolve_extraction(r#"{"user": {}}"#, &["user".to_string(), "id".to_string()]);
+        assert_eq!(value, None);
     }
 }

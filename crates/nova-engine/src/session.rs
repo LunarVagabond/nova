@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::assertion::resolve_extraction;
+use crate::environment::Environment;
 use crate::error::{NovaError, NovaResult};
 use crate::execute::{execute, Response};
 use crate::request::{Header, ParsedRequest};
@@ -77,12 +79,16 @@ fn parse_set_cookie(raw: &str) -> Option<StoredCookie> {
 }
 
 /// A single run's worth of state carried across multiple requests —
-/// currently just cookies. Create one `Session` per run (e.g. one
-/// `nova run`/`nova test` invocation against one environment) rather than
-/// sharing it across runs or environments.
+/// cookies, plus variables extracted from earlier responses (request
+/// chaining). Create one `Session` per run (e.g. one `nova run`/`nova
+/// test` invocation against one environment) rather than sharing it across
+/// runs or environments.
 #[derive(Debug, Clone, Default)]
 pub struct Session {
     jar: CookieJar,
+    /// Values extracted from earlier responses via a `<name> =
+    /// response.<path>` directive, keyed by name.
+    chained_variables: HashMap<String, String>,
 }
 
 impl Session {
@@ -119,6 +125,59 @@ impl Session {
         }
 
         Ok(response)
+    }
+
+    /// Resolve `parsed` against `environment` — extended with any variables
+    /// this session has extracted from earlier responses, so a later
+    /// request can reference `{{access_token}}` the way it would an
+    /// environment variable — then execute it and store any extractions
+    /// this request declares for requests still to come.
+    ///
+    /// An environment-declared variable always wins over a same-named
+    /// chained one: chained values fill gaps, they don't override
+    /// explicit environment configuration.
+    ///
+    /// Returns the fully-resolved request alongside the response — useful
+    /// for a caller that wants to display the actual method/URL/headers
+    /// that went out, not just what came back.
+    pub fn resolve_and_execute(
+        &mut self,
+        parsed: &ParsedRequest,
+        environment: &Environment,
+    ) -> NovaResult<(ParsedRequest, Response)> {
+        let effective_environment = self.environment_with_chained_variables(environment);
+        let resolved = parsed.resolve(&effective_environment)?;
+        let response = self.execute(&resolved)?;
+        self.store_extractions(&resolved, &response)?;
+        Ok((resolved, response))
+    }
+
+    fn environment_with_chained_variables(&self, environment: &Environment) -> Environment {
+        let mut variables = self.chained_variables.clone();
+        variables.extend(environment.variables.clone());
+        Environment {
+            name: environment.name.clone(),
+            variables,
+            path: environment.path.clone(),
+        }
+    }
+
+    fn store_extractions(
+        &mut self,
+        resolved: &ParsedRequest,
+        response: &Response,
+    ) -> NovaResult<()> {
+        for extraction in &resolved.extractions {
+            let value = resolve_extraction(&response.body, &extraction.path).ok_or_else(|| {
+                NovaError::ExtractionFailed {
+                    name: extraction.name.clone(),
+                    path: extraction.path.join("."),
+                }
+            })?;
+            self.chained_variables
+                .insert(extraction.name.clone(), value);
+        }
+        Ok(())
     }
 }
 

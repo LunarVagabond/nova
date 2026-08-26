@@ -52,6 +52,9 @@ pub enum NovaError {
 
     #[error("failed to execute request: {message}")]
     RequestExecution { message: String },
+
+    #[error("extraction {name:?} = response.{path} did not match anything in the response")]
+    ExtractionFailed { name: String, path: String },
 }
 
 pub type NovaResult<T> = Result<T, NovaError>;

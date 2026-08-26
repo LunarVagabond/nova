@@ -65,6 +65,7 @@ pub struct ParsedRequest {
     pub headers: Vec<Header>,
     pub body: RequestBody,
     pub assertions: Vec<crate::assertion::Assertion>,
+    pub extractions: Vec<crate::assertion::Extraction>,
 }
 
 impl ParsedRequest {
@@ -100,9 +101,11 @@ impl ParsedRequest {
             url: substitute(&self.url, environment)?,
             headers,
             body: substitute_body(&self.body, environment)?,
-            // Assertions reference the response/request, not environment
-            // variables, so they carry through resolution unchanged.
+            // Assertions and extractions reference the response/request,
+            // not environment variables, so they carry through resolution
+            // unchanged.
             assertions: self.assertions.clone(),
+            extractions: self.extractions.clone(),
         })
     }
 }
@@ -265,7 +268,8 @@ fn parse_http(contents: &str) -> Result<ParsedRequest, String> {
         }
     }
 
-    let assertions = crate::assertion::parse_assertions(&assertion_lines.join("\n"))?;
+    let (assertions, extractions) =
+        crate::assertion::parse_directives(&assertion_lines.join("\n"))?;
 
     let body_text = real_body_lines.join("\n");
     let body_text = body_text.trim();
@@ -311,6 +315,7 @@ fn parse_http(contents: &str) -> Result<ParsedRequest, String> {
         headers,
         body,
         assertions,
+        extractions,
     })
 }
 
@@ -531,6 +536,18 @@ mod tests {
             RequestBody::Json(serde_json::json!({"name": "John"}))
         );
         assert_eq!(parsed.assertions.len(), 2);
+    }
+
+    #[test]
+    fn a_hash_hash_hash_section_can_declare_an_extraction() {
+        let contents = "POST {{base_url}}/auth/login\n\n###\n\naccess_token = response.access_token\nstatus == 200\n";
+
+        let parsed = parse_http(contents).unwrap();
+
+        assert_eq!(parsed.assertions.len(), 1);
+        assert_eq!(parsed.extractions.len(), 1);
+        assert_eq!(parsed.extractions[0].name, "access_token");
+        assert_eq!(parsed.extractions[0].path, vec!["access_token".to_string()]);
     }
 
     #[test]
