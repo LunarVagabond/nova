@@ -128,6 +128,30 @@ fn sends_json_body_on_the_wire() {
 }
 
 #[test]
+fn sends_xml_body_on_the_wire() {
+    let (url, rx) = mock_server_capturing_request();
+
+    let request = ParsedRequest {
+        method: "POST".to_string(),
+        url,
+        query: vec![],
+        headers: vec![],
+        body: RequestBody::Xml(nova_engine::XmlElement {
+            name: "user".to_string(),
+            attributes: vec![("id".to_string(), "42".to_string())],
+            children: vec![nova_engine::XmlNode::Text("John".to_string())],
+        }),
+        assertions: vec![],
+        extractions: vec![],
+    };
+
+    execute(&request).unwrap();
+
+    let (_, body) = rx.recv().unwrap();
+    assert_eq!(body, r#"<user id="42">John</user>"#);
+}
+
+#[test]
 fn sends_multipart_body_with_boundary_on_the_wire() {
     let (url, rx) = mock_server_capturing_request();
 
