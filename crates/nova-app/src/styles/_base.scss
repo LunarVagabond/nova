@@ -1,6 +1,14 @@
 @use "variables" as *;
 
 :root {
+  // Tells the browser to render native form-control chrome (a <select>'s
+  // dropdown popup, scrollbars, etc.) in a matching palette — those aren't
+  // stylable via ordinary CSS, and without this they render with light-mode
+  // native colors even under the dark palette below, which combined with
+  // our own (near-white) --color-text on the <select> itself produces
+  // unreadable white-on-white text in the popup.
+  color-scheme: light;
+
   --color-bg: #f6f6f6;
   --color-bg-raised: #ffffff;
   --color-bg-sidebar: #efefef;
@@ -24,6 +32,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    color-scheme: dark;
+
     --color-bg: #1f1f1f;
     --color-bg-raised: #2a2a2a;
     --color-bg-sidebar: #262626;
@@ -64,7 +74,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font-family: inherit;
   font-size: inherit;
   color: inherit;
