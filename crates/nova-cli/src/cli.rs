@@ -22,6 +22,21 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Scaffold a brand-new Nova project: `nova/nova.yaml`, an empty
+    /// `nova/collections/`, and a starter `nova/envs/` with one example
+    /// environment, so other commands have something to discover. Also
+    /// adds `nova/envs/` to `.gitignore`. Refuses to overwrite an
+    /// existing `nova/` directory.
+    Init {
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Project name to use in the generated manifest. Defaults to the
+        /// target directory's name.
+        #[arg(long)]
+        name: Option<String>,
+    },
+
     /// Open a project and print its structure (same as bare `nova <path>`).
     Open {
         #[arg(default_value = ".")]

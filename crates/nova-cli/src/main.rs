@@ -11,6 +11,7 @@ fn main() {
 
     let result = match cli.command {
         None => commands::inspect::run(&cli.path),
+        Some(Command::Init { path, name }) => commands::init::run(&path, name.as_deref()),
         Some(Command::Open { path }) => commands::inspect::run(&path),
         Some(Command::Inspect { path }) => commands::inspect::run(&path),
         Some(Command::Validate { path }) => commands::validate::run(&path),

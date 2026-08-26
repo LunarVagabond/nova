@@ -61,6 +61,9 @@ pub enum NovaError {
 
     #[error("failed to parse OpenAPI spec: {message}")]
     OpenApiParse { message: String },
+
+    #[error("failed to render scaffolded project files: {message}")]
+    ScaffoldRender { message: String },
 }
 
 pub type NovaResult<T> = Result<T, NovaError>;
