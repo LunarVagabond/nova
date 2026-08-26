@@ -64,11 +64,47 @@
 .collection-tree__label {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: $spacing-xs;
   padding: $spacing-xs $spacing-md;
   font-size: $font-size-sm;
   font-weight: 600;
   color: var(--color-text-muted);
+}
+
+.collection-tree__label-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collection-tree__new-request {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  line-height: 1;
+  padding: 0;
+  border-radius: $radius-sm;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--color-text-muted);
+  font-weight: 600;
+
+  &:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+}
+
+.collection-tree__new-request--root {
+  width: auto;
+  height: auto;
+  display: block;
+  margin: $spacing-xs $spacing-md;
+  padding: $spacing-xs $spacing-sm;
+  text-align: left;
+  font-size: $font-size-sm;
+  border: 1px dashed var(--color-border);
 }
 
 .collection-tree__request {

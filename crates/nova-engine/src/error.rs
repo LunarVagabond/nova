@@ -47,6 +47,9 @@ pub enum NovaError {
     #[error("failed to parse request at {path}: {message}")]
     RequestParse { path: PathBuf, message: String },
 
+    #[error("failed to serialize request for {path}: {message}")]
+    RequestSerialize { path: PathBuf, message: String },
+
     #[error("undefined variable {name:?} (not set in environment {environment:?})")]
     UndefinedVariable { name: String, environment: String },
 

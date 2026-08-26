@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::environment::Environment;
 use crate::error::{NovaError, NovaResult};
@@ -27,10 +27,101 @@ impl RequestFile {
             message,
         })
     }
+
+    /// Write edited method/URL/query/headers/body back to this file on
+    /// disk, going through [`ParsedRequest::to_http_string`] rather than
+    /// nova-app (or any other caller) hand-rolling `.http` syntax.
+    ///
+    /// Any assertions, extractions, and example response already present
+    /// in the file are read back first and carried through unchanged —
+    /// the GUI fields this supports (method/URL/query/headers/body) don't
+    /// touch those sections, so saving one shouldn't silently drop the
+    /// other.
+    pub fn write(
+        &self,
+        method: &str,
+        url: &str,
+        query: Vec<QueryParam>,
+        headers: Vec<Header>,
+        body_text: &str,
+    ) -> NovaResult<()> {
+        let existing = self.parse().ok();
+
+        let body = RequestBody::from_text(&headers, body_text).map_err(|message| {
+            NovaError::RequestSerialize {
+                path: self.path.clone(),
+                message,
+            }
+        })?;
+
+        let parsed = ParsedRequest {
+            method: method.to_string(),
+            url: url.to_string(),
+            query,
+            headers,
+            body,
+            assertions: existing
+                .as_ref()
+                .map(|p| p.assertions.clone())
+                .unwrap_or_default(),
+            extractions: existing
+                .as_ref()
+                .map(|p| p.extractions.clone())
+                .unwrap_or_default(),
+            example_response: existing.and_then(|p| p.example_response),
+        };
+
+        let text = parsed
+            .to_http_string()
+            .map_err(|message| NovaError::RequestSerialize {
+                path: self.path.clone(),
+                message,
+            })?;
+
+        fs::write(&self.path, text).map_err(|source| NovaError::Io {
+            path: self.path.clone(),
+            source,
+        })
+    }
+
+    /// Create a brand-new `.http` file at `path` with a minimal default
+    /// request (`GET {{base_url}}/`), returning the [`RequestFile`]
+    /// handle for it. Errors if a file already exists at `path`, so a
+    /// caller never silently clobbers an existing request.
+    pub fn create(path: PathBuf) -> NovaResult<RequestFile> {
+        if path.exists() {
+            return Err(NovaError::Io {
+                path: path.clone(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    "a request file already exists at this path",
+                ),
+            });
+        }
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|source| NovaError::Io {
+                path: parent.to_path_buf(),
+                source,
+            })?;
+        }
+
+        fs::write(&path, "GET {{base_url}}/\n").map_err(|source| NovaError::Io {
+            path: path.clone(),
+            source,
+        })?;
+
+        let name = path
+            .file_stem()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+
+        Ok(RequestFile { name, path })
+    }
 }
 
 /// A single HTTP header as written in a `.http` file, order-preserved.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Header {
     pub name: String,
     pub value: String,
@@ -38,7 +129,7 @@ pub struct Header {
 
 /// A single query parameter, order-preserved. A repeated name (`?tag=a&tag=b`)
 /// is two separate entries, not collapsed into one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QueryParam {
     pub name: String,
     pub value: String,
@@ -63,6 +154,118 @@ pub enum RequestBody {
     Text(String),
     Form(Vec<(String, String)>),
     Multipart(Vec<MultipartField>),
+}
+
+impl RequestBody {
+    /// Infer a body's shape from `headers`' `Content-Type` and parse
+    /// `body_text` accordingly — the same dispatch `parse_http` uses,
+    /// factored out so a save from the GUI (editing raw body text plus
+    /// headers) can go through the identical inference nova-app never
+    /// hand-rolls itself.
+    pub fn from_text(headers: &[Header], body_text: &str) -> Result<RequestBody, String> {
+        let content_type = headers
+            .iter()
+            .find(|h| h.name.eq_ignore_ascii_case("content-type"))
+            .map(|h| h.value.as_str());
+
+        let content_type_essence = content_type.map(|ct| {
+            ct.split(';')
+                .next()
+                .unwrap_or(ct)
+                .trim()
+                .to_ascii_lowercase()
+        });
+
+        Ok(if body_text.is_empty() {
+            RequestBody::None
+        } else if content_type_essence.as_deref() == Some("application/json") {
+            let value = serde_json::from_str(body_text)
+                .map_err(|source| format!("invalid JSON body: {source}"))?;
+            RequestBody::Json(value)
+        } else if matches!(
+            content_type_essence.as_deref(),
+            Some("application/xml") | Some("text/xml")
+        ) {
+            let element = crate::xml::parse_xml(body_text)
+                .map_err(|source| format!("invalid XML body: {source}"))?;
+            RequestBody::Xml(element)
+        } else if content_type_essence.as_deref() == Some("application/x-www-form-urlencoded") {
+            let pairs = url::form_urlencoded::parse(body_text.as_bytes())
+                .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                .collect();
+            RequestBody::Form(pairs)
+        } else if content_type_essence.as_deref() == Some("multipart/form-data") {
+            let boundary = content_type_param(content_type.unwrap_or_default(), "boundary")
+                .ok_or_else(|| {
+                    "multipart/form-data body is missing a boundary parameter".to_string()
+                })?;
+            let fields = parse_multipart(body_text, &boundary)?;
+            RequestBody::Multipart(fields)
+        } else {
+            RequestBody::Text(body_text.to_string())
+        })
+    }
+
+    /// Serialize this body back to the raw text that follows the blank
+    /// line in a `.http` file — the inverse of [`RequestBody::from_text`].
+    /// `headers` supplies the boundary parameter for a `Multipart` body,
+    /// read from its own `Content-Type` header.
+    pub fn to_body_text(&self, headers: &[Header]) -> Result<String, String> {
+        Ok(match self {
+            RequestBody::None => String::new(),
+            RequestBody::Text(text) => text.clone(),
+            RequestBody::Json(value) => serde_json::to_string_pretty(value)
+                .map_err(|source| format!("failed to serialize JSON body: {source}"))?,
+            RequestBody::Xml(element) => element.to_xml_string(),
+            RequestBody::Form(pairs) => {
+                let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+                for (name, value) in pairs {
+                    serializer.append_pair(name, value);
+                }
+                serializer.finish()
+            }
+            RequestBody::Multipart(fields) => {
+                let content_type = headers
+                    .iter()
+                    .find(|h| h.name.eq_ignore_ascii_case("content-type"))
+                    .map(|h| h.value.as_str())
+                    .ok_or_else(|| {
+                        "multipart body requires a Content-Type header with a boundary".to_string()
+                    })?;
+                let boundary = content_type_param(content_type, "boundary").ok_or_else(|| {
+                    "multipart/form-data body is missing a boundary parameter".to_string()
+                })?;
+
+                let mut out = String::new();
+                for field in fields {
+                    out.push_str("--");
+                    out.push_str(&boundary);
+                    out.push('\n');
+                    out.push_str("Content-Disposition: form-data; name=\"");
+                    out.push_str(&field.name);
+                    out.push('"');
+                    if let Some(filename) = &field.filename {
+                        out.push_str("; filename=\"");
+                        out.push_str(filename);
+                        out.push('"');
+                    }
+                    out.push('\n');
+                    if let Some(content_type) = &field.content_type {
+                        out.push_str("Content-Type: ");
+                        out.push_str(content_type);
+                        out.push('\n');
+                    }
+                    out.push('\n');
+                    out.push_str(&field.value);
+                    out.push('\n');
+                }
+                out.push_str("--");
+                out.push_str(&boundary);
+                out.push_str("--");
+                out
+            }
+        })
+    }
 }
 
 /// An explicit, hand-written example response declared in a `.http` file's
@@ -96,7 +299,45 @@ pub struct ParsedRequest {
     pub example_response: Option<ExampleResponse>,
 }
 
+/// A flattened, GUI-friendly view of a request for editing: method, URL,
+/// query params, and headers as-is, plus the body reduced to the raw text
+/// a text field can show and hand back unchanged (see
+/// [`RequestBody::to_body_text`]/[`RequestBody::from_text`] for the
+/// text<->structured-body conversion this is built from).
+///
+/// Assertions/extractions/an example response aren't editable through
+/// this draft; the `has_*` flags just let the GUI say "this file also has
+/// assertions" without needing to understand their syntax. Saving a draft
+/// (see [`RequestFile::write`]) always preserves whatever was already in
+/// those sections.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RequestDraft {
+    pub method: String,
+    pub url: String,
+    pub query: Vec<QueryParam>,
+    pub headers: Vec<Header>,
+    pub body_text: String,
+    pub has_assertions: bool,
+    pub has_extractions: bool,
+    pub has_example_response: bool,
+}
+
 impl ParsedRequest {
+    /// Flatten into a [`RequestDraft`] for the GUI's editable request
+    /// panel.
+    pub fn to_draft(&self) -> Result<RequestDraft, String> {
+        Ok(RequestDraft {
+            method: self.method.clone(),
+            url: self.url.clone(),
+            query: self.query.clone(),
+            headers: self.headers.clone(),
+            body_text: self.body.to_body_text(&self.headers)?,
+            has_assertions: !self.assertions.is_empty(),
+            has_extractions: !self.extractions.is_empty(),
+            has_example_response: self.example_response.is_some(),
+        })
+    }
+
     /// Case-insensitive header lookup, returning the first match.
     pub fn header(&self, name: &str) -> Option<&str> {
         self.headers
@@ -178,6 +419,76 @@ impl ParsedRequest {
             extractions: self.extractions.clone(),
             example_response: self.example_response.clone(),
         })
+    }
+
+    /// Serialize back to the `.http` text this request would be written
+    /// as — the inverse of [`RequestFile::parse`]/[`parse_http`]. Used by
+    /// the GUI to write edits back to the real file on disk rather than
+    /// nova-app hand-rolling `.http` syntax itself.
+    ///
+    /// Not guaranteed byte-identical to whatever was originally parsed:
+    /// a JSON body is re-pretty-printed, an XML body is re-serialized from
+    /// its element tree (see [`crate::xml::XmlElement::to_xml_string`]),
+    /// and an `### response 200` section that named the (already-default)
+    /// 200 status explicitly comes back out as bare `### response`. When a
+    /// file mixes assertion and extraction lines in its directives
+    /// section, they're re-emitted grouped by kind (all extractions, then
+    /// all assertions) rather than in their original interleaved order —
+    /// the parsed assertions/extractions themselves are unaffected, just
+    /// their relative line order in the file. Comments (`#`-prefixed
+    /// lines) inside the directives section are also not preserved, since
+    /// they aren't captured by [`ParsedRequest`] at all.
+    pub fn to_http_string(&self) -> Result<String, String> {
+        let mut out = String::new();
+
+        out.push_str(&self.method);
+        out.push(' ');
+        out.push_str(&self.full_url());
+        out.push('\n');
+
+        for header in &self.headers {
+            out.push_str(&header.name);
+            out.push_str(": ");
+            out.push_str(&header.value);
+            out.push('\n');
+        }
+        out.push('\n');
+
+        let body_text = self.body.to_body_text(&self.headers)?;
+        out.push_str(body_text.trim_end());
+        out.push('\n');
+
+        if !self.extractions.is_empty() || !self.assertions.is_empty() {
+            out.push_str("\n###\n");
+            for extraction in &self.extractions {
+                out.push_str(&extraction.raw);
+                out.push('\n');
+            }
+            for assertion in &self.assertions {
+                out.push_str(assertion.raw());
+                out.push('\n');
+            }
+        }
+
+        if let Some(response) = &self.example_response {
+            out.push_str("\n### response");
+            if response.status != 200 {
+                out.push(' ');
+                out.push_str(&response.status.to_string());
+            }
+            out.push('\n');
+            for header in &response.headers {
+                out.push_str(&header.name);
+                out.push_str(": ");
+                out.push_str(&header.value);
+                out.push('\n');
+            }
+            out.push('\n');
+            out.push_str(response.body.trim_end());
+            out.push('\n');
+        }
+
+        Ok(out)
     }
 }
 
@@ -411,47 +722,7 @@ fn parse_http(contents: &str) -> Result<ParsedRequest, String> {
     let body_text = real_body_lines.join("\n");
     let body_text = body_text.trim();
 
-    let content_type = headers
-        .iter()
-        .find(|h| h.name.eq_ignore_ascii_case("content-type"))
-        .map(|h| h.value.as_str());
-
-    let content_type_essence = content_type.map(|ct| {
-        ct.split(';')
-            .next()
-            .unwrap_or(ct)
-            .trim()
-            .to_ascii_lowercase()
-    });
-
-    let body = if body_text.is_empty() {
-        RequestBody::None
-    } else if content_type_essence.as_deref() == Some("application/json") {
-        let value = serde_json::from_str(body_text)
-            .map_err(|source| format!("invalid JSON body: {source}"))?;
-        RequestBody::Json(value)
-    } else if matches!(
-        content_type_essence.as_deref(),
-        Some("application/xml") | Some("text/xml")
-    ) {
-        let element = crate::xml::parse_xml(body_text)
-            .map_err(|source| format!("invalid XML body: {source}"))?;
-        RequestBody::Xml(element)
-    } else if content_type_essence.as_deref() == Some("application/x-www-form-urlencoded") {
-        let pairs = url::form_urlencoded::parse(body_text.as_bytes())
-            .map(|(k, v)| (k.into_owned(), v.into_owned()))
-            .collect();
-        RequestBody::Form(pairs)
-    } else if content_type_essence.as_deref() == Some("multipart/form-data") {
-        let boundary = content_type_param(content_type.unwrap_or_default(), "boundary")
-            .ok_or_else(|| {
-                "multipart/form-data body is missing a boundary parameter".to_string()
-            })?;
-        let fields = parse_multipart(body_text, &boundary)?;
-        RequestBody::Multipart(fields)
-    } else {
-        RequestBody::Text(body_text.to_string())
-    };
+    let body = RequestBody::from_text(&headers, body_text)?;
 
     Ok(ParsedRequest {
         method,
@@ -1082,5 +1353,113 @@ mod tests {
             NovaError::UndefinedVariable { name, environment }
                 if name == "base_url" && environment == "local"
         ));
+    }
+
+    #[test]
+    fn round_trips_a_json_request_through_serialize_and_reparse() {
+        let contents = "POST {{base_url}}/users\nContent-Type: application/json\n\n{\n  \"name\": \"John\",\n  \"email\": \"john@example.com\"\n}\n";
+
+        let parsed = parse_http(contents).unwrap();
+        let text = parsed.to_http_string().unwrap();
+        let reparsed = parse_http(&text).unwrap();
+
+        assert_eq!(parsed, reparsed);
+    }
+
+    #[test]
+    fn round_trips_after_mutating_a_field() {
+        let contents = "GET {{base_url}}/users\nAccept: application/json\n";
+        let mut parsed = parse_http(contents).unwrap();
+
+        // Mutate method, URL, and headers as a GUI edit would, then
+        // re-serialize and re-parse.
+        parsed.method = "POST".to_string();
+        parsed.url = "{{base_url}}/users/{{user_id}}".to_string();
+        parsed.headers.push(Header {
+            name: "Authorization".to_string(),
+            value: "Bearer {{token}}".to_string(),
+        });
+        parsed.body = RequestBody::from_text(
+            &[Header {
+                name: "Content-Type".to_string(),
+                value: "application/json".to_string(),
+            }],
+            r#"{"name": "Jane"}"#,
+        )
+        .unwrap();
+        parsed.headers.push(Header {
+            name: "Content-Type".to_string(),
+            value: "application/json".to_string(),
+        });
+
+        let text = parsed.to_http_string().unwrap();
+        let reparsed = parse_http(&text).unwrap();
+
+        assert_eq!(reparsed.method, "POST");
+        assert_eq!(reparsed.url, "{{base_url}}/users/{{user_id}}");
+        assert_eq!(reparsed.header("Authorization"), Some("Bearer {{token}}"));
+        assert_eq!(
+            reparsed.body,
+            RequestBody::Json(serde_json::json!({"name": "Jane"}))
+        );
+    }
+
+    #[test]
+    fn round_trips_query_params_headers_assertions_extractions_and_example_response() {
+        let contents = "GET {{base_url}}/users/{{user_id}}?active=true&tag=a&tag=b\nAccept: application/json\n\n###\nstatus == 200\nuser_id = response.id\nresponse.name exists\n\n### response 201\nContent-Type: application/json\n\n{\"id\": \"1\"}\n";
+
+        let parsed = parse_http(contents).unwrap();
+        let text = parsed.to_http_string().unwrap();
+        let reparsed = parse_http(&text).unwrap();
+
+        assert_eq!(parsed.query, reparsed.query);
+        assert_eq!(parsed.assertions, reparsed.assertions);
+        assert_eq!(parsed.extractions, reparsed.extractions);
+        assert_eq!(parsed.example_response, reparsed.example_response);
+        assert_eq!(parsed, reparsed);
+    }
+
+    #[test]
+    fn round_trips_an_xml_body() {
+        let contents = "POST {{base_url}}/users\nContent-Type: application/xml\n\n<user id=\"42\"><name>John</name></user>";
+
+        let parsed = parse_http(contents).unwrap();
+        let text = parsed.to_http_string().unwrap();
+        let reparsed = parse_http(&text).unwrap();
+
+        assert_eq!(parsed.body, reparsed.body);
+    }
+
+    #[test]
+    fn round_trips_a_form_body() {
+        let contents = "POST {{base_url}}/login\nContent-Type: application/x-www-form-urlencoded\n\nusername=john&password=hunter+2";
+
+        let parsed = parse_http(contents).unwrap();
+        let text = parsed.to_http_string().unwrap();
+        let reparsed = parse_http(&text).unwrap();
+
+        assert_eq!(parsed.body, reparsed.body);
+    }
+
+    #[test]
+    fn round_trips_a_multipart_body() {
+        let contents = "POST {{base_url}}/upload\nContent-Type: multipart/form-data; boundary=BOUNDARY\n\n--BOUNDARY\nContent-Disposition: form-data; name=\"title\"\n\nMy Upload\n--BOUNDARY\nContent-Disposition: form-data; name=\"file\"; filename=\"notes.txt\"\nContent-Type: text/plain\n\nhello from a file\n--BOUNDARY--\n";
+
+        let parsed = parse_http(contents).unwrap();
+        let text = parsed.to_http_string().unwrap();
+        let reparsed = parse_http(&text).unwrap();
+
+        assert_eq!(parsed.body, reparsed.body);
+    }
+
+    #[test]
+    fn round_trips_a_request_with_no_body() {
+        let contents = "GET {{base_url}}/users\nAccept: application/json\n";
+
+        let parsed = parse_http(contents).unwrap();
+        let text = parsed.to_http_string().unwrap();
+        let reparsed = parse_http(&text).unwrap();
+
+        assert_eq!(parsed, reparsed);
     }
 }

@@ -9,6 +9,17 @@
   --color-text-muted: #6b6b6b;
   --color-accent: #396cd8;
   --color-danger: #c0392b;
+  --color-warning: #b5890a;
+
+  // Code editor token colors (request body syntax highlighting).
+  --color-code-key: #a626a4;
+  --color-code-string: #2e7d32;
+  --color-code-number: #b45c00;
+  --color-code-keyword: #0b6fb0;
+
+  --code-editor-radius: #{$radius-md};
+  --code-editor-font-size: #{$font-size-sm};
+  --code-editor-font-family: #{$font-family-mono};
 }
 
 @media (prefers-color-scheme: dark) {
@@ -21,6 +32,12 @@
     --color-text-muted: #9a9a9a;
     --color-accent: #6a9bff;
     --color-danger: #ff6b5e;
+    --color-warning: #e0b23c;
+
+    --color-code-key: #c678dd;
+    --color-code-string: #98c379;
+    --color-code-number: #e5a56a;
+    --color-code-keyword: #61afef;
   }
 }
 

@@ -27,6 +27,18 @@ pub enum Assertion {
     },
 }
 
+impl Assertion {
+    /// The assertion line as originally written, regardless of variant —
+    /// used to re-emit a `.http` file's assertions section verbatim when
+    /// serializing a [`crate::request::ParsedRequest`] back to text.
+    pub fn raw(&self) -> &str {
+        match self {
+            Assertion::Exists { raw, .. } => raw,
+            Assertion::Compare { raw, .. } => raw,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Op {
     Eq,

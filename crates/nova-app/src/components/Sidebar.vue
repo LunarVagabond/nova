@@ -12,6 +12,7 @@ const emit = defineEmits<{
   (e: "update:selectedEnvironment", value: string): void;
   (e: "selectRequest", request: RequestFile): void;
   (e: "switchProject"): void;
+  (e: "createRequest", collectionPath: string): void;
 }>();
 
 function onEnvironmentChange(event: Event) {
@@ -52,6 +53,7 @@ function onEnvironmentChange(event: Event) {
       is-root
       :selected-path="selectedRequestPath"
       @select="emit('selectRequest', $event)"
+      @create-request="emit('createRequest', $event)"
     />
   </div>
 </template>

@@ -1,11 +1,164 @@
 use std::path::{Path, PathBuf};
 
-use nova_engine::{NovaProject, RequestBody};
+use nova_engine::{Header, NovaProject, QueryParam, RequestBody, RequestFile};
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures")
         .join(name)
+}
+
+/// A scratch directory under the OS temp dir, unique per call, cleaned up
+/// when dropped. Used for tests that write real files to disk (editing/
+/// creating `.http` files) without mutating the checked-in fixtures.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(label: &str) -> TempDir {
+        let path = std::env::temp_dir().join(format!(
+            "nova-engine-test-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        TempDir(path)
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) {
+    std::fs::create_dir_all(dst).unwrap();
+    for entry in std::fs::read_dir(src).unwrap() {
+        let entry = entry.unwrap();
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir_recursive(&entry.path(), &dst_path);
+        } else {
+            std::fs::copy(entry.path(), &dst_path).unwrap();
+        }
+    }
+}
+
+#[test]
+fn writes_edited_fields_back_to_disk_and_preserves_the_example_response() {
+    let temp = TempDir::new("write");
+    copy_dir_recursive(&fixture("mock-project"), &temp.0);
+
+    let project = NovaProject::discover(&temp.0).unwrap();
+    let users = project
+        .collections
+        .children
+        .iter()
+        .find(|c| c.name == "users")
+        .unwrap();
+    let create = users.requests.iter().find(|r| r.name == "create").unwrap();
+
+    let before = create.parse().unwrap();
+    assert!(before.example_response.is_some());
+
+    create
+        .write(
+            "POST",
+            "{{base_url}}/users",
+            vec![],
+            vec![Header {
+                name: "Content-Type".to_string(),
+                value: "application/json".to_string(),
+            }],
+            r#"{"name": "Someone New"}"#,
+        )
+        .unwrap();
+
+    // Re-read straight from disk (not the in-memory `create` handle) to
+    // prove the edit actually landed in the real file.
+    let request_file = RequestFile {
+        name: "create".to_string(),
+        path: create.path.clone(),
+    };
+    let after = request_file.parse().unwrap();
+
+    assert_eq!(after.method, "POST");
+    assert_eq!(
+        after.body,
+        RequestBody::Json(serde_json::json!({"name": "Someone New"}))
+    );
+    // The `### response 201` section wasn't touched by this edit and must
+    // survive the save untouched.
+    assert_eq!(after.example_response, before.example_response);
+}
+
+#[test]
+fn write_preserves_assertions_and_extractions_on_an_unrelated_edit() {
+    let temp = TempDir::new("write-directives");
+    let request_path = temp.0.join("request.http");
+    std::fs::write(
+        &request_path,
+        "GET {{base_url}}/users/{{user_id}}\nAccept: application/json\n\n###\nstatus == 200\nuser_id = response.id\n",
+    )
+    .unwrap();
+
+    let request_file = RequestFile {
+        name: "request".to_string(),
+        path: request_path.clone(),
+    };
+    let before = request_file.parse().unwrap();
+
+    request_file
+        .write(
+            "GET",
+            "{{base_url}}/users/{{user_id}}",
+            vec![QueryParam {
+                name: "active".to_string(),
+                value: "true".to_string(),
+            }],
+            before.headers.clone(),
+            "",
+        )
+        .unwrap();
+
+    let after = request_file.parse().unwrap();
+    assert_eq!(
+        after.query,
+        vec![QueryParam {
+            name: "active".to_string(),
+            value: "true".to_string(),
+        }]
+    );
+    assert_eq!(after.assertions, before.assertions);
+    assert_eq!(after.extractions, before.extractions);
+}
+
+#[test]
+fn create_writes_a_minimal_default_request_and_refuses_to_overwrite() {
+    let temp = TempDir::new("create");
+    let path = temp.0.join("subdir").join("new-request.http");
+
+    let created = RequestFile::create(path.clone()).unwrap();
+    assert_eq!(created.name, "new-request");
+    assert_eq!(created.path, path);
+
+    let parsed = created.parse().unwrap();
+    assert_eq!(parsed.method, "GET");
+    assert_eq!(parsed.url, "{{base_url}}/");
+    assert_eq!(parsed.body, RequestBody::None);
+
+    let err = RequestFile::create(path).unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            nova_engine::NovaError::Io { source, .. }
+                if source.kind() == std::io::ErrorKind::AlreadyExists
+        ),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
