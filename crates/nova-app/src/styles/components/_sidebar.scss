@@ -55,9 +55,18 @@
   font-size: $font-size-base;
   border-radius: $radius-sm;
   color: var(--color-text);
-  cursor: default;
+  cursor: pointer;
 
   &:hover {
     background-color: var(--color-bg-raised);
+  }
+}
+
+.collection-tree__request--selected {
+  background-color: var(--color-accent);
+  color: #ffffff;
+
+  &:hover {
+    background-color: var(--color-accent);
   }
 }

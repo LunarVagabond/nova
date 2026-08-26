@@ -21,9 +21,8 @@ defineProps<{
 
     <h2 class="project-panel__section-title">Requests</h2>
     <p class="empty-state__hint">
-      Browse the collection tree in the sidebar. Request editing and
-      execution land here once the engine supports them — for now this view
-      proves the GUI is reading the exact same project the CLI does.
+      Select a request in the sidebar to view it and send it against the
+      selected environment.
     </p>
   </div>
 </template>

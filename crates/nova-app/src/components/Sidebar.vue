@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import type { NovaProject } from "../types/nova";
+import type { NovaProject, RequestFile } from "../types/nova";
 import CollectionNode from "./CollectionNode.vue";
 
 const props = defineProps<{
   project: NovaProject;
   selectedEnvironment: string | null;
+  selectedRequestPath?: string | null;
 }>();
 
 const emit = defineEmits<{
   (e: "update:selectedEnvironment", value: string): void;
+  (e: "selectRequest", request: RequestFile): void;
 }>();
 
 function onEnvironmentChange(event: Event) {
@@ -34,6 +36,11 @@ function onEnvironmentChange(event: Event) {
     </div>
 
     <p class="sidebar-section-title">Collections</p>
-    <CollectionNode :collection="props.project.collections" is-root />
+    <CollectionNode
+      :collection="props.project.collections"
+      is-root
+      :selected-path="selectedRequestPath"
+      @select="emit('selectRequest', $event)"
+    />
   </div>
 </template>
