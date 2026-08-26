@@ -360,7 +360,13 @@ impl ParsedRequest {
         for param in &self.query {
             serializer.append_pair(&param.name, &param.value);
         }
-        format!("{}?{}", self.url, serializer.finish())
+        // `[request]`'s `url:` is meant to carry no query string of its own
+        // (params belong in `[params]`), but nothing enforces that at parse
+        // time — if the url already has one, extend it with `&` rather than
+        // gluing on a second `?`, which would otherwise get absorbed into
+        // the previous param's value instead of starting a new one.
+        let separator = if self.url.contains('?') { '&' } else { '?' };
+        format!("{}{separator}{}", self.url, serializer.finish())
     }
 
     /// Resolve `{{variable}}` placeholders in the URL, header values, and
@@ -1335,6 +1341,19 @@ mod tests {
         let parsed = parse_nova(contents).unwrap();
 
         assert_eq!(parsed.full_url(), "{{base_url}}/users?page=2&limit=10");
+    }
+
+    #[test]
+    fn full_url_extends_a_url_that_already_has_a_query_string_with_ampersand() {
+        // `url:` isn't supposed to carry its own query string (params
+        // belong in `[params]`), but nothing enforces that — if someone
+        // writes one anyway, appending params must not glue a second `?`
+        // onto it, which would get absorbed into the prior param's value.
+        let contents =
+            "[request]\nmethod: GET\nurl: {{base_url}}/auth/login?test=b\n\n[params]\nsdfa: dfd\n";
+        let parsed = parse_nova(contents).unwrap();
+
+        assert_eq!(parsed.full_url(), "{{base_url}}/auth/login?test=b&sdfa=dfd");
     }
 
     #[test]

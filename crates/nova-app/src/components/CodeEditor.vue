@@ -90,10 +90,16 @@ const novaEditorTheme = EditorView.theme({
   },
 });
 
+// An empty body is valid (no body sent) — don't flag it as invalid JSON.
+function jsonLinterIgnoringEmpty(): ReturnType<typeof jsonParseLinter> {
+  const base = jsonParseLinter();
+  return (view) => (view.state.doc.toString().trim() === "" ? [] : base(view));
+}
+
 function languageExtension(language: EditorLanguage): Extension[] {
   switch (language) {
     case "json":
-      return [json(), linter(jsonParseLinter()), lintGutter()];
+      return [json(), linter(jsonLinterIgnoringEmpty()), lintGutter()];
     case "xml":
       return [xml()];
     case "text":
