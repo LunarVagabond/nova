@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use nova_engine::{Header, NovaProject, QueryParam, RequestBody, RequestFile};
+use nova_engine::{
+    ApiKeyLocation, AuthScheme, Header, NovaProject, QueryParam, RequestBody, RequestFile,
+};
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -64,18 +66,17 @@ fn writes_edited_fields_back_to_disk_and_preserves_the_example_response() {
     let before = create.parse().unwrap();
     assert!(before.example_response.is_some());
 
-    create
-        .write(
-            "POST",
-            "{{base_url}}/users",
-            vec![],
-            vec![Header {
-                name: "Content-Type".to_string(),
-                value: "application/json".to_string(),
-            }],
-            r#"{"name": "Someone New"}"#,
-        )
-        .unwrap();
+    let mut draft = before.to_draft().unwrap();
+    draft.method = "POST".to_string();
+    draft.url = "{{base_url}}/users".to_string();
+    draft.query = vec![];
+    draft.headers = vec![Header {
+        name: "Content-Type".to_string(),
+        value: "application/json".to_string(),
+    }];
+    draft.body_text = r#"{"name": "Someone New"}"#.to_string();
+
+    create.write(&draft).unwrap();
 
     // Re-read straight from disk (not the in-memory `create` handle) to
     // prove the edit actually landed in the real file.
@@ -111,18 +112,13 @@ fn write_preserves_assertions_and_extractions_on_an_unrelated_edit() {
     };
     let before = request_file.parse().unwrap();
 
-    request_file
-        .write(
-            "GET",
-            "{{base_url}}/users/{{user_id}}",
-            vec![QueryParam {
-                name: "active".to_string(),
-                value: "true".to_string(),
-            }],
-            before.headers.clone(),
-            "",
-        )
-        .unwrap();
+    let mut draft = before.to_draft().unwrap();
+    draft.query = vec![QueryParam {
+        name: "active".to_string(),
+        value: "true".to_string(),
+    }];
+
+    request_file.write(&draft).unwrap();
 
     let after = request_file.parse().unwrap();
     assert_eq!(
@@ -134,6 +130,105 @@ fn write_preserves_assertions_and_extractions_on_an_unrelated_edit() {
     );
     assert_eq!(after.assertions, before.assertions);
     assert_eq!(after.extractions, before.extractions);
+}
+
+/// The GUI's read/edit/save round trip has to carry a request's `[auth]`
+/// section the same way it already carries method/URL/query/headers/body.
+#[test]
+fn write_round_trips_an_auth_scheme_added_through_a_draft() {
+    let temp = TempDir::new("write-auth");
+    let request_path = temp.0.join("request.nova");
+    std::fs::write(
+        &request_path,
+        "[request]\nmethod: GET\nurl: {{base_url}}/me\n",
+    )
+    .unwrap();
+
+    let request_file = RequestFile {
+        name: "request".to_string(),
+        path: request_path,
+    };
+
+    let mut draft = request_file.parse().unwrap().to_draft().unwrap();
+    assert_eq!(draft.auth, None);
+
+    draft.auth = Some(AuthScheme::ApiKey {
+        name: "api_key".to_string(),
+        value: "{{api_key}}".to_string(),
+        location: ApiKeyLocation::Query,
+    });
+    request_file.write(&draft).unwrap();
+
+    let after = request_file.parse().unwrap();
+    assert_eq!(after.auth, draft.auth);
+    assert!(std::fs::read_to_string(&request_file.path)
+        .unwrap()
+        .contains("[auth]"));
+}
+
+/// ...and clearing the Auth tab back to "no auth" has to actually remove
+/// the section, not leave a stale one behind.
+#[test]
+fn write_removes_an_auth_section_cleared_on_the_draft() {
+    let temp = TempDir::new("write-auth-cleared");
+    let request_path = temp.0.join("request.nova");
+    std::fs::write(
+        &request_path,
+        "[request]\nmethod: GET\nurl: {{base_url}}/me\n\n[auth]\ntype: bearer\ntoken: {{token}}\n",
+    )
+    .unwrap();
+
+    let request_file = RequestFile {
+        name: "request".to_string(),
+        path: request_path,
+    };
+
+    let mut draft = request_file.parse().unwrap().to_draft().unwrap();
+    assert!(draft.auth.is_some());
+
+    draft.auth = None;
+    request_file.write(&draft).unwrap();
+
+    assert_eq!(request_file.parse().unwrap().auth, None);
+    assert!(!std::fs::read_to_string(&request_file.path)
+        .unwrap()
+        .contains("[auth]"));
+}
+
+#[test]
+fn write_round_trips_the_sync_content_type_setting() {
+    let temp = TempDir::new("write-settings");
+    let request_path = temp.0.join("request.nova");
+    std::fs::write(
+        &request_path,
+        "[request]\nmethod: GET\nurl: {{base_url}}/me\n",
+    )
+    .unwrap();
+
+    let request_file = RequestFile {
+        name: "request".to_string(),
+        path: request_path,
+    };
+
+    let mut draft = request_file.parse().unwrap().to_draft().unwrap();
+    assert!(
+        draft.sync_content_type,
+        "a file with no [settings] section defaults to syncing"
+    );
+
+    draft.sync_content_type = false;
+    request_file.write(&draft).unwrap();
+    assert!(!request_file.parse().unwrap().sync_content_type);
+
+    // ...and turning it back on drops the section again.
+    let mut draft = request_file.parse().unwrap().to_draft().unwrap();
+    draft.sync_content_type = true;
+    request_file.write(&draft).unwrap();
+
+    assert!(request_file.parse().unwrap().sync_content_type);
+    assert!(!std::fs::read_to_string(&request_file.path)
+        .unwrap()
+        .contains("[settings]"));
 }
 
 #[test]

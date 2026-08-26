@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::auth::{AppliedAuth, AuthScheme};
 use crate::environment::Environment;
 use crate::error::{NovaError, NovaResult};
 
@@ -28,26 +29,22 @@ impl RequestFile {
         })
     }
 
-    /// Write edited method/URL/query/headers/body back to this file on
-    /// disk, going through [`ParsedRequest::to_nova_string`] rather than
-    /// nova-app (or any other caller) hand-rolling `.nova` syntax.
+    /// Write an edited [`RequestDraft`] — method/URL/query/headers/body,
+    /// plus the request's `[auth]` scheme and `[settings]` — back to this
+    /// file on disk, going through [`ParsedRequest::to_nova_string`]
+    /// rather than nova-app (or any other caller) hand-rolling `.nova`
+    /// syntax.
     ///
     /// Any assertions, extractions, and example response already present
     /// in the file are read back first and carried through unchanged —
-    /// the GUI fields this supports (method/URL/query/headers/body) don't
-    /// touch those sections, so saving one shouldn't silently drop the
-    /// other.
-    pub fn write(
-        &self,
-        method: &str,
-        url: &str,
-        query: Vec<QueryParam>,
-        headers: Vec<Header>,
-        body_text: &str,
-    ) -> NovaResult<()> {
+    /// the fields a draft carries don't touch those sections, so saving
+    /// one shouldn't silently drop the other. A draft's `has_*` flags are
+    /// ignored here for the same reason: they describe what the file
+    /// already had, and the file itself remains the source of truth.
+    pub fn write(&self, draft: &RequestDraft) -> NovaResult<()> {
         let existing = self.parse().ok();
 
-        let body = RequestBody::from_text(&headers, body_text).map_err(|message| {
+        let body = RequestBody::from_text(&draft.headers, &draft.body_text).map_err(|message| {
             NovaError::RequestSerialize {
                 path: self.path.clone(),
                 message,
@@ -55,11 +52,13 @@ impl RequestFile {
         })?;
 
         let parsed = ParsedRequest {
-            method: method.to_string(),
-            url: url.to_string(),
-            query,
-            headers,
+            method: draft.method.clone(),
+            url: draft.url.clone(),
+            query: draft.query.clone(),
+            headers: draft.headers.clone(),
             body,
+            auth: draft.auth.clone(),
+            sync_content_type: draft.sync_content_type,
             assertions: existing
                 .as_ref()
                 .map(|p| p.assertions.clone())
@@ -297,32 +296,78 @@ pub struct ParsedRequest {
     pub query: Vec<QueryParam>,
     pub headers: Vec<Header>,
     pub body: RequestBody,
+
+    /// The structured authentication scheme declared under `[auth]`, if
+    /// any. Purely additive: a request that writes a literal
+    /// `Authorization` header under `[headers]` instead leaves this `None`
+    /// and behaves exactly as it always has.
+    ///
+    /// After [`ParsedRequest::resolve`] this is `None` for every scheme
+    /// that could be turned into a header or query parameter on the spot,
+    /// and stays `Some` only for
+    /// [`AuthScheme::Oauth2ClientCredentials`], which still needs a token
+    /// exchange — see [`crate::Session::execute`].
+    pub auth: Option<AuthScheme>,
+
+    /// Whether the GUI keeps the `Content-Type` header in step with the
+    /// selected body type (`sync_content_type` under `[settings]`).
+    /// Defaults to `true`; a request only turns it off to manage
+    /// `Content-Type` entirely by hand — e.g. a deliberately custom
+    /// `application/vnd.acme+json` over a JSON-shaped body.
+    ///
+    /// Purely a request-authoring preference: it has no effect on parsing,
+    /// resolution, or execution.
+    pub sync_content_type: bool,
+
     pub assertions: Vec<crate::assertion::Assertion>,
     pub extractions: Vec<crate::assertion::Extraction>,
     pub example_response: Option<ExampleResponse>,
 }
 
+/// The default for `[settings]`' `sync_content_type` — and so the
+/// behavior of every request file that has no `[settings]` section at all.
+pub(crate) const DEFAULT_SYNC_CONTENT_TYPE: bool = true;
+
 /// A flattened, GUI-friendly view of a request for editing: method, URL,
 /// query params, and headers as-is, plus the body reduced to the raw text
 /// a text field can show and hand back unchanged (see
 /// [`RequestBody::to_body_text`]/[`RequestBody::from_text`] for the
-/// text<->structured-body conversion this is built from).
+/// text<->structured-body conversion this is built from), the request's
+/// `[auth]` scheme, and its `[settings]`.
 ///
 /// Assertions/extractions/an example response aren't editable through
 /// this draft; the `has_*` flags just let the GUI say "this file also has
 /// assertions" without needing to understand their syntax. Saving a draft
 /// (see [`RequestFile::write`]) always preserves whatever was already in
 /// those sections.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RequestDraft {
     pub method: String,
     pub url: String,
     pub query: Vec<QueryParam>,
     pub headers: Vec<Header>,
     pub body_text: String,
+
+    /// The request's `[auth]` section, edited through the request panel's
+    /// Auth tab and written straight back out on save.
+    #[serde(default)]
+    pub auth: Option<AuthScheme>,
+
+    /// See [`ParsedRequest::sync_content_type`]. Defaults to `true` so a
+    /// caller that omits it gets today's behavior.
+    #[serde(default = "default_sync_content_type")]
+    pub sync_content_type: bool,
+
+    #[serde(default)]
     pub has_assertions: bool,
+    #[serde(default)]
     pub has_extractions: bool,
+    #[serde(default)]
     pub has_example_response: bool,
+}
+
+fn default_sync_content_type() -> bool {
+    DEFAULT_SYNC_CONTENT_TYPE
 }
 
 impl ParsedRequest {
@@ -335,6 +380,8 @@ impl ParsedRequest {
             query: self.query.clone(),
             headers: self.headers.clone(),
             body_text: self.body.to_body_text(&self.headers)?,
+            auth: self.auth.clone(),
+            sync_content_type: self.sync_content_type,
             has_assertions: !self.assertions.is_empty(),
             has_extractions: !self.extractions.is_empty(),
             has_example_response: self.example_response.is_some(),
@@ -369,14 +416,33 @@ impl ParsedRequest {
         format!("{}{separator}{}", self.url, serializer.finish())
     }
 
-    /// Resolve `{{variable}}` placeholders in the URL, header values, and
-    /// body against `environment`'s variables, returning a fully-resolved
-    /// request ready for execution.
+    /// Resolve `{{variable}}` placeholders in the URL, header values, query
+    /// parameters, body, and auth scheme against `environment`'s variables,
+    /// returning a fully-resolved request ready for execution.
     ///
     /// A reference to a variable the environment doesn't define is a typed
     /// error naming the variable, not a silent empty-string substitution.
+    ///
+    /// # Auth
+    ///
+    /// The request's own `[auth]` section wins outright over
+    /// `environment.auth`: an environment default applies only to a request
+    /// that declares no `[auth]` of its own.
+    ///
+    /// Whichever scheme applies is then substituted and turned into the
+    /// header or query parameter it contributes. Bearer, Basic, and API-key
+    /// schemes need no I/O, so they're fully applied here and the returned
+    /// request's `auth` is `None`. OAuth2 client credentials can't be
+    /// resolved without exchanging the credentials for a token, so it comes
+    /// back on `auth` — substituted but unapplied — for
+    /// [`crate::Session::execute`] to finish.
+    ///
+    /// A literal `Authorization` header written by hand under `[headers]`
+    /// is untouched by all of this and still gets the raw-`Basic
+    /// user:password` encoding convenience (see
+    /// [`crate::auth::encode_basic_auth`]).
     pub fn resolve(&self, environment: &Environment) -> NovaResult<ParsedRequest> {
-        let mut headers = self
+        let headers = self
             .headers
             .iter()
             .map(|h| {
@@ -386,25 +452,9 @@ impl ParsedRequest {
                 })
             })
             .collect::<NovaResult<Vec<_>>>()?;
+        let mut headers = crate::auth::encode_basic_auth(headers);
 
-        // An environment-declared default auth header only applies when
-        // the request hasn't already declared its own — explicit always
-        // wins over inherited.
-        if let Some(auth) = &environment.auth {
-            let already_declared = headers
-                .iter()
-                .any(|h| h.name.eq_ignore_ascii_case(&auth.header));
-            if !already_declared {
-                headers.push(Header {
-                    name: auth.header.clone(),
-                    value: substitute(&auth.value, environment)?,
-                });
-            }
-        }
-
-        let headers = crate::auth::encode_basic_auth(headers);
-
-        let query = self
+        let mut query = self
             .query
             .iter()
             .map(|param| {
@@ -415,12 +465,44 @@ impl ParsedRequest {
             })
             .collect::<NovaResult<Vec<_>>>()?;
 
+        // A request's own `[auth]` always wins; the environment's default
+        // fills in only when the request declares none at all.
+        let inherited = self.auth.is_none();
+        let mut deferred_auth = None;
+        if let Some(scheme) = self.auth.as_ref().or(environment.auth.as_ref()) {
+            let scheme = scheme.substitute(environment)?;
+            match scheme.apply() {
+                AppliedAuth::Header(header) => {
+                    // An inherited default never overwrites something the
+                    // request already spelled out by hand — the same
+                    // "explicit beats inherited" rule that has always
+                    // governed environment default auth, just generalized
+                    // past a literal header name.
+                    let already_declared = headers
+                        .iter()
+                        .any(|existing| existing.name.eq_ignore_ascii_case(&header.name));
+                    if !(inherited && already_declared) {
+                        headers.push(header);
+                    }
+                }
+                AppliedAuth::Query(param) => {
+                    let already_declared = query.iter().any(|existing| existing.name == param.name);
+                    if !(inherited && already_declared) {
+                        query.push(param);
+                    }
+                }
+                AppliedAuth::Deferred => deferred_auth = Some(scheme),
+            }
+        }
+
         Ok(ParsedRequest {
             method: self.method.clone(),
             url: substitute(&self.url, environment)?,
             query,
             headers,
             body: substitute_body(&self.body, environment)?,
+            auth: deferred_auth,
+            sync_content_type: self.sync_content_type,
             // Assertions, extractions, and the example response don't
             // reference environment variables, so they carry through
             // resolution unchanged.
@@ -458,6 +540,13 @@ impl ParsedRequest {
         out.push_str(&self.url);
         out.push('\n');
 
+        // Only written when it differs from the default, so the vast
+        // majority of files never grow a `[settings]` section at all.
+        if self.sync_content_type != DEFAULT_SYNC_CONTENT_TYPE {
+            out.push_str("\n[settings]\n");
+            out.push_str(&format!("sync_content_type: {}\n", self.sync_content_type));
+        }
+
         if !self.query.is_empty() {
             out.push_str("\n[params]\n");
             for param in &self.query {
@@ -466,6 +555,11 @@ impl ParsedRequest {
                 out.push_str(&param.value);
                 out.push('\n');
             }
+        }
+
+        if let Some(auth) = &self.auth {
+            out.push_str("\n[auth]\n");
+            out.push_str(&auth.to_auth_lines());
         }
 
         if !self.headers.is_empty() {
@@ -523,7 +617,7 @@ impl ParsedRequest {
 /// variable from `environment`. A placeholder with no closing `}}` is left
 /// as literal text; a placeholder naming a variable the environment doesn't
 /// define is a typed error.
-fn substitute(text: &str, environment: &Environment) -> NovaResult<String> {
+pub(crate) fn substitute(text: &str, environment: &Environment) -> NovaResult<String> {
     let mut result = String::with_capacity(text.len());
     let mut rest = text;
 
@@ -644,7 +738,9 @@ fn substitute_xml(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Section {
     Request,
+    Settings,
     Params,
+    Auth,
     Headers,
     Body,
     Assert,
@@ -664,7 +760,9 @@ fn parse_section_marker(line: &str) -> Option<(Section, Option<String>)> {
 
     match inner {
         "request" => Some((Section::Request, None)),
+        "settings" => Some((Section::Settings, None)),
         "params" => Some((Section::Params, None)),
+        "auth" => Some((Section::Auth, None)),
         "headers" => Some((Section::Headers, None)),
         "body" => Some((Section::Body, None)),
         "assert" => Some((Section::Assert, None)),
@@ -688,8 +786,11 @@ fn parse_section_marker(line: &str) -> Option<(Section, Option<String>)> {
 /// method: POST
 /// url: {{base_url}}/users
 ///
+/// [auth]
+/// type: bearer
+/// token: {{access_token}}
+///
 /// [headers]
-/// Authorization: Bearer {{token}}
 /// Content-Type: application/json
 ///
 /// [body]
@@ -701,7 +802,9 @@ fn parse_section_marker(line: &str) -> Option<(Section, Option<String>)> {
 fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
     let mut current: Option<Section> = None;
     let mut request_lines: Vec<&str> = Vec::new();
+    let mut settings_lines: Vec<&str> = Vec::new();
     let mut params_lines: Vec<&str> = Vec::new();
+    let mut auth_lines: Vec<&str> = Vec::new();
     let mut header_lines: Vec<&str> = Vec::new();
     let mut body_lines: Vec<&str> = Vec::new();
     let mut assert_lines: Vec<&str> = Vec::new();
@@ -725,7 +828,9 @@ fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
                 }
             }
             Some(Section::Request) => request_lines.push(line),
+            Some(Section::Settings) => settings_lines.push(line),
             Some(Section::Params) => params_lines.push(line),
+            Some(Section::Auth) => auth_lines.push(line),
             Some(Section::Headers) => header_lines.push(line),
             Some(Section::Body) => body_lines.push(line),
             Some(Section::Assert) => assert_lines.push(line),
@@ -813,10 +918,46 @@ fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
         query,
         headers,
         body,
+        auth: crate::auth::parse_auth_section(&auth_lines)?,
+        sync_content_type: parse_settings_section(&settings_lines)?,
         assertions,
         extractions,
         example_response,
     })
+}
+
+/// Parse the lines under a `.nova` file's `[settings]` marker, returning
+/// the effective `sync_content_type`.
+///
+/// Every key is optional and defaults to today's behavior, so an absent
+/// `[settings]` section (the overwhelmingly common case) and an empty one
+/// are indistinguishable. Unrecognized keys are ignored, matching how
+/// `[request]` treats keys it doesn't know.
+fn parse_settings_section(lines: &[&str]) -> Result<bool, String> {
+    let mut sync_content_type = DEFAULT_SYNC_CONTENT_TYPE;
+
+    for line in lines {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let (key, value) = line.split_once(':').ok_or_else(|| {
+            format!("malformed [settings] line (expected \"key: value\"): {line:?}")
+        })?;
+
+        if key.trim().eq_ignore_ascii_case("sync_content_type") {
+            sync_content_type = match value.trim().to_ascii_lowercase().as_str() {
+                "true" => true,
+                "false" => false,
+                other => {
+                    return Err(format!(
+                        "[settings] \"sync_content_type:\" expects true or false, got {other:?}"
+                    ))
+                }
+            };
+        }
+    }
+
+    Ok(sync_content_type)
 }
 
 /// Parse a `[response <status>]` section into an [`ExampleResponse`]:
@@ -1238,7 +1379,7 @@ mod tests {
     fn test_environment_with_auth(
         name: &str,
         vars: &[(&str, &str)],
-        auth: crate::environment::AuthDefault,
+        auth: AuthScheme,
     ) -> Environment {
         let mut env = test_environment(name, vars);
         env.auth = Some(auth);
@@ -1246,15 +1387,14 @@ mod tests {
     }
 
     #[test]
-    fn inherits_a_default_auth_header_from_the_environment() {
+    fn inherits_a_default_auth_scheme_from_the_environment() {
         let contents = "[request]\nmethod: GET\nurl: {{base_url}}/me\n";
         let parsed = parse_nova(contents).unwrap();
         let env = test_environment_with_auth(
             "local",
             &[("base_url", "http://localhost:8080"), ("token", "abc123")],
-            crate::environment::AuthDefault {
-                header: "Authorization".to_string(),
-                value: "Bearer {{token}}".to_string(),
+            AuthScheme::Bearer {
+                token: "{{token}}".to_string(),
             },
         );
 
@@ -1270,9 +1410,29 @@ mod tests {
         let env = test_environment_with_auth(
             "local",
             &[("base_url", "http://localhost:8080")],
-            crate::environment::AuthDefault {
-                header: "Authorization".to_string(),
-                value: "Bearer env-default-token".to_string(),
+            AuthScheme::Bearer {
+                token: "env-default-token".to_string(),
+            },
+        );
+
+        let resolved = parsed.resolve(&env).unwrap();
+
+        assert_eq!(
+            resolved.header("Authorization"),
+            Some("Bearer request-token")
+        );
+    }
+
+    #[test]
+    fn a_requests_own_auth_section_overrides_the_inherited_default() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/me\n\n[auth]\ntype: bearer\ntoken: request-token\n";
+        let parsed = parse_nova(contents).unwrap();
+        let env = test_environment_with_auth(
+            "local",
+            &[("base_url", "http://localhost:8080")],
+            AuthScheme::Basic {
+                username: "env-user".to_string(),
+                password: "env-password".to_string(),
             },
         );
 
@@ -1296,7 +1456,7 @@ mod tests {
     }
 
     #[test]
-    fn inherited_basic_auth_default_is_base64_encoded() {
+    fn an_inherited_basic_default_is_base64_encoded() {
         let contents = "[request]\nmethod: GET\nurl: {{base_url}}/me\n";
         let parsed = parse_nova(contents).unwrap();
         let env = test_environment_with_auth(
@@ -1306,9 +1466,9 @@ mod tests {
                 ("username", "developer"),
                 ("password", "hunter2"),
             ],
-            crate::environment::AuthDefault {
-                header: "Authorization".to_string(),
-                value: "Basic {{username}}:{{password}}".to_string(),
+            AuthScheme::Basic {
+                username: "{{username}}".to_string(),
+                password: "{{password}}".to_string(),
             },
         );
 
@@ -1318,6 +1478,153 @@ mod tests {
             resolved.header("Authorization"),
             Some("Basic ZGV2ZWxvcGVyOmh1bnRlcjI=")
         );
+    }
+
+    #[test]
+    fn parses_an_auth_section() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/me\n\n[auth]\ntype: bearer\ntoken: {{access_token}}\n";
+
+        let parsed = parse_nova(contents).unwrap();
+
+        assert_eq!(
+            parsed.auth,
+            Some(AuthScheme::Bearer {
+                token: "{{access_token}}".to_string()
+            })
+        );
+        assert!(
+            parsed.headers.is_empty(),
+            "an [auth] section is not a header until the request is resolved"
+        );
+    }
+
+    #[test]
+    fn a_malformed_auth_line_is_a_typed_error() {
+        let contents =
+            "[request]\nmethod: GET\nurl: {{base_url}}/me\n\n[auth]\nnot-a-key-value-line\n";
+        let err = parse_nova(contents).unwrap_err();
+        assert!(
+            err.contains("malformed [auth]"),
+            "unexpected error message: {err}"
+        );
+    }
+
+    #[test]
+    fn an_auth_value_that_looks_like_a_section_marker_is_not_one() {
+        // A recognized marker has to be the *whole* line; `[headers]`
+        // appearing as a field's value keeps being that value.
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/me\n\n[auth]\ntype: bearer\ntoken: [headers]\n\n[headers]\nAccept: application/json\n";
+
+        let parsed = parse_nova(contents).unwrap();
+
+        assert_eq!(
+            parsed.auth,
+            Some(AuthScheme::Bearer {
+                token: "[headers]".to_string()
+            })
+        );
+        assert_eq!(parsed.header("Accept"), Some("application/json"));
+    }
+
+    #[test]
+    fn round_trips_an_auth_section_of_every_type() {
+        for section in [
+            "[auth]\ntype: bearer\ntoken: {{access_token}}\n",
+            "[auth]\ntype: basic\nusername: {{username}}\npassword: {{password}}\n",
+            "[auth]\ntype: api_key\nname: X-API-Key\nvalue: {{api_key}}\nlocation: header\n",
+            "[auth]\ntype: api_key\nname: api_key\nvalue: {{api_key}}\nlocation: query\n",
+            "[auth]\ntype: oauth2_client_credentials\ntoken_url: {{token_url}}\nclient_id: {{client_id}}\nclient_secret: {{client_secret}}\nscope: read write\n",
+            "[auth]\ntype: oauth2_client_credentials\ntoken_url: {{token_url}}\nclient_id: {{client_id}}\nclient_secret: {{client_secret}}\n",
+        ] {
+            let contents =
+                format!("[request]\nmethod: GET\nurl: {{{{base_url}}}}/me\n\n{section}");
+            let parsed = parse_nova(&contents).unwrap();
+            let reparsed = parse_nova(&parsed.to_nova_string().unwrap()).unwrap();
+            assert_eq!(parsed, reparsed, "round trip failed for {section:?}");
+        }
+    }
+
+    #[test]
+    fn round_trips_an_auth_section_alongside_every_other_section() {
+        let contents = "[request]\nmethod: POST\nurl: {{base_url}}/users\n\n[params]\nactive: true\n\n[auth]\ntype: bearer\ntoken: {{access_token}}\n\n[headers]\nContent-Type: application/json\n\n[body]\n{\"name\": \"John\"}\n\n[assert]\nstatus == 200\n\n[response 201]\nContent-Type: application/json\n\n{\"id\": \"1\"}\n";
+
+        let parsed = parse_nova(contents).unwrap();
+        let reparsed = parse_nova(&parsed.to_nova_string().unwrap()).unwrap();
+
+        assert_eq!(parsed, reparsed);
+    }
+
+    // -- [settings] / sync_content_type -------------------------------------
+
+    #[test]
+    fn sync_content_type_defaults_to_true_with_no_settings_section() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/users\n";
+        let parsed = parse_nova(contents).unwrap();
+        assert!(parsed.sync_content_type);
+    }
+
+    #[test]
+    fn a_settings_section_can_turn_content_type_syncing_off() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/users\n\n[settings]\nsync_content_type: false\n";
+        let parsed = parse_nova(contents).unwrap();
+        assert!(!parsed.sync_content_type);
+    }
+
+    #[test]
+    fn an_explicit_true_setting_parses_as_the_default() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/users\n\n[settings]\nsync_content_type: true\n";
+        let parsed = parse_nova(contents).unwrap();
+        assert!(parsed.sync_content_type);
+    }
+
+    #[test]
+    fn a_non_boolean_setting_is_a_typed_error() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/users\n\n[settings]\nsync_content_type: maybe\n";
+        let err = parse_nova(contents).unwrap_err();
+        assert!(err.contains("sync_content_type"), "{err}");
+    }
+
+    #[test]
+    fn a_malformed_settings_line_is_a_typed_error() {
+        let contents =
+            "[request]\nmethod: GET\nurl: {{base_url}}/users\n\n[settings]\nnot-a-key-value-line\n";
+        let err = parse_nova(contents).unwrap_err();
+        assert!(err.contains("malformed [settings]"), "{err}");
+    }
+
+    #[test]
+    fn a_default_settings_value_is_not_written_back_out() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/users\n";
+        let parsed = parse_nova(contents).unwrap();
+
+        let text = parsed.to_nova_string().unwrap();
+
+        assert!(
+            !text.contains("[settings]"),
+            "a default-valued request should not grow a [settings] section: {text:?}"
+        );
+    }
+
+    #[test]
+    fn round_trips_a_settings_section_that_turns_syncing_off() {
+        let contents = "[request]\nmethod: POST\nurl: {{base_url}}/users\n\n[settings]\nsync_content_type: false\n\n[headers]\nContent-Type: application/vnd.acme+json\n\n[body]\n{\"name\": \"John\"}\n";
+
+        let parsed = parse_nova(contents).unwrap();
+        let text = parsed.to_nova_string().unwrap();
+        let reparsed = parse_nova(&text).unwrap();
+
+        assert!(text.contains("sync_content_type: false"), "{text}");
+        assert!(!reparsed.sync_content_type);
+        assert_eq!(parsed, reparsed);
+    }
+
+    #[test]
+    fn sync_content_type_survives_resolution() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/users\n\n[settings]\nsync_content_type: false\n";
+        let parsed = parse_nova(contents).unwrap();
+        let env = test_environment("local", &[("base_url", "http://localhost:8080")]);
+
+        assert!(!parsed.resolve(&env).unwrap().sync_content_type);
     }
 
     #[test]

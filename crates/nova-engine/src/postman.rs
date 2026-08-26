@@ -111,6 +111,12 @@ fn generate_request(
         query,
         headers,
         body,
+        // A Postman collection's own auth blocks aren't translated into a
+        // structured `[auth]` section yet — an imported request keeps
+        // whatever literal `Authorization` header the collection spelled
+        // out, exactly as before.
+        auth: None,
+        sync_content_type: true,
         assertions: Vec::new(),
         extractions: Vec::new(),
         example_response: None,

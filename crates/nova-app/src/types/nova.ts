@@ -24,15 +24,37 @@ export interface Manifest {
   environments: PathConfig;
 }
 
-export interface AuthDefault {
-  header: string;
-  value: string;
-}
+/** Mirrors `nova_engine::ApiKeyLocation`. */
+export type ApiKeyLocation = "header" | "query";
+
+/**
+ * Mirrors `nova_engine::AuthScheme` — a structured authentication scheme,
+ * declared either by a request's own `[auth]` section or as an
+ * environment-wide default. Serialized by serde as an internally-tagged
+ * enum, so the `type` field selects which of the other fields are present.
+ *
+ * Every field goes through the engine's `{{variable}}` substitution, so
+ * secrets belong in an environment rather than in the request itself.
+ */
+export type AuthScheme =
+  | { type: "bearer"; token: string }
+  | { type: "basic"; username: string; password: string }
+  | { type: "api_key"; name: string; value: string; location: ApiKeyLocation }
+  | {
+      type: "oauth2_client_credentials";
+      token_url: string;
+      client_id: string;
+      client_secret: string;
+      scope?: string | null;
+    };
+
+/** Every `AuthScheme` tag, plus the "no auth at all" case the UI needs. */
+export type AuthSchemeType = AuthScheme["type"];
 
 export interface NovaEnvironment {
   name: string;
   variables: Record<string, string>;
-  auth: AuthDefault | null;
+  auth: AuthScheme | null;
   path: string;
 }
 
@@ -92,6 +114,10 @@ export interface QueryParam {
  * `Content-Type` header via `RequestBody::from_text`, exactly like parsing
  * a `.nova` file from scratch does.
  *
+ * `auth` is the request's `[auth]` section (null when it declares none),
+ * and `sync_content_type` is its `[settings]` toggle; both round-trip
+ * through save exactly like the other editable fields.
+ *
  * `has_assertions`/`has_extractions`/`has_example_response` aren't
  * editable here — they just let the GUI say a file has more to it than
  * this panel shows. Saving always preserves those sections unchanged.
@@ -102,6 +128,13 @@ export interface RequestDraft {
   query: QueryParam[];
   headers: RequestHeader[];
   body_text: string;
+  auth: AuthScheme | null;
+  /**
+   * Whether picking a body type also rewrites the `Content-Type` header.
+   * Defaults to true; a request turns it off to manage `Content-Type`
+   * entirely by hand.
+   */
+  sync_content_type: boolean;
   has_assertions: boolean;
   has_extractions: boolean;
   has_example_response: boolean;

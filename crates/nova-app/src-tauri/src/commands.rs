@@ -8,8 +8,8 @@
 use std::collections::HashMap;
 
 use nova_engine::{
-    parse_curl, AuthDefault, Collection, Environment, Header, Manifest, NovaProject,
-    ParsedCurlRequest, QueryParam, RequestDraft, RequestFile, Response, Session,
+    parse_curl, AuthScheme, Collection, Environment, Manifest, NovaProject, ParsedCurlRequest,
+    RequestDraft, RequestFile, Response, Session,
 };
 
 #[tauri::command]
@@ -72,26 +72,18 @@ pub fn read_request(request_path: String) -> Result<RequestDraft, String> {
     parsed.to_draft().map_err(|e| e.to_string())
 }
 
-/// Write edited method/URL/query/headers/body back to the `.nova` file at
+/// Write an edited [`RequestDraft`] — method/URL/query/headers/body, plus
+/// the request's auth scheme and settings — back to the `.nova` file at
 /// `request_path`. Any assertions, extractions, and example response
 /// already in the file are preserved unchanged — see
 /// [`nova_engine::RequestFile::write`].
 #[tauri::command]
-pub fn save_request(
-    request_path: String,
-    method: String,
-    url: String,
-    query: Vec<QueryParam>,
-    headers: Vec<Header>,
-    body: String,
-) -> Result<(), String> {
+pub fn save_request(request_path: String, draft: RequestDraft) -> Result<(), String> {
     let request_file = RequestFile {
         name: String::new(),
         path: std::path::PathBuf::from(&request_path),
     };
-    request_file
-        .write(&method, &url, query, headers, &body)
-        .map_err(|e| e.to_string())
+    request_file.write(&draft).map_err(|e| e.to_string())
 }
 
 /// Write an edited [`Manifest`] back to `project_root`'s `nova.yaml`,
@@ -175,15 +167,15 @@ pub fn create_environment(environments_dir: String, name: String) -> Result<Envi
         .map_err(|e| e.to_string())
 }
 
-/// Write an edited environment's name/variables/auth default back to the
-/// file at `environment_path`, replacing whatever was there — see
+/// Write an edited environment's name/variables/default auth scheme back
+/// to the file at `environment_path`, replacing whatever was there — see
 /// [`nova_engine::Environment::write`].
 #[tauri::command]
 pub fn save_environment(
     environment_path: String,
     name: String,
     variables: HashMap<String, String>,
-    auth: Option<AuthDefault>,
+    auth: Option<AuthScheme>,
 ) -> Result<(), String> {
     let environment = Environment {
         name,

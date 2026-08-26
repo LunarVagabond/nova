@@ -448,6 +448,8 @@ mod tests {
             query: vec![],
             headers: vec![],
             body: RequestBody::Json(body),
+            auth: None,
+            sync_content_type: true,
             assertions: vec![],
             extractions: vec![],
             example_response: None,

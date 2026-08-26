@@ -130,11 +130,26 @@ Content-Type: application/json
 }
 ```
 
-Only `[request]` is required; `[params]`, `[headers]`, `[body]`, `[assert]`,
-and `[response]` are all optional. Query parameters live in their own
-`[params]` section as `key: value` lines (repeat a key for a multi-value
-parameter) rather than embedded in the URL, so `[request]`'s `url:` is
-always just the bare path.
+Only `[request]` is required; `[params]`, `[auth]`, `[headers]`, `[body]`,
+`[settings]`, `[assert]`, and `[response]` are all optional. Query parameters
+live in their own `[params]` section as `key: value` lines (repeat a key for a
+multi-value parameter) rather than embedded in the URL, so `[request]`'s `url:`
+is always just the bare path.
+
+Authentication can be spelled out as a literal header under `[headers]`, or
+declared structurally in an `[auth]` section — see
+[Authentication](#authentication) below.
+
+`[settings]` holds per-request authoring preferences rather than anything that
+goes on the wire. Today that is `sync_content_type` (default `true`), which
+controls whether picking a body type in the desktop app also rewrites the
+`Content-Type` header; turn it off for a request that deliberately pairs a
+custom content type with a differently-shaped body:
+
+```text
+[settings]
+sync_content_type: false
+```
 
 Environment configuration could remain equally straightforward:
 
@@ -185,6 +200,76 @@ production
 Switching environments changes variables without modifying requests.
 
 Secrets can be supplied locally, through environment variables, or eventually through external secret providers.
+
+### Authentication
+
+A request can always write its own literal `Authorization` header under
+`[headers]` — including the shorthand `Basic {{username}}:{{password}}`, which
+is base64-encoded on the way out so a request file never has to spell out the
+encoding by hand.
+
+For anything more structured, a request declares an `[auth]` section instead.
+`type:` selects the scheme and the remaining fields depend on it; every field
+goes through the same `{{variable}}` substitution as the rest of the request, so
+credentials stay in an environment rather than in the request:
+
+```text
+[auth]
+type: bearer
+token: {{access_token}}
+```
+
+```text
+[auth]
+type: basic
+username: {{username}}
+password: {{password}}
+```
+
+```text
+[auth]
+type: api_key
+name: X-API-Key
+value: {{api_key}}
+location: header
+```
+
+`location` is `header` (the default) or `query`, for an API that expects its key
+as a query parameter instead.
+
+```text
+[auth]
+type: oauth2_client_credentials
+token_url: {{token_url}}
+client_id: {{client_id}}
+client_secret: {{client_secret}}
+scope: read write
+```
+
+OAuth2 client credentials is the one scheme that needs a round trip of its own:
+the client ID and secret are exchanged for an access token at `token_url` when
+the request is sent, and the resulting token is applied as a `Bearer` header.
+The token is cached for the rest of the run — keyed by token endpoint and client
+ID, and respecting the lifetime the endpoint advertised — so a run touching many
+requests behind the same API authenticates once rather than once per request.
+`scope` is optional.
+
+An environment can declare the same structured scheme as a default:
+
+```yaml
+name: local
+
+variables:
+  base_url: http://localhost:8080
+
+auth:
+  type: bearer
+  token: "{{token}}"
+```
+
+A request that declares its own `[auth]` always wins over the environment's
+default, and an environment default never overwrites a header a request already
+set by hand.
 
 ### Request Chaining
 

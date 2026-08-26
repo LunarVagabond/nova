@@ -7,16 +7,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import type {
-  AuthDefault,
+  AuthScheme,
   Collection,
   Manifest,
   NovaEnvironment,
   NovaProject,
   ParsedCurlRequest,
-  QueryParam,
   RequestDraft,
   RequestFile,
-  RequestHeader,
   RequestResponse,
 } from "../types/nova";
 
@@ -42,28 +40,13 @@ export function readRequest(requestPath: string): Promise<RequestDraft> {
 }
 
 /**
- * Writes edited method/URL/query/headers/body back to the `.nova` file at
+ * Writes an edited draft — method/URL/query/headers/body, plus the
+ * request's auth scheme and settings — back to the `.nova` file at
  * `requestPath`. Any assertions, extractions, and example response
  * already in the file are preserved unchanged.
  */
-export function saveRequest(
-  requestPath: string,
-  draft: {
-    method: string;
-    url: string;
-    query: QueryParam[];
-    headers: RequestHeader[];
-    body: string;
-  },
-): Promise<void> {
-  return invoke<void>("save_request", {
-    requestPath,
-    method: draft.method,
-    url: draft.url,
-    query: draft.query,
-    headers: draft.headers,
-    body: draft.body,
-  });
+export function saveRequest(requestPath: string, draft: RequestDraft): Promise<void> {
+  return invoke<void>("save_request", { requestPath, draft });
 }
 
 /**
@@ -122,12 +105,12 @@ export function createEnvironment(environmentsDir: string, name: string): Promis
 }
 
 /**
- * Writes an edited environment's name/variables/auth default back to the
- * file at `environmentPath`, replacing whatever was there.
+ * Writes an edited environment's name/variables/default auth scheme back
+ * to the file at `environmentPath`, replacing whatever was there.
  */
 export function saveEnvironment(
   environmentPath: string,
-  environment: { name: string; variables: Record<string, string>; auth: AuthDefault | null },
+  environment: { name: string; variables: Record<string, string>; auth: AuthScheme | null },
 ): Promise<void> {
   return invoke<void>("save_environment", {
     environmentPath,

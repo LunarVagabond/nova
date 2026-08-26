@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::assertion::resolve_extraction;
+use crate::auth::{fetch_client_credentials_token, AccessToken, AuthScheme};
 use crate::environment::Environment;
 use crate::error::{NovaError, NovaResult};
 use crate::execute::{execute, Response};
@@ -79,16 +80,21 @@ fn parse_set_cookie(raw: &str) -> Option<StoredCookie> {
 }
 
 /// A single run's worth of state carried across multiple requests —
-/// cookies, plus variables extracted from earlier responses (request
-/// chaining). Create one `Session` per run (e.g. one `nova run`/`nova
-/// test` invocation against one environment) rather than sharing it across
-/// runs or environments.
+/// cookies, variables extracted from earlier responses (request chaining),
+/// and OAuth2 access tokens. Create one `Session` per run (e.g. one `nova
+/// run`/`nova test` invocation against one environment) rather than
+/// sharing it across runs or environments.
 #[derive(Debug, Clone, Default)]
 pub struct Session {
     jar: CookieJar,
     /// Values extracted from earlier responses via a `<name> =
     /// response.<path>` directive, keyed by name.
     chained_variables: HashMap<String, String>,
+    /// OAuth2 client-credentials access tokens, keyed by the token
+    /// endpoint and client ID they were obtained for, so a run touching
+    /// many requests behind the same OAuth2-protected API authenticates
+    /// once rather than once per request.
+    access_tokens: HashMap<(String, String), AccessToken>,
 }
 
 impl Session {
@@ -99,6 +105,12 @@ impl Session {
     /// Execute `request`, attaching any cookies this session has collected
     /// for the request's host, and storing any `Set-Cookie` values the
     /// response comes back with for later requests in this session.
+    ///
+    /// This is also where an auth scheme that [`ParsedRequest::resolve`]
+    /// couldn't finish on its own gets completed: a request still carrying
+    /// [`AuthScheme::Oauth2ClientCredentials`] has its credentials
+    /// exchanged for an access token (reusing this session's cached one
+    /// when it's still valid) and goes out with a `Bearer` header.
     pub fn execute(&mut self, request: &ParsedRequest) -> NovaResult<Response> {
         let url = url::Url::parse(&request.url).map_err(|source| NovaError::RequestExecution {
             message: format!("invalid URL {:?}: {source}", request.url),
@@ -110,6 +122,12 @@ impl Session {
                 name: "Cookie".to_string(),
                 value: cookie_header,
             });
+        }
+
+        if let Some(scheme) = request.auth.clone() {
+            if let Some(header) = self.deferred_auth_header(&scheme)? {
+                request.headers.push(header);
+            }
         }
 
         let response = execute(&request)?;
@@ -150,6 +168,47 @@ impl Session {
         let response = self.execute(&resolved)?;
         self.store_extractions(&resolved, &response)?;
         Ok((resolved, response))
+    }
+
+    /// Finish an auth scheme that [`ParsedRequest::resolve`] deliberately
+    /// left unapplied because completing it needs network I/O.
+    ///
+    /// Only OAuth2 client credentials lands here today: the client ID and
+    /// secret are exchanged for an access token at the scheme's token
+    /// endpoint, and the result is cached on this session under
+    /// `(token_url, client_id)`. A cached token is reused until it's within
+    /// the safety margin of its advertised expiry, so a run of many
+    /// requests against the same API performs one token exchange rather
+    /// than one per request.
+    fn deferred_auth_header(&mut self, scheme: &AuthScheme) -> NovaResult<Option<Header>> {
+        let AuthScheme::Oauth2ClientCredentials {
+            token_url,
+            client_id,
+            client_secret,
+            scope,
+        } = scheme
+        else {
+            return Ok(None);
+        };
+
+        let bearer = |token: &str| Header {
+            name: "Authorization".to_string(),
+            value: format!("Bearer {token}"),
+        };
+
+        let key = (token_url.clone(), client_id.clone());
+        if let Some(cached) = self.access_tokens.get(&key) {
+            if cached.is_fresh() {
+                return Ok(Some(bearer(&cached.access_token)));
+            }
+        }
+
+        let fetched =
+            fetch_client_credentials_token(token_url, client_id, client_secret, scope.as_deref())?;
+        let header = bearer(&fetched.access_token);
+        self.access_tokens.insert(key, fetched);
+
+        Ok(Some(header))
     }
 
     fn environment_with_chained_variables(&self, environment: &Environment) -> Environment {

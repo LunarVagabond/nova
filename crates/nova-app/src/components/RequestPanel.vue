@@ -2,7 +2,15 @@
 import { computed, ref, watch } from "vue";
 
 import { parseCurlCommand, readRequest, saveRequest, sendRequest } from "../api/nova";
-import type { QueryParam, RequestDraft, RequestFile, RequestHeader, RequestResponse } from "../types/nova";
+import type {
+  AuthScheme,
+  QueryParam,
+  RequestDraft,
+  RequestFile,
+  RequestHeader,
+  RequestResponse,
+} from "../types/nova";
+import AuthEditor from "./AuthEditor.vue";
 import CodeEditor, { type EditorLanguage } from "./CodeEditor.vue";
 import KeyValueEditor from "./KeyValueEditor.vue";
 
@@ -30,8 +38,12 @@ const url = ref("");
 const query = ref<QueryParam[]>([]);
 const headers = ref<RequestHeader[]>([]);
 const bodyText = ref("");
+const auth = ref<AuthScheme | null>(null);
+// `[settings]`' sync_content_type: whether picking a body type also
+// rewrites the Content-Type header (see `handleBodyTypeChange`).
+const syncContentType = ref(true);
 
-type FieldTab = "params" | "headers" | "body";
+type FieldTab = "params" | "auth" | "headers" | "body";
 const activeTab = ref<FieldTab>("params");
 
 type BodyType = "none" | "json" | "xml" | "form" | "multipart" | "text";
@@ -88,13 +100,22 @@ function upsertContentTypeHeader(value: string | null) {
       : headers.value.map((h, i) => (i === index ? { ...h, value } : h));
 }
 
-// Selecting a body type is the source of truth for the Content-Type
-// header: "No Body" clears both the text and the header entirely, and
-// every other option sets the header to its canonical value (a fresh
-// boundary for multipart) so the two never disagree.
+// With syncing on (the default), selecting a body type is the source of
+// truth for the Content-Type header: "No Body" clears both the text and
+// the header entirely, and every other option sets the header to its
+// canonical value (a fresh boundary for multipart) so the two never
+// disagree.
+//
+// With syncing off, the selection is display-only: it still drives the
+// editor's syntax highlighting, but the Content-Type header is left
+// entirely to the Headers tab — which is the point of the setting, for a
+// request that deliberately pairs, say, `application/vnd.acme+json` with a
+// JSON-shaped body.
 function handleBodyTypeChange(next: BodyType) {
   if (next === bodyType.value) return;
   bodyType.value = next;
+
+  if (!syncContentType.value) return;
 
   if (next === "none") {
     bodyText.value = "";
@@ -121,7 +142,9 @@ const dirty = computed(() => {
     url.value !== original.value.url ||
     JSON.stringify(query.value) !== JSON.stringify(original.value.query) ||
     JSON.stringify(headers.value) !== JSON.stringify(original.value.headers) ||
-    bodyText.value !== original.value.body_text
+    bodyText.value !== original.value.body_text ||
+    JSON.stringify(auth.value) !== JSON.stringify(original.value.auth) ||
+    syncContentType.value !== original.value.sync_content_type
   );
 });
 
@@ -251,6 +274,8 @@ async function load() {
     query.value = normalizedQuery.map((q) => ({ ...q }));
     headers.value = draft.headers.map((h) => ({ ...h }));
     bodyText.value = draft.body_text;
+    auth.value = draft.auth ? { ...draft.auth } : null;
+    syncContentType.value = draft.sync_content_type;
     bodyType.value = detectBodyType(headers.value, bodyText.value);
   } catch (e) {
     loadError.value = String(e);
@@ -272,21 +297,21 @@ async function handleSave(): Promise<boolean> {
   saving.value = true;
   saveError.value = null;
   try {
-    await saveRequest(props.request.path, {
-      method: method.value,
-      url: url.value,
-      query: query.value,
-      headers: headers.value,
-      body: bodyText.value,
-    });
-    original.value = {
+    // `has_*` come along untouched from the last load: they describe the
+    // assertions/example response the file already has, which saving
+    // preserves rather than rewrites.
+    const draft: RequestDraft = {
       ...(original.value as RequestDraft),
       method: method.value,
       url: url.value,
       query: query.value.map((q) => ({ ...q })),
       headers: headers.value.map((h) => ({ ...h })),
       body_text: bodyText.value,
+      auth: auth.value ? { ...auth.value } : null,
+      sync_content_type: syncContentType.value,
     };
+    await saveRequest(props.request.path, draft);
+    original.value = draft;
     return true;
   } catch (e) {
     saveError.value = String(e);
@@ -401,6 +426,16 @@ defineExpose({ dirty, save: handleSave });
           type="button"
           role="tab"
           class="request-panel__tab"
+          :class="{ 'request-panel__tab--active': activeTab === 'auth' }"
+          :aria-selected="activeTab === 'auth'"
+          @click="activeTab = 'auth'"
+        >
+          Auth<span v-if="auth" class="request-panel__tab-count">&bull;</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="request-panel__tab"
           :class="{ 'request-panel__tab--active': activeTab === 'headers' }"
           :aria-selected="activeTab === 'headers'"
           @click="activeTab = 'headers'"
@@ -423,6 +458,10 @@ defineExpose({ dirty, save: handleSave });
         <KeyValueEditor v-model="query" name-placeholder="param" value-placeholder="value" />
       </div>
 
+      <div v-else-if="activeTab === 'auth'" class="request-panel__tab-panel">
+        <AuthEditor v-model="auth" id-prefix="request-auth" />
+      </div>
+
       <div v-else-if="activeTab === 'headers'" class="request-panel__tab-panel">
         <KeyValueEditor v-model="headers" name-placeholder="Header" value-placeholder="Value" mode="headers" />
       </div>
@@ -439,7 +478,15 @@ defineExpose({ dirty, save: handleSave });
               {{ BODY_TYPE_LABELS[option] }}
             </option>
           </select>
+          <label class="request-panel__body-setting">
+            <input v-model="syncContentType" type="checkbox" />
+            Keep the Content-Type header in sync
+          </label>
         </div>
+        <p v-if="!syncContentType" class="request-panel__hint-text">
+          Selecting a body type won't change the Content-Type header — set it yourself on the
+          Headers tab.
+        </p>
         <p v-if="bodyType === 'none'" class="request-panel__hint-text">This request has no body.</p>
         <CodeEditor v-else v-model="bodyText" :language="editorLanguage" />
       </div>

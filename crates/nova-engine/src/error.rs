@@ -59,6 +59,9 @@ pub enum NovaError {
     #[error("failed to execute request: {message}")]
     RequestExecution { message: String },
 
+    #[error("failed to obtain an OAuth2 access token from {token_url}: {message}")]
+    OAuth2TokenRequest { token_url: String, message: String },
+
     #[error("extraction {name:?} = response.{path} did not match anything in the response")]
     ExtractionFailed { name: String, path: String },
 
