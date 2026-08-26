@@ -22,7 +22,7 @@ pub struct Response {
 /// `NovaError`.
 pub fn execute(request: &ParsedRequest) -> NovaResult<Response> {
     let agent = ureq::Agent::new();
-    let mut req = agent.request(&request.method, &request.url);
+    let mut req = agent.request(&request.method, &request.full_url());
     for header in &request.headers {
         req = req.set(&header.name, &header.value);
     }

@@ -433,6 +433,7 @@ mod tests {
         ParsedRequest {
             method: "POST".to_string(),
             url: "http://example.com".to_string(),
+            query: vec![],
             headers: vec![],
             body: RequestBody::Json(body),
             assertions: vec![],

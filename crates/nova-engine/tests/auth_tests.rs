@@ -120,7 +120,7 @@ fn api_key_as_a_query_param_reaches_the_wire() {
     let env = env_with(&[("base_url", &base_url), ("api_key", "abc123")]);
 
     let resolved = request.parse().unwrap().resolve(&env).unwrap();
-    assert_eq!(resolved.url, format!("{base_url}/me?api_key=abc123"));
+    assert_eq!(resolved.full_url(), format!("{base_url}/me?api_key=abc123"));
 
     execute(&resolved).unwrap();
 

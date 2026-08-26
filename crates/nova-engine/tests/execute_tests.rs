@@ -31,6 +31,7 @@ fn executes_a_request_and_captures_the_response() {
     let request = ParsedRequest {
         method: "GET".to_string(),
         url,
+        query: vec![],
         headers: vec![],
         body: RequestBody::None,
         assertions: vec![],
@@ -56,6 +57,7 @@ fn non_2xx_status_is_still_a_successful_response() {
     let request = ParsedRequest {
         method: "GET".to_string(),
         url,
+        query: vec![],
         headers: vec![Header {
             name: "Accept".to_string(),
             value: "application/json".to_string(),
@@ -112,6 +114,7 @@ fn sends_json_body_on_the_wire() {
     let request = ParsedRequest {
         method: "POST".to_string(),
         url,
+        query: vec![],
         headers: vec![],
         body: RequestBody::Json(serde_json::json!({"name": "John"})),
         assertions: vec![],
@@ -131,6 +134,7 @@ fn sends_multipart_body_with_boundary_on_the_wire() {
     let request = ParsedRequest {
         method: "POST".to_string(),
         url,
+        query: vec![],
         headers: vec![],
         body: RequestBody::Multipart(vec![
             MultipartField {
@@ -168,6 +172,7 @@ fn network_failure_is_a_typed_error() {
     let request = ParsedRequest {
         method: "GET".to_string(),
         url: "http://127.0.0.1:1/".to_string(),
+        query: vec![],
         headers: vec![],
         body: RequestBody::None,
         assertions: vec![],

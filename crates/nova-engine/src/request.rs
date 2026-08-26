@@ -36,6 +36,14 @@ pub struct Header {
     pub value: String,
 }
 
+/// A single query parameter, order-preserved. A repeated name (`?tag=a&tag=b`)
+/// is two separate entries, not collapsed into one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct QueryParam {
+    pub name: String,
+    pub value: String,
+}
+
 /// A single part of a `multipart/form-data` body.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MultipartField {
@@ -58,10 +66,16 @@ pub enum RequestBody {
 
 /// A `.http` file parsed into its method, URL, headers, body, and any
 /// assertions declared after a `###` line.
+///
+/// `url` is the base URL only — scheme/host/path, with no query string.
+/// Query parameters live separately in `query`, structured rather than
+/// left as opaque text; use [`ParsedRequest::full_url`] to get the
+/// complete address a request actually goes out to.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ParsedRequest {
     pub method: String,
     pub url: String,
+    pub query: Vec<QueryParam>,
     pub headers: Vec<Header>,
     pub body: RequestBody,
     pub assertions: Vec<crate::assertion::Assertion>,
@@ -75,6 +89,20 @@ impl ParsedRequest {
             .iter()
             .find(|h| h.name.eq_ignore_ascii_case(name))
             .map(|h| h.value.as_str())
+    }
+
+    /// The complete address this request actually goes out to: `url` plus
+    /// its query string, if any.
+    pub fn full_url(&self) -> String {
+        if self.query.is_empty() {
+            return self.url.clone();
+        }
+
+        let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+        for param in &self.query {
+            serializer.append_pair(&param.name, &param.value);
+        }
+        format!("{}?{}", self.url, serializer.finish())
     }
 
     /// Resolve `{{variable}}` placeholders in the URL, header values, and
@@ -96,9 +124,21 @@ impl ParsedRequest {
             .collect::<NovaResult<Vec<_>>>()?;
         let headers = crate::auth::encode_basic_auth(headers);
 
+        let query = self
+            .query
+            .iter()
+            .map(|param| {
+                Ok(QueryParam {
+                    name: param.name.clone(),
+                    value: substitute(&param.value, environment)?,
+                })
+            })
+            .collect::<NovaResult<Vec<_>>>()?;
+
         Ok(ParsedRequest {
             method: self.method.clone(),
             url: substitute(&self.url, environment)?,
+            query,
             headers,
             body: substitute_body(&self.body, environment)?,
             // Assertions and extractions reference the response/request,
@@ -221,10 +261,10 @@ fn parse_http(contents: &str) -> Result<ParsedRequest, String> {
         .next()
         .ok_or_else(|| "request line is missing a method".to_string())?
         .to_string();
-    let url = parts
+    let raw_url = parts
         .next()
-        .ok_or_else(|| format!("request line is missing a URL: {request_line:?}"))?
-        .to_string();
+        .ok_or_else(|| format!("request line is missing a URL: {request_line:?}"))?;
+    let (url, query) = split_query(raw_url);
 
     let mut headers = Vec::new();
     let mut body_lines = Vec::new();
@@ -312,11 +352,30 @@ fn parse_http(contents: &str) -> Result<ParsedRequest, String> {
     Ok(ParsedRequest {
         method,
         url,
+        query,
         headers,
         body,
         assertions,
         extractions,
     })
+}
+
+/// Split a request-line URL into its base (pre-`?`) and structured,
+/// order-preserved query parameters. A URL with no `?` returns an empty
+/// parameter list, not an error.
+fn split_query(url: &str) -> (String, Vec<QueryParam>) {
+    match url.split_once('?') {
+        None => (url.to_string(), Vec::new()),
+        Some((base, query_string)) => {
+            let query = url::form_urlencoded::parse(query_string.as_bytes())
+                .map(|(name, value)| QueryParam {
+                    name: name.into_owned(),
+                    value: value.into_owned(),
+                })
+                .collect();
+            (base.to_string(), query)
+        }
+    }
 }
 
 /// Extract a `name=value` parameter from a `Content-Type` header value, e.g.
@@ -557,6 +616,94 @@ mod tests {
         let parsed = parse_http(contents).unwrap();
 
         assert!(parsed.assertions.is_empty());
+    }
+
+    #[test]
+    fn parses_query_params_separately_from_the_base_url() {
+        let contents = "GET {{base_url}}/users?page=2&limit=10\n";
+
+        let parsed = parse_http(contents).unwrap();
+
+        assert_eq!(parsed.url, "{{base_url}}/users");
+        assert_eq!(
+            parsed.query,
+            vec![
+                QueryParam {
+                    name: "page".to_string(),
+                    value: "2".to_string()
+                },
+                QueryParam {
+                    name: "limit".to_string(),
+                    value: "10".to_string()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_url_with_no_query_string_has_an_empty_query_list() {
+        let contents = "GET {{base_url}}/users\n";
+
+        let parsed = parse_http(contents).unwrap();
+
+        assert!(parsed.query.is_empty());
+    }
+
+    #[test]
+    fn repeated_query_param_names_are_kept_as_separate_entries() {
+        let contents = "GET {{base_url}}/search?tag=a&tag=b\n";
+
+        let parsed = parse_http(contents).unwrap();
+
+        assert_eq!(
+            parsed.query,
+            vec![
+                QueryParam {
+                    name: "tag".to_string(),
+                    value: "a".to_string()
+                },
+                QueryParam {
+                    name: "tag".to_string(),
+                    value: "b".to_string()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn full_url_reconstructs_the_original_query_string() {
+        let contents = "GET {{base_url}}/users?page=2&limit=10\n";
+        let parsed = parse_http(contents).unwrap();
+
+        assert_eq!(parsed.full_url(), "{{base_url}}/users?page=2&limit=10");
+    }
+
+    #[test]
+    fn full_url_with_no_query_params_is_just_the_base_url() {
+        let contents = "GET {{base_url}}/users\n";
+        let parsed = parse_http(contents).unwrap();
+
+        assert_eq!(parsed.full_url(), "{{base_url}}/users");
+    }
+
+    #[test]
+    fn resolve_substitutes_variables_inside_query_param_values() {
+        let contents = "GET {{base_url}}/users?api_key={{api_key}}\n";
+        let parsed = parse_http(contents).unwrap();
+        let env = test_environment(
+            "local",
+            &[
+                ("base_url", "http://localhost:8080"),
+                ("api_key", "secret123"),
+            ],
+        );
+
+        let resolved = parsed.resolve(&env).unwrap();
+
+        assert_eq!(
+            resolved.full_url(),
+            "http://localhost:8080/users?api_key=secret123"
+        );
     }
 
     #[test]
