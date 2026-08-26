@@ -17,5 +17,5 @@ pub use environment::Environment;
 pub use error::{NovaError, NovaResult};
 pub use manifest::{Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION};
 pub use project::{NovaProject, MANIFEST_FILE_NAME};
-pub use request::{Header, ParsedRequest, RequestBody, RequestFile};
+pub use request::{Header, MultipartField, ParsedRequest, RequestBody, RequestFile};
 pub use validate::{validate, ValidationIssue};
