@@ -31,6 +31,9 @@ const query = ref<QueryParam[]>([]);
 const headers = ref<RequestHeader[]>([]);
 const bodyText = ref("");
 
+type FieldTab = "params" | "headers" | "body";
+const activeTab = ref<FieldTab>("params");
+
 const saving = ref(false);
 const saveError = ref<string | null>(null);
 
@@ -228,18 +231,48 @@ defineExpose({ dirty, save: handleSave });
         />
       </div>
 
-      <div class="request-panel__field-group">
-        <span class="request-panel__field-label">Query Params</span>
+      <div class="request-panel__tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          class="request-panel__tab"
+          :class="{ 'request-panel__tab--active': activeTab === 'params' }"
+          :aria-selected="activeTab === 'params'"
+          @click="activeTab = 'params'"
+        >
+          Params<span v-if="query.length > 0" class="request-panel__tab-count">{{ query.length }}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="request-panel__tab"
+          :class="{ 'request-panel__tab--active': activeTab === 'headers' }"
+          :aria-selected="activeTab === 'headers'"
+          @click="activeTab = 'headers'"
+        >
+          Headers<span v-if="headers.length > 0" class="request-panel__tab-count">{{ headers.length }}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="request-panel__tab"
+          :class="{ 'request-panel__tab--active': activeTab === 'body' }"
+          :aria-selected="activeTab === 'body'"
+          @click="activeTab = 'body'"
+        >
+          Body<span v-if="bodyText.trim().length > 0" class="request-panel__tab-count">&bull;</span>
+        </button>
+      </div>
+
+      <div v-if="activeTab === 'params'" class="request-panel__tab-panel">
         <KeyValueEditor v-model="query" name-placeholder="param" value-placeholder="value" />
       </div>
 
-      <div class="request-panel__field-group">
-        <span class="request-panel__field-label">Headers</span>
+      <div v-else-if="activeTab === 'headers'" class="request-panel__tab-panel">
         <KeyValueEditor v-model="headers" name-placeholder="Header" value-placeholder="Value" mode="headers" />
       </div>
 
-      <div class="request-panel__field-group">
-        <span class="request-panel__field-label">Body</span>
+      <div v-else class="request-panel__tab-panel">
         <CodeEditor v-model="bodyText" :language="editorLanguage" />
       </div>
     </template>
