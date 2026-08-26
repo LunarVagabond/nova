@@ -23,6 +23,7 @@ fn main() {
         }
         Some(Command::Generate { spec, output }) => commands::generate::run(&spec, &output),
         Some(Command::Export { path, output }) => commands::export::run(&path, output.as_deref()),
+        Some(Command::Mock { path, host, port }) => commands::mock::run(&path, &host, port),
     };
 
     if let Err(message) = result {

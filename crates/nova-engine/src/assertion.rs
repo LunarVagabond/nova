@@ -438,6 +438,7 @@ mod tests {
             body: RequestBody::Json(body),
             assertions: vec![],
             extractions: vec![],
+            example_response: None,
         }
     }
 

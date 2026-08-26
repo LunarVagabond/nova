@@ -2251,6 +2251,7 @@ dependencies = [
  "clap",
  "nova-engine",
  "tiny_http",
+ "ureq",
 ]
 
 [[package]]

@@ -1,0 +1,9 @@
+POST {{base_url}}/users
+Content-Type: application/json
+
+{"name": "New User"}
+
+### response 201
+Content-Type: application/json
+
+{"id": "2", "name": "New User"}
