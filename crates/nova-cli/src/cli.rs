@@ -59,4 +59,24 @@ pub enum Command {
         #[arg(long)]
         environment: Option<String>,
     },
+
+    /// Generate a Nova project from an OpenAPI 3.x spec (YAML or JSON).
+    Generate {
+        /// Path to the OpenAPI spec file.
+        spec: PathBuf,
+
+        /// Directory to generate the project into (a `nova/` directory is
+        /// created inside it).
+        output: PathBuf,
+    },
+
+    /// Export a project's collections as an OpenAPI 3.x spec (YAML).
+    Export {
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Write the spec to this file instead of printing it to stdout.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }

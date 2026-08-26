@@ -1,3 +1,5 @@
+pub mod export;
+pub mod generate;
 pub mod inspect;
 pub mod run;
 pub mod test;
