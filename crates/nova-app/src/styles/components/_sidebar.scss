@@ -117,6 +117,16 @@
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
+  // Hidden until the row is hovered/focused, so the tree stays visually
+  // quiet at a glance — the same "reveal on hover" convention most API
+  // client trees use, rather than a permanently-busy row of icons.
+  opacity: 0;
+
+  .collection-tree__label:hover &,
+  .collection-tree__label:focus-within &,
+  &:focus-within {
+    opacity: 1;
+  }
 }
 
 .collection-tree__action {
