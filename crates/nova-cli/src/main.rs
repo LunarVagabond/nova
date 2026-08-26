@@ -22,7 +22,7 @@ fn main() {
         Some(Command::Test { path, environment }) => {
             commands::test::run(&path, environment.as_deref())
         }
-        Some(Command::Generate { spec, output }) => commands::generate::run(&spec, &output),
+        Some(Command::Generate { input, output }) => commands::generate::run(&input, &output),
         Some(Command::Export { path, output }) => commands::export::run(&path, output.as_deref()),
         Some(Command::Mock { path, host, port }) => commands::mock::run(&path, &host, port),
     };

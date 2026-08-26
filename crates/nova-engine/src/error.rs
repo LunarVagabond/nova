@@ -67,6 +67,9 @@ pub enum NovaError {
 
     #[error("failed to render scaffolded project files: {message}")]
     ScaffoldRender { message: String },
+
+    #[error("failed to parse Postman collection: {message}")]
+    PostmanParse { message: String },
 }
 
 pub type NovaResult<T> = Result<T, NovaError>;
