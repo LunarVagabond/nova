@@ -7,6 +7,7 @@ import Sidebar from "./components/Sidebar.vue";
 import ProjectPanel from "./components/ProjectPanel.vue";
 import RequestPanel from "./components/RequestPanel.vue";
 import EmptyState from "./components/EmptyState.vue";
+import Modal from "./components/Modal.vue";
 
 const project = ref<NovaProject | null>(null);
 const validationIssues = ref<string[]>([]);
@@ -20,13 +21,24 @@ const createError = ref<string | null>(null);
 // than silently losing an in-progress edit.
 const requestPanelDirty = ref(false);
 
-function confirmDiscardIfDirty(): boolean {
-  if (!requestPanelDirty.value) return true;
-  return window.confirm("You have unsaved changes to this request. Discard them?");
+// In-app replacement for `window.confirm`: unimplemented (or flaky) in
+// Tauri's webview on some platforms, and can't be styled to match the app.
+const pendingDiscardConfirm = ref<((choice: boolean) => void) | null>(null);
+
+function confirmDiscardIfDirty(): Promise<boolean> {
+  if (!requestPanelDirty.value) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    pendingDiscardConfirm.value = resolve;
+  });
+}
+
+function resolveDiscardConfirm(choice: boolean) {
+  pendingDiscardConfirm.value?.(choice);
+  pendingDiscardConfirm.value = null;
 }
 
 async function handleOpen() {
-  if (!confirmDiscardIfDirty()) return;
+  if (!(await confirmDiscardIfDirty())) return;
 
   const path = await pickProjectDirectory();
   if (!path) return;
@@ -48,9 +60,9 @@ async function handleOpen() {
   }
 }
 
-function handleSelectRequest(request: RequestFile) {
+async function handleSelectRequest(request: RequestFile) {
   if (request.path === selectedRequest.value?.path) return;
-  if (!confirmDiscardIfDirty()) return;
+  if (!(await confirmDiscardIfDirty())) return;
   selectedRequest.value = request;
   requestPanelDirty.value = false;
 }
@@ -64,9 +76,26 @@ async function refreshProjectTree() {
   }
 }
 
-async function handleCreateRequest(collectionPath: string) {
-  const name = window.prompt("New request name (e.g. get-users):");
-  if (!name) return;
+// In-app replacement for `window.prompt` — same reasoning as the discard
+// confirm above, plus a text-entry dialog has no equivalent in Tauri's
+// dialog plugin at all (only message/confirm/file pickers).
+const newRequestCollectionPath = ref<string | null>(null);
+const newRequestName = ref("");
+
+function handleCreateRequest(collectionPath: string) {
+  createError.value = null;
+  newRequestName.value = "";
+  newRequestCollectionPath.value = collectionPath;
+}
+
+function cancelCreateRequest() {
+  newRequestCollectionPath.value = null;
+}
+
+async function submitCreateRequest() {
+  const collectionPath = newRequestCollectionPath.value;
+  const name = newRequestName.value.trim();
+  if (!collectionPath || !name) return;
 
   createError.value = null;
   try {
@@ -74,6 +103,7 @@ async function handleCreateRequest(collectionPath: string) {
     await refreshProjectTree();
     selectedRequest.value = created;
     requestPanelDirty.value = false;
+    newRequestCollectionPath.value = null;
   } catch (e) {
     createError.value = String(e);
   }
@@ -96,7 +126,6 @@ async function handleCreateRequest(collectionPath: string) {
 
     <main class="app-shell__main">
       <p v-if="project && error" class="app-shell__error">{{ error }}</p>
-      <p v-if="project && createError" class="app-shell__error">{{ createError }}</p>
       <RequestPanel
         v-if="project && selectedRequest"
         :key="selectedRequest.path"
@@ -107,5 +136,44 @@ async function handleCreateRequest(collectionPath: string) {
       <ProjectPanel v-else-if="project" :project="project" :validation-issues="validationIssues" />
       <EmptyState v-else :error="error" @open="handleOpen" />
     </main>
+
+    <Modal
+      v-if="pendingDiscardConfirm"
+      title="Discard unsaved changes?"
+      @cancel="resolveDiscardConfirm(false)"
+    >
+      <p>This request has unsaved changes. Discard them?</p>
+      <template #actions>
+        <button type="button" class="button button--secondary" @click="resolveDiscardConfirm(false)">
+          Cancel
+        </button>
+        <button type="button" class="button" @click="resolveDiscardConfirm(true)">Discard</button>
+      </template>
+    </Modal>
+
+    <Modal
+      v-if="newRequestCollectionPath !== null"
+      title="New request"
+      @cancel="cancelCreateRequest"
+    >
+      <label class="modal__label" for="new-request-name">Request name (e.g. get-users)</label>
+      <input
+        id="new-request-name"
+        v-model="newRequestName"
+        class="modal__input"
+        type="text"
+        autofocus
+        @keydown.enter="submitCreateRequest"
+      />
+      <p v-if="createError" class="modal__error">{{ createError }}</p>
+      <template #actions>
+        <button type="button" class="button button--secondary" @click="cancelCreateRequest">
+          Cancel
+        </button>
+        <button type="button" class="button" :disabled="!newRequestName.trim()" @click="submitCreateRequest">
+          Create
+        </button>
+      </template>
+    </Modal>
   </div>
 </template>
