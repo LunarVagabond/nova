@@ -100,14 +100,24 @@ fn encode_multipart(fields: &[MultipartField]) -> (String, Vec<u8>) {
 
 fn build_response(response: ureq::Response, elapsed: Duration) -> NovaResult<Response> {
     let status = response.status();
-    let headers = response
-        .headers_names()
-        .into_iter()
-        .filter_map(|name| {
-            let value = response.header(&name)?.to_string();
-            Some(Header { name, value })
-        })
-        .collect();
+
+    // A header name can repeat (most notably Set-Cookie, one per cookie) —
+    // `response.all(name)` returns every value for it, so dedupe names
+    // case-insensitively first rather than using `.header()`, which only
+    // ever returns the first value and would silently drop the rest.
+    let mut seen_names = std::collections::HashSet::new();
+    let mut headers = Vec::new();
+    for name in response.headers_names() {
+        if !seen_names.insert(name.to_ascii_lowercase()) {
+            continue;
+        }
+        for value in response.all(&name) {
+            headers.push(Header {
+                name: name.clone(),
+                value: value.to_string(),
+            });
+        }
+    }
 
     let body = response
         .into_string()
