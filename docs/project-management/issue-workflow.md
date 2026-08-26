@@ -1,10 +1,21 @@
 # Issue Workflow
 
-**Status:** decision issues and work-item ticket quality are documented below.
-Still missing: day-to-day triage/labeling mechanics and how claiming works once
-it's automated (there's no CI/Actions set up for Nova yet — see
-[Milestones & Releases](milestones-and-releases.md) — so claiming is currently a
-manual courtesy convention; see `.github/CONTRIBUTING.md`).
+## Claiming an issue
+
+Claiming is automated via `.github/workflows/`, not just a courtesy convention
+— see `.github/CONTRIBUTING.md` -> "Claiming An Issue" for the contributor-facing
+rules. Mechanically:
+
+- Commenting `/claim` (exact match, after trimming whitespace) on an open,
+  unassigned, non-epic issue assigns you to it (`claim-issue.yml`). Epics track
+  work through their native sub-issues instead — claim the specific sub-issue.
+- A PR using the `[#<issue>] - ...` title format must reference the issue it
+  claims with a GitHub closing keyword (`Closes #123`, etc.) in the PR body,
+  and the author must actually be that issue's assignee, or the check fails
+  (`claim-check.yml`).
+- A claimed issue that goes quiet for 10 days gets a ping; 4 days after that
+  with no further activity, it's automatically unassigned so someone else can
+  pick it up (`stale-claim-check.yml`).
 
 ## Decision issues
 
