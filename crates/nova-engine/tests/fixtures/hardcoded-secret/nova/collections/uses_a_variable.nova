@@ -1,0 +1,7 @@
+[request]
+method: GET
+url: {{base_url}}/me
+
+[auth]
+type: bearer
+token: {{token}}

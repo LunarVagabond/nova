@@ -1,0 +1,13 @@
+version: 1
+
+project:
+  name: Hardcoded Secret Fixture
+
+defaults:
+  environment: local
+
+collections:
+  path: collections
+
+environments:
+  path: envs

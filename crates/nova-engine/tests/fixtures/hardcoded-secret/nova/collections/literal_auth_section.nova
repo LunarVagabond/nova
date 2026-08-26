@@ -1,0 +1,9 @@
+[request]
+method: GET
+url: {{base_url}}/me
+
+[auth]
+type: oauth2_client_credentials
+token_url: {{token_url}}
+client_id: {{client_id}}
+client_secret: super-secret-value-typed-in-directly

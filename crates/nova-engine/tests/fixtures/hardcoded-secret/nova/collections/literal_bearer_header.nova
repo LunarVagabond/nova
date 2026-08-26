@@ -1,0 +1,6 @@
+[request]
+method: GET
+url: {{base_url}}/me
+
+[headers]
+Authorization: Bearer sk_live_abc123

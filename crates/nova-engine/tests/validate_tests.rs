@@ -25,3 +25,39 @@ fn flags_unknown_default_environment() {
         })
     );
 }
+
+#[test]
+fn flags_a_literal_authorization_header_with_no_variable() {
+    let project = NovaProject::discover(&fixture("hardcoded-secret")).unwrap();
+    let issues = validate(&project);
+
+    let path = fixture("hardcoded-secret").join("nova/collections/literal_bearer_header.nova");
+    assert!(issues.contains(&ValidationIssue::PossibleHardcodedSecret {
+        path,
+        field: "the Authorization header".to_string(),
+    }));
+}
+
+#[test]
+fn flags_a_literal_auth_section_field_with_no_variable() {
+    let project = NovaProject::discover(&fixture("hardcoded-secret")).unwrap();
+    let issues = validate(&project);
+
+    let path = fixture("hardcoded-secret").join("nova/collections/literal_auth_section.nova");
+    assert!(issues.contains(&ValidationIssue::PossibleHardcodedSecret {
+        path,
+        field: "[auth] client_secret".to_string(),
+    }));
+}
+
+#[test]
+fn does_not_flag_auth_fields_that_reference_a_variable() {
+    let project = NovaProject::discover(&fixture("hardcoded-secret")).unwrap();
+    let issues = validate(&project);
+
+    let path = fixture("hardcoded-secret").join("nova/collections/uses_a_variable.nova");
+    assert!(!issues.iter().any(|issue| matches!(
+        issue,
+        ValidationIssue::PossibleHardcodedSecret { path: p, .. } if *p == path
+    )));
+}
