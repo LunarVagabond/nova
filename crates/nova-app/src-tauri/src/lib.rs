@@ -9,6 +9,9 @@ pub fn run() {
             commands::open_project,
             commands::validate_project,
             commands::send_request,
+            commands::read_request,
+            commands::save_request,
+            commands::create_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

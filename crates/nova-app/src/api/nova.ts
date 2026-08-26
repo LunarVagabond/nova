@@ -6,7 +6,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
-import type { NovaProject, RequestResponse } from "../types/nova";
+import type {
+  NovaProject,
+  QueryParam,
+  RequestDraft,
+  RequestFile,
+  RequestHeader,
+  RequestResponse,
+} from "../types/nova";
 
 export function openProject(path: string): Promise<NovaProject> {
   return invoke<NovaProject>("open_project", { path });
@@ -22,6 +29,45 @@ export function sendRequest(
   environment: string | null,
 ): Promise<RequestResponse> {
   return invoke<RequestResponse>("send_request", { requestPath, environment });
+}
+
+/** Parses the `.http` file at `requestPath` into an editable draft. */
+export function readRequest(requestPath: string): Promise<RequestDraft> {
+  return invoke<RequestDraft>("read_request", { requestPath });
+}
+
+/**
+ * Writes edited method/URL/query/headers/body back to the `.http` file at
+ * `requestPath`. Any assertions, extractions, and example response
+ * already in the file are preserved unchanged.
+ */
+export function saveRequest(
+  requestPath: string,
+  draft: {
+    method: string;
+    url: string;
+    query: QueryParam[];
+    headers: RequestHeader[];
+    body: string;
+  },
+): Promise<void> {
+  return invoke<void>("save_request", {
+    requestPath,
+    method: draft.method,
+    url: draft.url,
+    query: draft.query,
+    headers: draft.headers,
+    body: draft.body,
+  });
+}
+
+/**
+ * Creates a new `.http` file named `name` (a `.http` suffix is added if
+ * missing) directly inside the collection directory at `collectionPath`,
+ * with a minimal default request, and returns its `RequestFile` handle.
+ */
+export function createRequest(collectionPath: string, name: string): Promise<RequestFile> {
+  return invoke<RequestFile>("create_request", { collectionPath, name });
 }
 
 /** Opens the native folder picker and returns the chosen path, or null if cancelled. */

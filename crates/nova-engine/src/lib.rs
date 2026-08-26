@@ -31,7 +31,8 @@ pub use mock::{mock_routes, MockRoute, PathSegment};
 pub use openapi::{export_to_spec, generate_from_spec, GeneratedProject, GeneratedRequest};
 pub use project::{NovaProject, MANIFEST_FILE_NAME};
 pub use request::{
-    ExampleResponse, Header, MultipartField, ParsedRequest, QueryParam, RequestBody, RequestFile,
+    ExampleResponse, Header, MultipartField, ParsedRequest, QueryParam, RequestBody, RequestDraft,
+    RequestFile,
 };
 pub use session::Session;
 pub use validate::{validate, ValidationIssue};
