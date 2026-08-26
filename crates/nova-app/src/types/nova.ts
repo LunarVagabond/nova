@@ -104,3 +104,16 @@ export interface RequestDraft {
   has_extractions: boolean;
   has_example_response: boolean;
 }
+
+/**
+ * Mirrors `nova_engine::ParsedCurlRequest` — the pieces recovered from a
+ * pasted `curl`/`wget` command. No `query`: a raw curl URL isn't split
+ * into base/query the way `RequestDraft` is, so the caller runs it through
+ * the same URL-field parsing used for a manually-typed query string.
+ */
+export interface ParsedCurlRequest {
+  method: string;
+  url: string;
+  headers: RequestHeader[];
+  body: string | null;
+}

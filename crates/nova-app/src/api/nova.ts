@@ -8,6 +8,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 
 import type {
   NovaProject,
+  ParsedCurlRequest,
   QueryParam,
   RequestDraft,
   RequestFile,
@@ -68,6 +69,11 @@ export function saveRequest(
  */
 export function createRequest(collectionPath: string, name: string): Promise<RequestFile> {
   return invoke<RequestFile>("create_request", { collectionPath, name });
+}
+
+/** Parses a pasted `curl`/`wget` command into method/URL/headers/body. */
+export function parseCurlCommand(command: string): Promise<ParsedCurlRequest> {
+  return invoke<ParsedCurlRequest>("parse_curl_command", { command });
 }
 
 /** Opens the native folder picker and returns the chosen path, or null if cancelled. */

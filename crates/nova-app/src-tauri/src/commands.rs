@@ -5,7 +5,10 @@
 //! `NovaError` into a plain `String` at the Tauri boundary, since
 //! `tauri::command` return types must be serializable.
 
-use nova_engine::{Header, NovaProject, QueryParam, RequestDraft, RequestFile, Response, Session};
+use nova_engine::{
+    parse_curl, Header, NovaProject, ParsedCurlRequest, QueryParam, RequestDraft, RequestFile,
+    Response, Session,
+};
 
 #[tauri::command]
 pub fn open_project(path: String) -> Result<NovaProject, String> {
@@ -114,4 +117,11 @@ pub fn create_request(collection_path: String, name: String) -> Result<RequestFi
 
     let path = std::path::Path::new(&collection_path).join(file_name);
     RequestFile::create(path).map_err(|e| e.to_string())
+}
+
+/// Parse a pasted `curl`/`wget` command into the pieces of a request, for
+/// the request panel's paste-into-the-URL-field convenience.
+#[tauri::command]
+pub fn parse_curl_command(command: String) -> Result<ParsedCurlRequest, String> {
+    parse_curl(&command)
 }

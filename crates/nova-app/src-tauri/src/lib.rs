@@ -12,6 +12,7 @@ pub fn run() {
             commands::read_request,
             commands::save_request,
             commands::create_request,
+            commands::parse_curl_command,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

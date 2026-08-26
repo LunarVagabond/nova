@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 
-import { readRequest, saveRequest, sendRequest } from "../api/nova";
+import { parseCurlCommand, readRequest, saveRequest, sendRequest } from "../api/nova";
 import type { QueryParam, RequestDraft, RequestFile, RequestHeader, RequestResponse } from "../types/nova";
 import CodeEditor, { type EditorLanguage } from "./CodeEditor.vue";
 import KeyValueEditor from "./KeyValueEditor.vue";
@@ -184,6 +184,33 @@ const urlDisplay = computed<string>({
   },
 });
 
+const curlPasteError = ref<string | null>(null);
+
+// Pasting a curl/wget command into the URL field fills in method/URL/
+// headers/body from it instead of treating the pasted text as a literal
+// URL. Only intercepts the paste when the clipboard text actually looks
+// like one (so an ordinary URL paste is completely unaffected); if parsing
+// then fails anyway, falls back to inserting the raw pasted text so the
+// paste isn't silently swallowed.
+async function handleUrlPaste(event: ClipboardEvent) {
+  const text = event.clipboardData?.getData("text") ?? "";
+  if (!/^\s*(curl|wget)\b/i.test(text)) return;
+
+  event.preventDefault();
+  curlPasteError.value = null;
+  try {
+    const parsed = await parseCurlCommand(text);
+    method.value = parsed.method;
+    urlDisplay.value = parsed.url;
+    headers.value = parsed.headers.map((h) => ({ ...h }));
+    bodyText.value = parsed.body ?? "";
+    bodyType.value = detectBodyType(headers.value, bodyText.value);
+  } catch (e) {
+    urlDisplay.value = text;
+    curlPasteError.value = String(e);
+  }
+}
+
 const responseLanguage = computed<EditorLanguage>(() => {
   const contentType = response.value?.headers.find((h) => h.name.toLowerCase() === "content-type")?.value ?? "";
   return languageForContentType(contentType);
@@ -351,8 +378,13 @@ defineExpose({ dirty, save: handleSave });
           type="text"
           class="request-panel__url-input"
           placeholder="{{base_url}}/path"
+          @paste="handleUrlPaste"
         />
       </div>
+
+      <p v-if="curlPasteError" class="request-panel__save-error">
+        Couldn't parse the pasted curl command: {{ curlPasteError }}
+      </p>
 
       <div class="request-panel__tabs" role="tablist">
         <button

@@ -7,6 +7,7 @@
 mod assertion;
 mod auth;
 mod collection;
+mod curl;
 mod environment;
 mod error;
 mod execute;
@@ -23,6 +24,7 @@ pub use assertion::{
     evaluate, Assertion, AssertionOutcome, Extraction, Op as AssertionOp, Term as AssertionTerm,
 };
 pub use collection::Collection;
+pub use curl::{parse_curl, ParsedCurlRequest};
 pub use environment::{AuthDefault, Environment};
 pub use error::{NovaError, NovaResult};
 pub use execute::{execute, Response};
