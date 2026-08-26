@@ -4,10 +4,31 @@
 // callers own what the array actually means (header vs. query param).
 type Row = { name: string; value: string };
 
+// Common HTTP header names offered as autocomplete suggestions when
+// `mode` is "headers". Not exhaustive — just a reasonable common set;
+// any arbitrary custom header name can still be typed freely.
+const COMMON_HEADER_NAMES = [
+  "Content-Type",
+  "Authorization",
+  "Accept",
+  "Accept-Encoding",
+  "Accept-Language",
+  "Cache-Control",
+  "User-Agent",
+  "Cookie",
+  "Origin",
+  "Referer",
+  "X-Requested-With",
+  "Content-Length",
+  "Host",
+  "Connection",
+];
+
 const props = defineProps<{
   modelValue: Row[];
   namePlaceholder?: string;
   valuePlaceholder?: string;
+  mode?: "headers" | "params";
 }>();
 
 const emit = defineEmits<{
@@ -33,12 +54,16 @@ function removeRow(index: number) {
 
 <template>
   <div class="kv-editor">
+    <datalist v-if="mode === 'headers'" id="kv-editor-header-names">
+      <option v-for="headerName in COMMON_HEADER_NAMES" :key="headerName" :value="headerName" />
+    </datalist>
     <div v-for="(row, index) in modelValue" :key="index" class="kv-editor__row">
       <input
         class="kv-editor__input"
         type="text"
         :placeholder="namePlaceholder ?? 'Name'"
         :value="row.name"
+        :list="mode === 'headers' ? 'kv-editor-header-names' : undefined"
         @input="update(index, 'name', ($event.target as HTMLInputElement).value)"
       />
       <input

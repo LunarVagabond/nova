@@ -209,7 +209,7 @@ defineExpose({ dirty, save: handleSave });
 
       <div class="request-panel__field-group">
         <span class="request-panel__field-label">Headers</span>
-        <KeyValueEditor v-model="headers" name-placeholder="Header" value-placeholder="Value" />
+        <KeyValueEditor v-model="headers" name-placeholder="Header" value-placeholder="Value" mode="headers" />
       </div>
 
       <div class="request-panel__field-group">
