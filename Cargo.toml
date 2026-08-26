@@ -17,6 +17,7 @@ publish = false
 nova-engine = { path = "crates/nova-engine" }
 serde = { version = "1", features = ["derive"] }
 base64 = "0.22"
+indexmap = "2"
 openapiv3 = "2"
 roxmltree = "0.20"
 serde_json = "1"

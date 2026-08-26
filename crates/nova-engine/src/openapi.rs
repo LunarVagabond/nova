@@ -1,7 +1,14 @@
-use openapiv3::{OpenAPI, Operation, Parameter, ReferenceOr};
+use indexmap::IndexMap;
+use openapiv3::{
+    Info, MediaType, OpenAPI, Operation, Parameter, ParameterData, ParameterSchemaOrContent,
+    PathItem, Paths, ReferenceOr, RequestBody as OpenApiRequestBody, Responses,
+};
 
+use crate::collection::Collection;
 use crate::error::{NovaError, NovaResult};
 use crate::manifest::{Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION};
+use crate::project::NovaProject;
+use crate::request::RequestBody;
 
 /// One `.http` file to be written under a project's collections directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -203,6 +210,202 @@ fn sanitize(text: &str) -> String {
         }
     }
     result.trim_matches('_').to_string()
+}
+
+/// Export a project's collections as an OpenAPI 3.x spec (YAML text).
+/// Every discovered request becomes an operation with the correct method,
+/// path, and declared headers/query params; a request body becomes a
+/// best-effort `requestBody` example inferred from the request's own body
+/// — never a hand-authored schema. Response shapes aren't generated (Nova
+/// doesn't record expected responses beyond assertions).
+pub fn export_to_spec(project: &NovaProject) -> NovaResult<String> {
+    let mut paths: IndexMap<String, ReferenceOr<PathItem>> = IndexMap::new();
+
+    for request_file in collect_requests(&project.collections) {
+        let parsed = request_file.parse()?;
+        let path_key = to_openapi_path(&parsed.url);
+
+        let entry = paths
+            .entry(path_key)
+            .or_insert_with(|| ReferenceOr::Item(PathItem::default()));
+        let ReferenceOr::Item(path_item) = entry else {
+            continue;
+        };
+
+        let operation = build_operation(&parsed);
+        set_operation(path_item, &parsed.method, operation);
+    }
+
+    let spec = OpenAPI {
+        openapi: "3.0.0".to_string(),
+        info: Info {
+            title: project.manifest.project.name.clone(),
+            version: "1.0.0".to_string(),
+            ..Default::default()
+        },
+        paths: Paths {
+            paths,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    serde_yaml::to_string(&spec).map_err(|source| NovaError::OpenApiParse {
+        message: format!("failed to render exported spec: {source}"),
+    })
+}
+
+fn collect_requests(collection: &Collection) -> Vec<&crate::request::RequestFile> {
+    let mut requests: Vec<&crate::request::RequestFile> = collection.requests.iter().collect();
+    for child in &collection.children {
+        requests.extend(collect_requests(child));
+    }
+    requests
+}
+
+/// `{{base_url}}/users/{{id}}` -> `/users/{id}`: strip the leading
+/// `{{base_url}}` (or whatever the first placeholder is — Nova doesn't
+/// require the variable to be named exactly `base_url`) and turn every
+/// remaining `{{name}}` into OpenAPI's single-brace `{name}`.
+fn to_openapi_path(url: &str) -> String {
+    let path = if let Some(after) = url.strip_prefix("{{") {
+        after.find("}}").map(|end| &after[end + 2..]).unwrap_or(url)
+    } else {
+        url
+    };
+
+    let mut result = String::new();
+    let mut rest = path;
+    while let Some(start) = rest.find("{{") {
+        result.push_str(&rest[..start]);
+        let after_open = &rest[start + 2..];
+        match after_open.find("}}") {
+            Some(end) => {
+                result.push('{');
+                result.push_str(&after_open[..end]);
+                result.push('}');
+                rest = &after_open[end + 2..];
+            }
+            None => {
+                result.push_str(&rest[start..]);
+                rest = "";
+                break;
+            }
+        }
+    }
+    result.push_str(rest);
+    result
+}
+
+fn build_operation(parsed: &crate::request::ParsedRequest) -> Operation {
+    let mut parameters = Vec::new();
+
+    for header in &parsed.headers {
+        parameters.push(ReferenceOr::Item(Parameter::Header {
+            parameter_data: string_parameter(&header.name),
+            style: Default::default(),
+        }));
+    }
+    for param in &parsed.query {
+        parameters.push(ReferenceOr::Item(Parameter::Query {
+            parameter_data: string_parameter(&param.name),
+            allow_reserved: false,
+            style: Default::default(),
+            allow_empty_value: None,
+        }));
+    }
+
+    let request_body = body_example(&parsed.body).map(|(content_type, example)| {
+        let mut content = IndexMap::new();
+        content.insert(
+            content_type.to_string(),
+            MediaType {
+                example: Some(example),
+                ..Default::default()
+            },
+        );
+        ReferenceOr::Item(OpenApiRequestBody {
+            content,
+            ..Default::default()
+        })
+    });
+
+    Operation {
+        parameters,
+        request_body,
+        responses: Responses::default(),
+        ..Default::default()
+    }
+}
+
+fn string_parameter(name: &str) -> ParameterData {
+    ParameterData {
+        name: name.to_string(),
+        description: None,
+        required: true,
+        deprecated: None,
+        format: ParameterSchemaOrContent::Schema(ReferenceOr::Item(openapiv3::Schema {
+            schema_data: Default::default(),
+            schema_kind: openapiv3::SchemaKind::Type(openapiv3::Type::String(Default::default())),
+        })),
+        example: None,
+        examples: Default::default(),
+        explode: None,
+        extensions: Default::default(),
+    }
+}
+
+/// A request body's content, best-effort: an explicit example inferred
+/// from the request's own body, not a hand-authored schema.
+fn body_example(body: &RequestBody) -> Option<(&'static str, serde_json::Value)> {
+    match body {
+        RequestBody::None => None,
+        RequestBody::Json(value) => Some(("application/json", value.clone())),
+        RequestBody::Text(text) => Some(("text/plain", serde_json::Value::String(text.clone()))),
+        RequestBody::Xml(element) => Some((
+            "application/xml",
+            serde_json::Value::String(element.to_xml_string()),
+        )),
+        RequestBody::Form(pairs) => Some((
+            "application/x-www-form-urlencoded",
+            serde_json::Value::Object(
+                pairs
+                    .iter()
+                    .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                    .collect(),
+            ),
+        )),
+        RequestBody::Multipart(fields) => Some((
+            "multipart/form-data",
+            serde_json::Value::Object(
+                fields
+                    .iter()
+                    .map(|field| {
+                        (
+                            field.name.clone(),
+                            serde_json::Value::String(field.value.clone()),
+                        )
+                    })
+                    .collect(),
+            ),
+        )),
+    }
+}
+
+fn set_operation(path_item: &mut PathItem, method: &str, operation: Operation) {
+    let slot = match method.to_ascii_uppercase().as_str() {
+        "GET" => &mut path_item.get,
+        "POST" => &mut path_item.post,
+        "PUT" => &mut path_item.put,
+        "DELETE" => &mut path_item.delete,
+        "PATCH" => &mut path_item.patch,
+        "HEAD" => &mut path_item.head,
+        "OPTIONS" => &mut path_item.options,
+        // TRACE and any other verb: best-effort generation just skips it
+        // rather than failing the whole export over one unusual request.
+        _ => return,
+    };
+    *slot = Some(operation);
 }
 
 #[cfg(test)]

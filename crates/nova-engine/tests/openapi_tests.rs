@@ -1,6 +1,6 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use nova_engine::{generate_from_spec, NovaError, RequestFile};
+use nova_engine::{export_to_spec, generate_from_spec, NovaError, NovaProject, RequestFile};
 
 fn fixture(name: &str) -> String {
     std::fs::read_to_string(
@@ -9,6 +9,12 @@ fn fixture(name: &str) -> String {
             .join(name),
     )
     .unwrap()
+}
+
+fn engine_fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
 }
 
 #[test]
@@ -85,4 +91,71 @@ fn generated_requests_parse_back_through_novas_own_http_parser() {
 fn invalid_spec_is_a_typed_error() {
     let err = generate_from_spec("foo: bar").unwrap_err();
     assert!(matches!(err, NovaError::OpenApiParse { .. }));
+}
+
+#[test]
+fn exports_the_basic_project_fixture_as_a_well_formed_spec() {
+    let project = NovaProject::discover(&engine_fixture("basic-project")).unwrap();
+
+    let spec_yaml = export_to_spec(&project).unwrap();
+
+    // Well-formed: re-parses cleanly as an OpenAPI document via the same
+    // crate that validates specs on the import side (#25).
+    let reparsed: openapiv3::OpenAPI = serde_yaml::from_str(&spec_yaml).unwrap();
+
+    assert_eq!(reparsed.info.title, "WorldZero API");
+
+    let login = reparsed
+        .paths
+        .paths
+        .get("/auth/login")
+        .expect("login path should be present");
+    let openapiv3::ReferenceOr::Item(login_item) = login else {
+        panic!("expected an inline path item");
+    };
+    let login_post = login_item.post.as_ref().expect("POST /auth/login");
+    assert!(login_post.request_body.is_some());
+
+    let users = reparsed
+        .paths
+        .paths
+        .get("/users")
+        .expect("users path should be present");
+    let openapiv3::ReferenceOr::Item(users_item) = users else {
+        panic!("expected an inline path item");
+    };
+    assert!(users_item.post.is_some());
+
+    let user_by_id = reparsed
+        .paths
+        .paths
+        .get("/users/{user_id}")
+        .expect("users/{user_id} path should be present");
+    let openapiv3::ReferenceOr::Item(user_by_id_item) = user_by_id else {
+        panic!("expected an inline path item");
+    };
+    assert!(user_by_id_item.get.is_some());
+}
+
+#[test]
+fn exported_request_body_is_a_best_effort_example_not_a_hand_authored_schema() {
+    let project = NovaProject::discover(&engine_fixture("basic-project")).unwrap();
+    let spec_yaml = export_to_spec(&project).unwrap();
+    let reparsed: openapiv3::OpenAPI = serde_yaml::from_str(&spec_yaml).unwrap();
+
+    let openapiv3::ReferenceOr::Item(users_item) = reparsed.paths.paths.get("/users").unwrap()
+    else {
+        panic!("expected an inline path item");
+    };
+    let post = users_item.post.as_ref().unwrap();
+    let openapiv3::ReferenceOr::Item(request_body) = post.request_body.as_ref().unwrap() else {
+        panic!("expected an inline request body");
+    };
+    let media_type = request_body.content.get("application/json").unwrap();
+
+    assert_eq!(
+        media_type.example,
+        Some(serde_json::json!({"name": "John", "email": "john@example.com"}))
+    );
+    assert!(media_type.schema.is_none());
 }
