@@ -79,6 +79,31 @@ export interface NovaProject {
   collections: Collection;
 }
 
+/**
+ * Mirrors `nova_engine::OpenProjectOutcome` — opening a directory that
+ * simply has no project in it is not an error, so the UI can offer to
+ * create one there. Anything genuinely broken still rejects.
+ */
+export type OpenProjectOutcome = { found: NovaProject } | "not_found";
+
+/** Mirrors `nova_engine::GitignoreOutcome`. */
+export type GitignoreOutcome = "created" | "appended" | "already_present";
+
+/** Mirrors `nova_engine::HookOutcome`; each variant carries the hook's path. */
+export type HookOutcome = { installed: string } | { already_installed: string };
+
+/**
+ * Mirrors `nova_engine::InitOutcome`. `hook` is null when no hook was
+ * asked for, and otherwise a serialized Rust `Result` — a failed hook
+ * install doesn't fail the init, since the project files are already
+ * written by then.
+ */
+export interface InitOutcome {
+  project_root: string;
+  gitignore: GitignoreOutcome;
+  hook: { Ok: HookOutcome } | { Err: string } | null;
+}
+
 export interface ResponseHeader {
   name: string;
   value: string;

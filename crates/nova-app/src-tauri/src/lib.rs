@@ -7,6 +7,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::open_project,
+            commands::init_project,
             commands::validate_project,
             commands::send_request,
             commands::read_request,

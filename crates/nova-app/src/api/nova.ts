@@ -9,17 +9,40 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AuthScheme,
   Collection,
+  InitOutcome,
   Manifest,
   NovaEnvironment,
-  NovaProject,
+  OpenProjectOutcome,
   ParsedCurlRequest,
   RequestDraft,
   RequestFile,
   RequestResponse,
 } from "../types/nova";
 
-export function openProject(path: string): Promise<NovaProject> {
-  return invoke<NovaProject>("open_project", { path });
+/**
+ * Opens the project at `path`. A directory with no project in it resolves
+ * to `"not_found"` rather than rejecting, so the caller can offer to
+ * create one; a project that exists but is broken still rejects.
+ */
+export function openProject(path: string): Promise<OpenProjectOutcome> {
+  return invoke<OpenProjectOutcome>("open_project", { path });
+}
+
+/**
+ * Scaffolds a brand-new Nova project under `path/nova/`, the same way
+ * `nova init` does. A null or blank `name` defaults to the target
+ * directory's name; `installHook` adds the opt-in `check-secrets` git
+ * pre-commit hook.
+ */
+export function initProject(
+  path: string,
+  options: { name: string | null; installHook: boolean },
+): Promise<InitOutcome> {
+  return invoke<InitOutcome>("init_project", {
+    path,
+    name: options.name,
+    installHook: options.installHook,
+  });
 }
 
 export function validateProject(path: string): Promise<string[]> {

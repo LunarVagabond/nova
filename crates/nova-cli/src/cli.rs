@@ -27,12 +27,17 @@ pub enum Command {
     /// environment, so other commands have something to discover. Also
     /// adds `nova/envs/` to `.gitignore`. Refuses to overwrite an
     /// existing `nova/` directory.
+    ///
+    /// Run in a terminal, this asks for anything not given as a flag (the
+    /// project name, and whether to install the pre-commit hook). Run
+    /// non-interactively — CI, a script, piped input — it never prompts
+    /// and uses the defaults below.
     Init {
         #[arg(default_value = ".")]
         path: PathBuf,
 
         /// Project name to use in the generated manifest. Defaults to the
-        /// target directory's name.
+        /// target directory's name; skips the interactive prompt for it.
         #[arg(long)]
         name: Option<String>,
 
@@ -41,6 +46,11 @@ pub enum Command {
         /// being committed.
         #[arg(long)]
         with_hook: bool,
+
+        /// Don't install the pre-commit hook (the default) — given
+        /// explicitly, so the interactive prompt for it is skipped too.
+        #[arg(long, conflicts_with = "with_hook")]
+        no_hook: bool,
     },
 
     /// Open a project and print its structure (same as bare `nova <path>`).
