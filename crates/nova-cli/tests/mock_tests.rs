@@ -77,17 +77,20 @@ fn spawn_mock_server(project_dir: &Path) -> (String, std::process::Child) {
 }
 
 /// `nova mock` reports its bound address as soon as the socket is listening,
-/// but under CI load the very first connection can still land before the
-/// server's accept loop is actually scheduled and get torn down with a
-/// connection reset. Retry a few times before treating that as a real
-/// failure, since it's a startup race rather than a mock-server behavior bug.
+/// but under CI load the server process can take a while after that to
+/// actually get scheduled and start accepting — these tests spawn three
+/// such child processes concurrently (one per test, default Rust test
+/// parallelism) on a shared runner, so a short fixed retry budget (a prior
+/// attempt used 4 tries / 50ms apart, ~200ms total) isn't reliably enough.
+/// Retry for several seconds before treating a connection failure as a real
+/// failure, since it's a startup race rather than a mock-server behavior
+/// bug — this only costs time on the rare run that actually races.
 fn get_with_retry(url: &str) -> Result<ureq::Response, Box<ureq::Error>> {
-    let mut attempts = 0;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
         match ureq::get(url).call() {
-            Err(ureq::Error::Transport(_)) if attempts < 4 => {
-                attempts += 1;
-                std::thread::sleep(std::time::Duration::from_millis(50));
+            Err(ureq::Error::Transport(_)) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
             }
             result => return result.map_err(Box::new),
         }
