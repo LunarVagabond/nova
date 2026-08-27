@@ -44,8 +44,8 @@ pub use openapi::{export_to_spec, generate_from_spec, GeneratedProject, Generate
 pub use postman::generate_from_postman_collection;
 pub use project::{discover_or_not_found, NovaProject, OpenProjectOutcome, MANIFEST_FILE_NAME};
 pub use request::{
-    ExampleResponse, Header, MultipartField, ParsedRequest, QueryParam, RequestBody, RequestDraft,
-    RequestFile,
+    delete_request, duplicate_request, rename_request, ExampleResponse, Header, MultipartField,
+    ParsedRequest, QueryParam, RequestBody, RequestDraft, RequestFile,
 };
 pub use session::Session;
 pub use validate::{validate, ValidationIssue};

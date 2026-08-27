@@ -83,6 +83,12 @@ pub enum NovaError {
     #[error("collection not found at {0}")]
     CollectionNotFound(PathBuf),
 
+    #[error("invalid request name {name:?}: {reason}")]
+    InvalidRequestName { name: String, reason: String },
+
+    #[error("request not found at {0}")]
+    RequestNotFound(PathBuf),
+
     #[error("failed to serialize environment for {path}: {message}")]
     EnvironmentSerialize { path: PathBuf, message: String },
 

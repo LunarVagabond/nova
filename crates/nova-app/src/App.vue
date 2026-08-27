@@ -7,11 +7,14 @@ import {
   createRequest,
   deleteCollection,
   deleteEnvironment,
+  deleteRequest,
+  duplicateRequest,
   gitStatus as fetchGitStatus,
   initProject,
   openProject,
   pickProjectDirectory,
   renameCollection,
+  renameRequest,
   validateProject,
 } from "./api/nova";
 import type {
@@ -484,6 +487,115 @@ async function confirmDeleteCollection() {
   }
 }
 
+// Rename request.
+const renamingRequest = ref<RequestFile | null>(null);
+const renameRequestName = ref("");
+const renameRequestError = ref<string | null>(null);
+
+function handleRenameRequest(request: RequestFile) {
+  renameRequestError.value = null;
+  renameRequestName.value = request.name;
+  renamingRequest.value = request;
+}
+
+function cancelRenameRequest() {
+  renamingRequest.value = null;
+}
+
+async function submitRenameRequest() {
+  const request = renamingRequest.value;
+  const newName = renameRequestName.value.trim();
+  if (!request || !newName) return;
+
+  renameRequestError.value = null;
+  try {
+    const renamed = await renameRequest(request.path, newName);
+    // Follow an open tab to its new path rather than letting
+    // `refreshProjectTree` close it as a stale reference.
+    const tabIndex = openTabs.value.findIndex((t) => t.path === request.path);
+    if (tabIndex !== -1) {
+      openTabs.value[tabIndex] = renamed;
+      if (request.path in tabDirty) {
+        tabDirty[renamed.path] = tabDirty[request.path];
+        delete tabDirty[request.path];
+      }
+      if (activeRequestPath.value === request.path) {
+        activeRequestPath.value = renamed.path;
+      }
+    }
+    await refreshProjectTree();
+    renamingRequest.value = null;
+  } catch (e) {
+    renameRequestError.value = String(e);
+  }
+}
+
+// Duplicate request — same in-app prompt pattern as new request, above,
+// pre-filled with a "<name> copy" suggestion.
+const duplicatingRequest = ref<RequestFile | null>(null);
+const duplicateRequestName = ref("");
+const duplicateRequestError = ref<string | null>(null);
+
+function handleDuplicateRequest(request: RequestFile) {
+  duplicateRequestError.value = null;
+  duplicateRequestName.value = `${request.name} copy`;
+  duplicatingRequest.value = request;
+}
+
+function cancelDuplicateRequest() {
+  duplicatingRequest.value = null;
+}
+
+async function submitDuplicateRequest() {
+  const request = duplicatingRequest.value;
+  const name = duplicateRequestName.value.trim();
+  if (!request || !name) return;
+
+  duplicateRequestError.value = null;
+  try {
+    const created = await duplicateRequest(request.path, name);
+    await refreshProjectTree();
+    if (!openTabs.value.some((t) => t.path === created.path)) {
+      openTabs.value.push(created);
+    }
+    activeRequestPath.value = created.path;
+    mainView.value = "request";
+    duplicatingRequest.value = null;
+  } catch (e) {
+    duplicateRequestError.value = String(e);
+  }
+}
+
+// Delete request — destructive, so this always goes through a confirm step
+// in the in-app Modal rather than acting immediately. An open tab for the
+// deleted request is closed automatically by `refreshProjectTree`, which
+// drops any open tab no longer found in the reloaded collection tree.
+const deletingRequest = ref<RequestFile | null>(null);
+const deleteRequestError = ref<string | null>(null);
+
+function handleDeleteRequest(request: RequestFile) {
+  deleteRequestError.value = null;
+  deletingRequest.value = request;
+}
+
+function cancelDeleteRequest() {
+  deletingRequest.value = null;
+}
+
+async function confirmDeleteRequest() {
+  const request = deletingRequest.value;
+  if (!request) return;
+
+  deleteRequestError.value = null;
+  try {
+    await deleteRequest(request.path);
+    await refreshProjectTree();
+    deletingRequest.value = null;
+  } catch (e) {
+    deleteRequestError.value = String(e);
+  }
+}
+
 // Open the environment editor for the named environment (from the
 // sidebar's "edit" affordance), mirroring `handleSelectRequest` above.
 async function handleManageEnvironment(name: string) {
@@ -601,6 +713,9 @@ async function confirmDeleteEnvironment() {
         @create-collection="handleCreateCollection"
         @rename-collection="handleRenameCollection"
         @delete-collection="handleDeleteCollection"
+        @rename-request="handleRenameRequest"
+        @duplicate-request="handleDuplicateRequest"
+        @delete-request="handleDeleteRequest"
         @create-environment="handleCreateEnvironment"
         @manage-environment="handleManageEnvironment"
       />
@@ -814,6 +929,74 @@ async function confirmDeleteEnvironment() {
           Cancel
         </button>
         <button type="button" class="button button--danger" @click="confirmDeleteCollection">
+          Delete
+        </button>
+      </template>
+    </Modal>
+
+    <Modal v-if="renamingRequest" title="Rename request" @cancel="cancelRenameRequest">
+      <label class="modal__label" for="rename-request-name">Request name</label>
+      <input
+        id="rename-request-name"
+        v-model="renameRequestName"
+        class="modal__input"
+        type="text"
+        autofocus
+        @keydown.enter="submitRenameRequest"
+      />
+      <p v-if="renameRequestError" class="modal__error">{{ renameRequestError }}</p>
+      <template #actions>
+        <button type="button" class="button button--secondary" @click="cancelRenameRequest">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="button"
+          :disabled="!renameRequestName.trim()"
+          @click="submitRenameRequest"
+        >
+          Rename
+        </button>
+      </template>
+    </Modal>
+
+    <Modal v-if="duplicatingRequest" title="Duplicate request" @cancel="cancelDuplicateRequest">
+      <label class="modal__label" for="duplicate-request-name">New request name</label>
+      <input
+        id="duplicate-request-name"
+        v-model="duplicateRequestName"
+        class="modal__input"
+        type="text"
+        autofocus
+        @keydown.enter="submitDuplicateRequest"
+      />
+      <p v-if="duplicateRequestError" class="modal__error">{{ duplicateRequestError }}</p>
+      <template #actions>
+        <button type="button" class="button button--secondary" @click="cancelDuplicateRequest">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="button"
+          :disabled="!duplicateRequestName.trim()"
+          @click="submitDuplicateRequest"
+        >
+          Duplicate
+        </button>
+      </template>
+    </Modal>
+
+    <Modal v-if="deletingRequest" title="Delete request?" @cancel="cancelDeleteRequest">
+      <p>
+        Delete <strong>{{ deletingRequest.name }}</strong>? This removes it from disk and cannot
+        be undone.
+      </p>
+      <p v-if="deleteRequestError" class="modal__error">{{ deleteRequestError }}</p>
+      <template #actions>
+        <button type="button" class="button button--secondary" @click="cancelDeleteRequest">
+          Cancel
+        </button>
+        <button type="button" class="button button--danger" @click="confirmDeleteRequest">
           Delete
         </button>
       </template>
