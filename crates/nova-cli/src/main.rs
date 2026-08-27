@@ -36,7 +36,8 @@ fn main() {
             name,
             path,
             collection,
-        })) => commands::new::request(&path, collection.as_deref(), &name),
+            graphql,
+        })) => commands::new::request(&path, collection.as_deref(), &name, graphql),
         Some(Command::New(NewKind::Collection { name, path, parent })) => {
             commands::new::collection(&path, parent.as_deref(), &name)
         }

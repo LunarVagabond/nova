@@ -50,8 +50,8 @@ pub use postman::generate_from_postman_collection;
 pub use project::{discover_or_not_found, NovaProject, OpenProjectOutcome, MANIFEST_FILE_NAME};
 pub use request::{
     delete_request, duplicate_request, multipart_fields_to_body_text, parse_multipart_fields,
-    rename_request, ExampleResponse, Header, MultipartField, ParsedRequest, QueryParam,
-    RequestBody, RequestDraft, RequestFile,
+    rename_request, ExampleResponse, GraphQlBody, Header, MultipartField, ParsedRequest,
+    QueryParam, RequestBody, RequestDraft, RequestFile,
 };
 pub use session::Session;
 pub use validate::{validate, ValidationIssue};
