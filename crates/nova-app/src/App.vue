@@ -726,19 +726,29 @@ async function confirmDeleteEnvironment() {
         <p v-if="project && error" class="app-shell__error">{{ error }}</p>
 
         <div v-if="project && openTabs.length > 0" class="tab-strip">
+          <div class="tab-strip__tabs">
+            <button
+              v-for="tab in openTabs"
+              :key="tab.path"
+              type="button"
+              class="tab-strip__tab"
+              :class="{ 'tab-strip__tab--active': mainView === 'request' && tab.path === activeRequestPath }"
+              @click="handleSelectRequest(tab)"
+            >
+              <span class="tab-strip__name">{{ tab.name }}</span>
+              <span v-if="tabDirty[tab.path]" class="request-panel__dirty-dot"></span>
+              <span class="tab-strip__close" title="Close" @click.stop="requestCloseTab(tab)">
+                <Icon name="x" />
+              </span>
+            </button>
+          </div>
           <button
-            v-for="tab in openTabs"
-            :key="tab.path"
             type="button"
-            class="tab-strip__tab"
-            :class="{ 'tab-strip__tab--active': mainView === 'request' && tab.path === activeRequestPath }"
-            @click="handleSelectRequest(tab)"
+            class="tab-strip__new"
+            title="New request"
+            @click="handleCreateRequest(project.collections.path)"
           >
-            <span class="tab-strip__name">{{ tab.name }}</span>
-            <span v-if="tabDirty[tab.path]" class="request-panel__dirty-dot"></span>
-            <span class="tab-strip__close" title="Close" @click.stop="requestCloseTab(tab)">
-              <Icon name="x" />
-            </span>
+            <Icon name="plus" />
           </button>
         </div>
 

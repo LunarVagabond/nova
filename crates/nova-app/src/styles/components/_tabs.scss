@@ -3,13 +3,22 @@
 // The open-request tab strip and the breadcrumb shown above the active
 // tab's request panel — see `App.vue`'s `openTabs`/`activeBreadcrumb`.
 
+// The scrollable run of tabs and the pinned "new request" button are
+// siblings, not one scrolling region — the button stays reachable at the
+// right edge regardless of how many tabs are open/scrolled.
 .tab-strip {
   display: flex;
   align-items: stretch;
-  overflow-x: auto;
   border-bottom: 1px solid var(--color-border);
   margin: 0 (-$spacing-lg) $spacing-sm;
   padding: 0 $spacing-lg;
+}
+
+.tab-strip__tabs {
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  min-width: 0;
 }
 
 .tab-strip__tab {
@@ -26,8 +35,29 @@
   color: var(--color-text-muted);
   font-size: $font-size-sm;
   cursor: pointer;
-  min-width: 8rem;
+  // Sized to content (name + close button) rather than a fixed minimum —
+  // `max-width` still ellipsis-truncates a genuinely long name.
   max-width: 12rem;
+
+  &:hover {
+    color: var(--color-text);
+    background-color: var(--color-bg-hover);
+  }
+}
+
+.tab-strip__new {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-left: $spacing-sm;
+  border: none;
+  border-radius: $radius-sm;
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
 
   &:hover {
     color: var(--color-text);

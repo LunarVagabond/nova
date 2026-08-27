@@ -174,10 +174,26 @@
   padding: $spacing-md $spacing-lg $spacing-lg;
 }
 
+// `flex-shrink: 1` (not the usual 0 for an explicit flex-basis pane) is
+// deliberate: the two panes genuinely compete for the workspace's height,
+// so a window too short for both at their current sizes shrinks the
+// response pane too instead of it staying rigid and pushing the request
+// editor below its own min-height off screen.
 .request-view__pane--bottom {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-height: 96px;
   max-height: calc(100% - 96px);
+  display: flex;
+  flex-direction: column;
+  // The header row must stay put and only `.response-pane` (its sibling
+  // below) scrolls — overflow is handled there instead of here, so this
+  // doesn't also try to scroll and produce a second scrollbar.
+  overflow-y: hidden;
+}
+
+.request-view__pane--collapsed {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .request-view__divider {
@@ -391,7 +407,30 @@
 }
 
 .response-pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   padding: $spacing-md $spacing-lg $spacing-lg;
+}
+
+.response-pane__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 $spacing-sm 0 $spacing-lg;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.response-pane__header-label {
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.response-pane__collapse-icon--collapsed {
+  transform: rotate(-90deg);
 }
 
 .response-pane__hint {

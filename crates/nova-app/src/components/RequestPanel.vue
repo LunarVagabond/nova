@@ -415,13 +415,31 @@ const responseSize = computed(() =>
 
 // Height (px) of the response pane below the draggable divider — shared
 // across every open tab's `RequestPanel` instance (they read/write the same
-// key), matching how a single split-pane position feels in Postman/VS Code
-// rather than each tab remembering its own.
+// key), matching how a single split-pane position feels regardless of which
+// tab set it rather than each tab remembering its own.
 const RESPONSE_HEIGHT_KEY = "nova.responsePaneHeight";
 const responseHeight = ref(Number(localStorage.getItem(RESPONSE_HEIGHT_KEY)) || 320);
+
+// Collapsed down to just the header bar (see `.request-view__pane--bottom`'s
+// bound height below) — `responseHeight` itself is left untouched so
+// expanding again restores exactly where it was.
+const RESPONSE_COLLAPSED_KEY = "nova.responsePaneCollapsed";
+const responseCollapsed = ref(localStorage.getItem(RESPONSE_COLLAPSED_KEY) === "true");
+const COLLAPSED_HEIGHT = 36;
+
+function setCollapsed(value: boolean) {
+  responseCollapsed.value = value;
+  localStorage.setItem(RESPONSE_COLLAPSED_KEY, String(value));
+}
+
 let dragging = false;
 
 function startDrag(event: MouseEvent) {
+  // Dragging from a collapsed state expands it, growing from wherever the
+  // pane was before it collapsed rather than jumping straight to whatever
+  // size the pointer position would otherwise imply.
+  setCollapsed(false);
+
   dragging = true;
   const startY = event.clientY;
   const startHeight = responseHeight.value;
@@ -643,8 +661,23 @@ defineExpose({ dirty, save: handleSave });
 
     <div class="request-view__divider" title="Drag to resize" @mousedown="startDrag"></div>
 
-    <div class="request-view__pane request-view__pane--bottom" :style="{ flexBasis: `${responseHeight}px` }">
-    <div class="response-pane">
+    <div
+      class="request-view__pane request-view__pane--bottom"
+      :class="{ 'request-view__pane--collapsed': responseCollapsed }"
+      :style="{ flexBasis: `${responseCollapsed ? COLLAPSED_HEIGHT : responseHeight}px` }"
+    >
+    <div class="response-pane__header">
+      <span class="response-pane__header-label">Response</span>
+      <button
+        type="button"
+        class="icon-button"
+        :title="responseCollapsed ? 'Expand response' : 'Collapse response'"
+        @click="setCollapsed(!responseCollapsed)"
+      >
+        <Icon name="chevron-down" :class="{ 'response-pane__collapse-icon--collapsed': responseCollapsed }" />
+      </button>
+    </div>
+    <div v-show="!responseCollapsed" class="response-pane">
       <p v-if="sending" class="response-pane__hint">Sending request…</p>
 
       <p v-else-if="sendError" class="response-pane__error">{{ sendError }}</p>
