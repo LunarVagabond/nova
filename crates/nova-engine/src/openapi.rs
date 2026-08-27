@@ -28,6 +28,11 @@ pub struct GeneratedRequest {
 pub struct GeneratedProject {
     pub manifest: String,
     pub requests: Vec<GeneratedRequest>,
+    /// Things generation didn't fail on but that a caller should surface to
+    /// the user — e.g. a source request that declared auth with no
+    /// equivalent `[auth]` section generated for it, so it silently ends up
+    /// unauthenticated rather than looking like a plain oversight.
+    pub warnings: Vec<String>,
 }
 
 /// Generate a Nova project from an OpenAPI 3.x spec (YAML or JSON — OpenAPI
@@ -57,6 +62,7 @@ pub fn generate_from_spec(spec_text: &str) -> NovaResult<GeneratedProject> {
         })?;
 
     let mut requests = Vec::new();
+    let mut warnings = Vec::new();
     for (path, path_item_ref) in &spec.paths.paths {
         let ReferenceOr::Item(path_item) = path_item_ref else {
             // A $ref-only path item would need following an external/local
@@ -78,6 +84,9 @@ pub fn generate_from_spec(spec_text: &str) -> NovaResult<GeneratedProject> {
             .into_iter()
             .filter_map(|(m, op)| op.as_ref().map(|o| (m, o)))
         {
+            if let Some(warning) = dropped_auth_warning(method, path, operation, &spec) {
+                warnings.push(warning);
+            }
             requests.push(generate_request(method, path, operation)?);
         }
     }
@@ -85,7 +94,36 @@ pub fn generate_from_spec(spec_text: &str) -> NovaResult<GeneratedProject> {
     Ok(GeneratedProject {
         manifest: manifest_yaml,
         requests,
+        warnings,
     })
+}
+
+/// Mapping an OpenAPI `securityScheme` onto a structured `[auth]` section is
+/// deliberately out of scope for spec import (see `generate_request` below)
+/// — but a source operation that requires auth shouldn't silently end up
+/// generated with none at all, so this surfaces it as a warning instead.
+/// An empty `security: []` on the operation is OpenAPI's own way of saying
+/// "no auth required here even if the spec has a global requirement", so
+/// that case is not warned about.
+fn dropped_auth_warning(
+    method: &str,
+    path: &str,
+    operation: &Operation,
+    spec: &OpenAPI,
+) -> Option<String> {
+    let requirements = operation.security.as_ref().or(spec.security.as_ref())?;
+    let scheme_names: Vec<&str> = requirements
+        .iter()
+        .flat_map(|requirement| requirement.keys())
+        .map(String::as_str)
+        .collect();
+    if scheme_names.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{method} {path}: requires auth ({}) that wasn't translated into an [auth] section — the generated request has none",
+        scheme_names.join(", ")
+    ))
 }
 
 fn generate_request(

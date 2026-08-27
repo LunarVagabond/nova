@@ -37,11 +37,13 @@ pub fn generate_from_postman_collection(collection_json: &str) -> NovaResult<Gen
         })?;
 
     let mut requests = Vec::new();
-    walk_items(&collection.item, &[], &mut requests)?;
+    let mut warnings = Vec::new();
+    walk_items(&collection.item, &[], &mut requests, &mut warnings)?;
 
     Ok(GeneratedProject {
         manifest: manifest_yaml,
         requests,
+        warnings,
     })
 }
 
@@ -49,18 +51,28 @@ fn walk_items(
     items: &[PostmanItem],
     collection_path: &[String],
     requests: &mut Vec<GeneratedRequest>,
+    warnings: &mut Vec<String>,
 ) -> NovaResult<()> {
     for item in items {
         match &item.request {
             Some(request) => {
+                if let Some(auth) = &request.auth {
+                    warnings.push(format!(
+                        "{}: Postman '{}' auth wasn't translated into an [auth] section — the generated request has none",
+                        item.name, auth.kind
+                    ));
+                }
                 requests.push(generate_request(&item.name, request, collection_path)?);
             }
             None => {
-                // A folder: nested `item`, no `request` of its own.
+                // A folder: nested `item`, no `request` of its own. Folder-
+                // and collection-level auth (inherited by requests that
+                // don't set their own) isn't modeled here, only auth set
+                // directly on a request.
                 let children = item.item.as_deref().unwrap_or(&[]);
                 let mut nested_path = collection_path.to_vec();
                 nested_path.push(sanitize(&item.name));
-                walk_items(children, &nested_path, requests)?;
+                walk_items(children, &nested_path, requests, warnings)?;
             }
         }
     }
@@ -342,6 +354,16 @@ struct PostmanRequest {
     #[serde(default)]
     header: Option<Vec<PostmanHeader>>,
     body: Option<PostmanBody>,
+    auth: Option<PostmanAuth>,
+}
+
+/// Only the auth block's declared type is modeled — enough to name what got
+/// dropped in a warning; the scheme's own parameters (token, username,
+/// etc.) aren't translated into a `[auth]` section (see `generate_request`).
+#[derive(Debug, Deserialize)]
+struct PostmanAuth {
+    #[serde(rename = "type")]
+    kind: String,
 }
 
 #[derive(Debug, Deserialize)]

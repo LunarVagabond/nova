@@ -1,0 +1,30 @@
+openapi: 3.0.0
+info:
+  title: Secured
+  version: 1.0.0
+security:
+  - apiKeyAuth: []
+components:
+  securitySchemes:
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+paths:
+  /widgets:
+    get:
+      operationId: listWidgets
+      # No operation-level `security`, so it falls back to the spec's
+      # global requirement above — still expected to warn.
+      responses:
+        "200":
+          description: OK
+  /widgets/public:
+    get:
+      operationId: listPublicWidgets
+      # An empty `security: []` overrides the global requirement to mean
+      # "no auth needed here" — should not warn.
+      security: []
+      responses:
+        "200":
+          description: OK

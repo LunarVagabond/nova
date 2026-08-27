@@ -29,6 +29,9 @@
                 "value": "application/json"
               }
             ],
+            "auth": {
+              "type": "bearer"
+            },
             "url": {
               "raw": "{{base_url}}/users?active=true&page=1",
               "host": ["{{base_url}}"],

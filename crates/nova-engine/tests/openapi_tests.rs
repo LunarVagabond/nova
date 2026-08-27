@@ -161,3 +161,29 @@ fn exported_request_body_is_a_best_effort_example_not_a_hand_authored_schema() {
     );
     assert!(media_type.schema.is_none());
 }
+
+#[test]
+fn warns_about_auth_that_was_not_translated_into_a_generated_request() {
+    let spec = fixture("secured.yaml");
+
+    let project = generate_from_spec(&spec).unwrap();
+
+    assert_eq!(
+        project.warnings.len(),
+        1,
+        "warnings: {:?}",
+        project.warnings
+    );
+    assert!(project.warnings[0].contains("GET /widgets:"));
+    assert!(project.warnings[0].contains("apiKeyAuth"));
+
+    // The operation-level `security: []` override means no warning for the
+    // "public" endpoint, and no request generated with it ends up with an
+    // [auth] section either way (mapping auth in is out of scope).
+    let public = project
+        .requests
+        .iter()
+        .find(|r| r.file_name == "listpublicwidgets.nova")
+        .expect("listPublicWidgets should still generate a request");
+    assert!(!public.contents.contains("[auth]"));
+}
