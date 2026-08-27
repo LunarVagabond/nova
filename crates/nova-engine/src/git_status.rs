@@ -41,10 +41,16 @@ pub fn git_status(project_root: &Path) -> NovaResult<Option<HashMap<PathBuf, Git
         return Ok(None);
     };
 
+    // `-z` gets us NUL-separated, byte-for-byte paths straight from git with
+    // no quoting: plain `--porcelain=v1` (no `-z`) wraps any path containing
+    // a space or non-ASCII byte in double quotes (and octal-escapes the
+    // non-ASCII bytes on top of that), which would otherwise land in the
+    // literal path we build below — `-z` sidesteps needing to un-quote/
+    // un-escape that ourselves.
     let output = Command::new("git")
         .arg("-C")
         .arg(&toplevel)
-        .args(["status", "--porcelain=v1", "--untracked-files=all"])
+        .args(["status", "--porcelain=v1", "-z", "--untracked-files=all"])
         .output()
         .map_err(|source| NovaError::GitStatus {
             message: source.to_string(),
@@ -62,22 +68,36 @@ pub fn git_status(project_root: &Path) -> NovaResult<Option<HashMap<PathBuf, Git
     let mut unstaged_deletions: Vec<PathBuf> = Vec::new();
     let mut untracked: Vec<PathBuf> = Vec::new();
 
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
-        // Porcelain v1 lines are "XY <path>" (or "XY <old> -> <new>" for a
-        // rename) — X is the index/staged column, Y the worktree column.
-        if line.len() < 4 {
+    // With `-z`, each record is "XY <path>\0" — except a rename/copy record,
+    // which is "XY <new-path>\0<old-path>\0" (the old path as a *separate*
+    // NUL-terminated field, and in the opposite order from the "old -> new"
+    // arrow notation `--porcelain=v1` uses without `-z`). `.next()` inside
+    // the loop body below is what consumes that extra field for a rename.
+    let mut records = output
+        .stdout
+        .split(|&byte| byte == 0)
+        .filter(|record| !record.is_empty());
+
+    while let Some(record) = records.next() {
+        if record.len() < 3 {
             continue;
         }
-        let index_status = line.as_bytes()[0] as char;
-        let worktree_status = line.as_bytes()[1] as char;
-        let rest = &line[3..];
+        let index_status = record[0] as char;
+        let worktree_status = record[1] as char;
+        let path_field = String::from_utf8_lossy(&record[3..]).into_owned();
 
-        if let Some((old_raw, new_raw)) = rest.split_once(" -> ") {
-            // git only reports a single "R old -> new" line for a rename it
-            // detected itself, which only happens for staged changes.
-            let old_joined = toplevel.join(old_raw);
+        if index_status == 'R' || index_status == 'C' {
+            // Only a staged rename/copy gets a second field — see the
+            // parsing note above.
+            let new_raw = path_field;
+            let old_raw = records
+                .next()
+                .map(|old| String::from_utf8_lossy(old).into_owned())
+                .unwrap_or_default();
+
+            let old_joined = toplevel.join(&old_raw);
             let old_canonical = old_joined.canonicalize().unwrap_or(old_joined);
-            let new_joined = toplevel.join(new_raw);
+            let new_joined = toplevel.join(&new_raw);
             let new_canonical = new_joined.canonicalize().unwrap_or(new_joined);
             statuses.insert(
                 new_canonical,
@@ -88,7 +108,7 @@ pub fn git_status(project_root: &Path) -> NovaResult<Option<HashMap<PathBuf, Git
             continue;
         }
 
-        let joined = toplevel.join(rest);
+        let joined = toplevel.join(&path_field);
         let canonical = joined.canonicalize().unwrap_or(joined);
 
         if index_status == '?' && worktree_status == '?' {
@@ -164,6 +184,7 @@ fn index_blob_hashes(toplevel: &Path, paths: &[PathBuf]) -> Vec<(PathBuf, String
         .arg(toplevel)
         .arg("ls-files")
         .arg("-s")
+        .arg("-z")
         .arg("--")
         .args(paths)
         .output()
@@ -171,13 +192,18 @@ fn index_blob_hashes(toplevel: &Path, paths: &[PathBuf]) -> Vec<(PathBuf, String
         return Vec::new();
     };
 
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| {
+    // `-z` again avoids `ls-files` quoting/octal-escaping a path with a
+    // space or non-ASCII byte in it — see the parsing note in `git_status`.
+    output
+        .stdout
+        .split(|&byte| byte == 0)
+        .filter(|record| !record.is_empty())
+        .filter_map(|record| {
             // "<mode> <sha> <stage>\t<path>"
-            let (meta, path) = line.split_once('\t')?;
-            let hash = meta.split_whitespace().nth(1)?;
-            Some((toplevel.join(path), hash.to_string()))
+            let record = String::from_utf8_lossy(record).into_owned();
+            let (meta, path) = record.split_once('\t')?;
+            let hash = meta.split_whitespace().nth(1)?.to_string();
+            Some((toplevel.join(path), hash))
         })
         .collect()
 }

@@ -195,3 +195,142 @@ fn reports_a_staged_rename_with_its_origin_path() {
 
     fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn reports_a_staged_rename_when_both_paths_contain_spaces() {
+    // Plain `--porcelain=v1` (no `-z`) wraps a path containing a space in
+    // double quotes, so this exercises that a rename record's two paths
+    // still come back byte-for-byte rather than with literal quote
+    // characters baked into them.
+    let dir = temp_dir("staged-rename-spaces");
+    init_git_repo(&dir);
+
+    let old_path = dir.join("old file.nova");
+    let new_path = dir.join("new file name.nova");
+
+    fs::write(
+        &old_path,
+        "[request]\nmethod: GET\nurl: https://example.com\n",
+    )
+    .unwrap();
+    assert!(git(&dir, &["add", "old file.nova"]).status.success());
+    assert!(git(&dir, &["commit", "-m", "initial"]).status.success());
+
+    assert!(git(&dir, &["mv", "old file.nova", "new file name.nova"])
+        .status
+        .success());
+
+    let statuses = git_status(&dir).unwrap().expect("should be a git repo");
+
+    assert_eq!(
+        statuses.get(&new_path.canonicalize().unwrap()),
+        Some(&GitFileStatus::Renamed { from: old_path })
+    );
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn reports_a_staged_rename_when_both_paths_are_unicode() {
+    // Plain `--porcelain=v1` (no `-z`) octal-escapes any non-ASCII byte and
+    // wraps the whole path in quotes, so this exercises that a rename
+    // record's two paths come back as the real UTF-8 text rather than a
+    // literal `\NNN`-escaped string.
+    let dir = temp_dir("staged-rename-unicode");
+    init_git_repo(&dir);
+
+    let old_path = dir.join("café.nova");
+    let new_path = dir.join("café renommé.nova");
+
+    fs::write(
+        &old_path,
+        "[request]\nmethod: GET\nurl: https://example.com\n",
+    )
+    .unwrap();
+    assert!(git(&dir, &["add", "café.nova"]).status.success());
+    assert!(git(&dir, &["commit", "-m", "initial"]).status.success());
+
+    assert!(git(&dir, &["mv", "café.nova", "café renommé.nova"])
+        .status
+        .success());
+
+    let statuses = git_status(&dir).unwrap().expect("should be a git repo");
+
+    assert_eq!(
+        statuses.get(&new_path.canonicalize().unwrap()),
+        Some(&GitFileStatus::Renamed { from: old_path })
+    );
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn detects_an_unstaged_rename_when_both_paths_have_unusual_characters() {
+    let dir = temp_dir("unstaged-rename-unusual");
+    init_git_repo(&dir);
+
+    let old_path = dir.join("input café.nova");
+    let new_path = dir.join("renamed café.nova");
+
+    fs::write(
+        &old_path,
+        "[request]\nmethod: GET\nurl: https://example.com\n",
+    )
+    .unwrap();
+    assert!(git(&dir, &["add", "input café.nova"]).status.success());
+    assert!(git(&dir, &["commit", "-m", "initial"]).status.success());
+
+    // Plain `fs::rename`, not `git mv`, so this is an unstaged rename —
+    // detected by content, not reported by git itself as a single line.
+    fs::rename(&old_path, &new_path).unwrap();
+
+    let statuses = git_status(&dir).unwrap().expect("should be a git repo");
+
+    assert_eq!(
+        statuses.get(&old_path),
+        None,
+        "the vanished old path should not linger as a plain Unstaged entry"
+    );
+    assert_eq!(
+        statuses.get(&new_path.canonicalize().unwrap()),
+        Some(&GitFileStatus::Renamed { from: old_path })
+    );
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn reports_status_for_a_path_containing_spaces() {
+    let dir = temp_dir("path-with-spaces");
+    init_git_repo(&dir);
+
+    let untracked_path = dir.join("a request with spaces.nova");
+    fs::write(&untracked_path, "[request]\nmethod: GET\n").unwrap();
+
+    let statuses = git_status(&dir).unwrap().expect("should be a git repo");
+
+    assert_eq!(
+        statuses.get(&untracked_path.canonicalize().unwrap()),
+        Some(&GitFileStatus::Untracked)
+    );
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn reports_status_for_a_path_containing_unicode_characters() {
+    let dir = temp_dir("path-with-unicode");
+    init_git_repo(&dir);
+
+    let untracked_path = dir.join("请求-café-☕.nova");
+    fs::write(&untracked_path, "[request]\nmethod: GET\n").unwrap();
+
+    let statuses = git_status(&dir).unwrap().expect("should be a git repo");
+
+    assert_eq!(
+        statuses.get(&untracked_path.canonicalize().unwrap()),
+        Some(&GitFileStatus::Untracked)
+    );
+
+    fs::remove_dir_all(&dir).unwrap();
+}
