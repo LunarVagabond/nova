@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
@@ -112,6 +114,83 @@ pub fn git_status(project_root: &Path) -> NovaResult<Option<HashMap<PathBuf, Git
     }
 
     Ok(Some(statuses))
+}
+
+/// How long a [`GitStatusCache`] entry is served before being treated as
+/// stale and recomputed unconditionally. Chosen to smooth over a burst of
+/// near-simultaneous calls (e.g. several sidebar components each asking for
+/// status while a project loads) rather than to paper over real staleness —
+/// callers that know they just changed something git-visible should call
+/// [`GitStatusCache::invalidate`] instead of waiting this out.
+pub const GIT_STATUS_CACHE_TTL: Duration = Duration::from_millis(750);
+
+/// What a [`GitStatusCache`] entry actually holds: when it was computed, and
+/// the (successful) result from that time.
+type CachedGitStatus = (Instant, Option<HashMap<PathBuf, GitFileStatus>>);
+
+/// A small per-project-root cache in front of [`git_status`], since it
+/// shells out to `git` (and, when there are unstaged deletions and
+/// untracked files to pair up for rename detection, a couple more `git`
+/// invocations on top) fresh on every call otherwise.
+///
+/// Two invalidation triggers, deliberately kept simple:
+/// - a [`GIT_STATUS_CACHE_TTL`] expiry, as a backstop for anything the
+///   cache wasn't explicitly told about (an external `git commit`, a file
+///   edited outside Nova, ...);
+/// - an explicit [`Self::invalidate`] call, for callers that just performed
+///   an action they know changed the repository's git-visible state (e.g.
+///   after saving a request or deleting a collection) and want the next
+///   read to reflect it immediately rather than waiting out the TTL.
+///
+/// Only successful [`git_status`] results are cached — an error (git not
+/// installed, a transient failure, ...) is never remembered, so the next
+/// call always retries rather than getting stuck repeating a stale failure.
+#[derive(Debug, Default)]
+pub struct GitStatusCache {
+    entries: Mutex<HashMap<PathBuf, CachedGitStatus>>,
+}
+
+impl GitStatusCache {
+    /// A fresh, empty cache using [`GIT_STATUS_CACHE_TTL`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns [`git_status`] for `project_root`, serving a cached result
+    /// from within the last [`GIT_STATUS_CACHE_TTL`] instead of recomputing
+    /// it when one is available.
+    pub fn get(&self, project_root: &Path) -> NovaResult<Option<HashMap<PathBuf, GitFileStatus>>> {
+        let key = project_root.to_path_buf();
+
+        if let Some((computed_at, cached)) = self
+            .entries
+            .lock()
+            .expect("git status cache mutex poisoned")
+            .get(&key)
+        {
+            if computed_at.elapsed() < GIT_STATUS_CACHE_TTL {
+                return Ok(cached.clone());
+            }
+        }
+
+        let result = git_status(project_root)?;
+        self.entries
+            .lock()
+            .expect("git status cache mutex poisoned")
+            .insert(key, (Instant::now(), result.clone()));
+        Ok(result)
+    }
+
+    /// Forces the next [`Self::get`] call for `project_root` to recompute
+    /// rather than potentially serving a cached value, regardless of how
+    /// recently it was cached. Call this right after any action known to
+    /// change the repository's git-visible state.
+    pub fn invalidate(&self, project_root: &Path) {
+        self.entries
+            .lock()
+            .expect("git status cache mutex poisoned")
+            .remove(project_root);
+    }
 }
 
 /// Pairs up unstaged deletions with untracked files that have byte-identical

@@ -10,10 +10,23 @@ use std::path::PathBuf;
 
 use nova_engine::{
     multipart_fields_to_body_text, parse_curl, parse_multipart_fields, AuthScheme, Collection,
-    Environment, GitFileStatus, Header, InitOptions, InitOutcome, Manifest, MultipartField,
-    NovaProject, OpenProjectOutcome, ParsedCurlRequest, RequestDraft, RequestFile, Response,
-    Session,
+    Environment, GitFileStatus, GitStatusCache, Header, InitOptions, InitOutcome, Manifest,
+    MultipartField, NovaProject, OpenProjectOutcome, ParsedCurlRequest, RequestDraft, RequestFile,
+    Response, Session,
 };
+
+/// Forces the next [`git_status`] call for whichever project `path` belongs
+/// to to recompute rather than potentially serving a cached result — call
+/// this right after any command that changes a file git would track, so
+/// the sidebar's badges reflect it immediately rather than waiting out
+/// [`nova_engine::GIT_STATUS_CACHE_TTL`]. Silently does nothing if `path`
+/// doesn't resolve to a Nova project — git status is a supplementary
+/// indicator, never worth failing an otherwise-successful command over.
+fn invalidate_git_status_cache(path: &std::path::Path, cache: &GitStatusCache) {
+    if let Ok(project) = NovaProject::discover(path) {
+        cache.invalidate(&project.root);
+    }
+}
 
 /// Open the project at `path`. A directory with no project in it comes
 /// back as [`OpenProjectOutcome::NotFound`] rather than an error, so the
@@ -43,11 +56,16 @@ pub fn init_project(
 
 /// Per-file git status for the project at `path`, keyed by absolute path —
 /// `None` when `path` isn't inside a git repository at all, since Nova
-/// projects don't require git. See [`nova_engine::git_status`].
+/// projects don't require git. Served from `cache` when a recent-enough
+/// result is already there — see [`nova_engine::GitStatusCache`] — rather
+/// than shelling out to `git` on every single call.
 #[tauri::command]
-pub fn git_status(path: String) -> Result<Option<HashMap<PathBuf, GitFileStatus>>, String> {
+pub fn git_status(
+    path: String,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<Option<HashMap<PathBuf, GitFileStatus>>, String> {
     let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
-    nova_engine::git_status(&project.root).map_err(|e| e.to_string())
+    cache.get(&project.root).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -124,13 +142,19 @@ pub fn read_request(request_path: String) -> Result<RequestDraft, String> {
 /// already in the file are preserved unchanged — see
 /// [`nova_engine::RequestFile::write`].
 #[tauri::command]
-pub fn save_request(request_path: String, draft: RequestDraft) -> Result<(), String> {
+pub fn save_request(
+    request_path: String,
+    draft: RequestDraft,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<(), String> {
     let request_file = RequestFile {
         name: String::new(),
         path: std::path::PathBuf::from(&request_path),
         method: String::new(),
     };
-    request_file.write(&draft).map_err(|e| e.to_string())
+    request_file.write(&draft).map_err(|e| e.to_string())?;
+    invalidate_git_status_cache(&request_file.path, &cache);
+    Ok(())
 }
 
 /// Parse a multipart body's raw wire text — the same text
@@ -161,10 +185,18 @@ pub fn serialize_multipart_body(
 /// `project_root` is the project's Nova directory (`NovaProject::root`,
 /// e.g. `<repo>/nova`), not the outer repo root.
 #[tauri::command]
-pub fn save_manifest(project_root: String, manifest: Manifest) -> Result<(), String> {
+pub fn save_manifest(
+    project_root: String,
+    manifest: Manifest,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<(), String> {
     let project =
         NovaProject::load(std::path::PathBuf::from(&project_root)).map_err(|e| e.to_string())?;
-    project.write_manifest(&manifest).map_err(|e| e.to_string())
+    project
+        .write_manifest(&manifest)
+        .map_err(|e| e.to_string())?;
+    cache.invalidate(&project.root);
+    Ok(())
 }
 
 /// Create a new `.nova` file named `name` (a `.nova` suffix is added if
@@ -172,7 +204,11 @@ pub fn save_manifest(project_root: String, manifest: Manifest) -> Result<(), Str
 /// with a minimal default request body. Returns the new [`RequestFile`] so
 /// the GUI can open it for editing immediately.
 #[tauri::command]
-pub fn create_request(collection_path: String, name: String) -> Result<RequestFile, String> {
+pub fn create_request(
+    collection_path: String,
+    name: String,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<RequestFile, String> {
     let file_name = name.trim();
     if file_name.is_empty() {
         return Err("request name cannot be empty".to_string());
@@ -191,30 +227,50 @@ pub fn create_request(collection_path: String, name: String) -> Result<RequestFi
     };
 
     let path = std::path::Path::new(&collection_path).join(file_name);
-    RequestFile::create(path).map_err(|e| e.to_string())
+    let request_file = RequestFile::create(path).map_err(|e| e.to_string())?;
+    invalidate_git_status_cache(&request_file.path, &cache);
+    Ok(request_file)
 }
 
 /// Delete the request file at `request_path` — see
 /// [`nova_engine::delete_request`].
 #[tauri::command]
-pub fn delete_request(request_path: String) -> Result<(), String> {
-    nova_engine::delete_request(std::path::Path::new(&request_path)).map_err(|e| e.to_string())
+pub fn delete_request(
+    request_path: String,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<(), String> {
+    let path = std::path::Path::new(&request_path);
+    nova_engine::delete_request(path).map_err(|e| e.to_string())?;
+    invalidate_git_status_cache(path, &cache);
+    Ok(())
 }
 
 /// Rename the request file at `request_path` to `new_name`, keeping it in
 /// the same collection directory — see [`nova_engine::rename_request`].
 #[tauri::command]
-pub fn rename_request(request_path: String, new_name: String) -> Result<RequestFile, String> {
-    nova_engine::rename_request(std::path::Path::new(&request_path), &new_name)
-        .map_err(|e| e.to_string())
+pub fn rename_request(
+    request_path: String,
+    new_name: String,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<RequestFile, String> {
+    let renamed = nova_engine::rename_request(std::path::Path::new(&request_path), &new_name)
+        .map_err(|e| e.to_string())?;
+    invalidate_git_status_cache(&renamed.path, &cache);
+    Ok(renamed)
 }
 
 /// Duplicate the request file at `request_path` to `new_name` inside the
 /// same collection directory — see [`nova_engine::duplicate_request`].
 #[tauri::command]
-pub fn duplicate_request(request_path: String, new_name: String) -> Result<RequestFile, String> {
-    nova_engine::duplicate_request(std::path::Path::new(&request_path), &new_name)
-        .map_err(|e| e.to_string())
+pub fn duplicate_request(
+    request_path: String,
+    new_name: String,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<RequestFile, String> {
+    let duplicated = nova_engine::duplicate_request(std::path::Path::new(&request_path), &new_name)
+        .map_err(|e| e.to_string())?;
+    invalidate_git_status_cache(&duplicated.path, &cache);
+    Ok(duplicated)
 }
 
 /// Parse a pasted `curl`/`wget` command into the pieces of a request, for
@@ -228,26 +284,44 @@ pub fn parse_curl_command(command: String) -> Result<ParsedCurlRequest, String> 
 /// collection directory at `parent_path` — see
 /// [`nova_engine::create_collection`].
 #[tauri::command]
-pub fn create_collection(parent_path: String, name: String) -> Result<Collection, String> {
-    nova_engine::create_collection(std::path::Path::new(&parent_path), &name)
-        .map_err(|e| e.to_string())
+pub fn create_collection(
+    parent_path: String,
+    name: String,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<Collection, String> {
+    let collection = nova_engine::create_collection(std::path::Path::new(&parent_path), &name)
+        .map_err(|e| e.to_string())?;
+    invalidate_git_status_cache(&collection.path, &cache);
+    Ok(collection)
 }
 
 /// Rename the collection directory at `collection_path` to `new_name`,
 /// keeping it in the same parent directory — see
 /// [`nova_engine::rename_collection`].
 #[tauri::command]
-pub fn rename_collection(collection_path: String, new_name: String) -> Result<Collection, String> {
-    nova_engine::rename_collection(std::path::Path::new(&collection_path), &new_name)
-        .map_err(|e| e.to_string())
+pub fn rename_collection(
+    collection_path: String,
+    new_name: String,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<Collection, String> {
+    let collection =
+        nova_engine::rename_collection(std::path::Path::new(&collection_path), &new_name)
+            .map_err(|e| e.to_string())?;
+    invalidate_git_status_cache(&collection.path, &cache);
+    Ok(collection)
 }
 
 /// Delete the collection directory at `collection_path` and everything
 /// inside it — see [`nova_engine::delete_collection`].
 #[tauri::command]
-pub fn delete_collection(collection_path: String) -> Result<(), String> {
-    nova_engine::delete_collection(std::path::Path::new(&collection_path))
-        .map_err(|e| e.to_string())
+pub fn delete_collection(
+    collection_path: String,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<(), String> {
+    let path = std::path::Path::new(&collection_path);
+    nova_engine::delete_collection(path).map_err(|e| e.to_string())?;
+    invalidate_git_status_cache(path, &cache);
+    Ok(())
 }
 
 /// Create a new environment file named `name` directly inside the
@@ -255,9 +329,16 @@ pub fn delete_collection(collection_path: String) -> Result<(), String> {
 /// `NovaProject.environments_dir`), with no variables or auth default set
 /// — see [`nova_engine::create_environment`].
 #[tauri::command]
-pub fn create_environment(environments_dir: String, name: String) -> Result<Environment, String> {
-    nova_engine::create_environment(std::path::Path::new(&environments_dir), &name)
-        .map_err(|e| e.to_string())
+pub fn create_environment(
+    environments_dir: String,
+    name: String,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<Environment, String> {
+    let environment =
+        nova_engine::create_environment(std::path::Path::new(&environments_dir), &name)
+            .map_err(|e| e.to_string())?;
+    invalidate_git_status_cache(&environment.path, &cache);
+    Ok(environment)
 }
 
 /// Write an edited environment's name/variables/default auth scheme back
@@ -273,6 +354,7 @@ pub fn save_environment(
     name: String,
     variables: HashMap<String, String>,
     auth: Option<AuthScheme>,
+    cache: tauri::State<GitStatusCache>,
 ) -> Result<(), String> {
     let project =
         NovaProject::load(std::path::PathBuf::from(&project_root)).map_err(|e| e.to_string())?;
@@ -284,13 +366,20 @@ pub fn save_environment(
     };
     project
         .save_environment(&previous_name, &environment)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    cache.invalidate(&project.root);
+    Ok(())
 }
 
 /// Delete the environment file at `environment_path` — see
 /// [`nova_engine::delete_environment`].
 #[tauri::command]
-pub fn delete_environment(environment_path: String) -> Result<(), String> {
-    nova_engine::delete_environment(std::path::Path::new(&environment_path))
-        .map_err(|e| e.to_string())
+pub fn delete_environment(
+    environment_path: String,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<(), String> {
+    let path = std::path::Path::new(&environment_path);
+    nova_engine::delete_environment(path).map_err(|e| e.to_string())?;
+    invalidate_git_status_cache(path, &cache);
+    Ok(())
 }

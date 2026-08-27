@@ -38,7 +38,7 @@ pub use curl::{parse_curl, ParsedCurlRequest};
 pub use environment::{create_environment, delete_environment, Environment};
 pub use error::{NovaError, NovaResult};
 pub use execute::{execute, Response};
-pub use git_status::{git_status, GitFileStatus};
+pub use git_status::{git_status, GitFileStatus, GitStatusCache, GIT_STATUS_CACHE_TTL};
 pub use init::{
     default_project_name, init_project, install_secret_check_hook, scaffold_project,
     GitignoreOutcome, HookOutcome, InitOptions, InitOutcome, ScaffoldedProject, GITIGNORE_ENTRY,
