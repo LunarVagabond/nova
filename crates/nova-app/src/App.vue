@@ -21,6 +21,7 @@ import type {
   NovaProject,
   RequestFile,
 } from "./types/nova";
+import TopBar from "./components/TopBar.vue";
 import Sidebar from "./components/Sidebar.vue";
 import ProjectPanel from "./components/ProjectPanel.vue";
 import RequestPanel from "./components/RequestPanel.vue";
@@ -578,6 +579,16 @@ async function confirmDeleteEnvironment() {
 
 <template>
   <div class="app-shell">
+    <TopBar
+      :project-name="project?.manifest.project.name ?? null"
+      :environments="project?.environments ?? []"
+      :selected-environment="selectedEnvironment"
+      :showing-project-settings="mainView === 'project'"
+      @update:selected-environment="selectedEnvironment = $event"
+      @switch-project="handleOpen"
+      @project-settings="showProjectSettings"
+    />
+
     <aside class="app-shell__sidebar">
       <Sidebar
         v-if="project"
@@ -585,10 +596,7 @@ async function confirmDeleteEnvironment() {
         :selected-environment="selectedEnvironment"
         :selected-request-path="activeRequestPath"
         :git-status="gitStatus"
-        :showing-project-settings="mainView === 'project'"
         @select-request="handleSelectRequest"
-        @switch-project="handleOpen"
-        @project-settings="showProjectSettings"
         @create-request="handleCreateRequest"
         @create-collection="handleCreateCollection"
         @rename-collection="handleRenameCollection"
@@ -599,69 +607,60 @@ async function confirmDeleteEnvironment() {
     </aside>
 
     <main class="app-shell__main">
-      <div v-if="project && project.environments.length > 0" class="main-topbar">
-        <div class="main-topbar__spacer"></div>
-        <select
-          v-model="selectedEnvironment"
-          class="main-topbar__env-select"
-          title="Environment requests are sent against"
-        >
-          <option v-for="env in project.environments" :key="env.name" :value="env.name">
-            {{ env.name }}
-          </option>
-        </select>
+      <div class="app-shell__chrome">
+        <p v-if="project && error" class="app-shell__error">{{ error }}</p>
+
+        <div v-if="project && openTabs.length > 0" class="tab-strip">
+          <button
+            v-for="tab in openTabs"
+            :key="tab.path"
+            type="button"
+            class="tab-strip__tab"
+            :class="{ 'tab-strip__tab--active': mainView === 'request' && tab.path === activeRequestPath }"
+            @click="handleSelectRequest(tab)"
+          >
+            <span class="tab-strip__name">{{ tab.name }}</span>
+            <span v-if="tabDirty[tab.path]" class="request-panel__dirty-dot"></span>
+            <span class="tab-strip__close" title="Close" @click.stop="requestCloseTab(tab)">
+              <Icon name="x" />
+            </span>
+          </button>
+        </div>
+
+        <p v-if="mainView === 'request' && activeBreadcrumb" class="request-breadcrumb">
+          {{ activeBreadcrumb.join(" / ") }}
+        </p>
       </div>
 
-      <p v-if="project && error" class="app-shell__error">{{ error }}</p>
+      <div class="app-shell__content" :class="{ 'app-shell__content--flush': mainView === 'request' }">
+        <template v-for="tab in openTabs" :key="tab.path">
+          <RequestPanel
+            v-show="project && mainView === 'request' && tab.path === activeRequestPath"
+            :request="tab"
+            :selected-environment="selectedEnvironment"
+            @dirty-change="tabDirty[tab.path] = $event"
+            @saved="refreshGitStatus"
+          />
+        </template>
 
-      <div v-if="project && openTabs.length > 0" class="tab-strip">
-        <button
-          v-for="tab in openTabs"
-          :key="tab.path"
-          type="button"
-          class="tab-strip__tab"
-          :class="{ 'tab-strip__tab--active': mainView === 'request' && tab.path === activeRequestPath }"
-          @click="handleSelectRequest(tab)"
-        >
-          <span class="tab-strip__name">{{ tab.name }}</span>
-          <span v-if="tabDirty[tab.path]" class="request-panel__dirty-dot"></span>
-          <span class="tab-strip__close" title="Close" @click.stop="requestCloseTab(tab)">
-            <Icon name="x" />
-          </span>
-        </button>
-      </div>
-
-      <p v-if="mainView === 'request' && activeBreadcrumb" class="request-breadcrumb">
-        {{ activeBreadcrumb.join(" / ") }}
-      </p>
-
-      <template v-for="tab in openTabs" :key="tab.path">
-        <RequestPanel
-          v-show="project && mainView === 'request' && tab.path === activeRequestPath"
-          :request="tab"
-          :selected-environment="selectedEnvironment"
-          @dirty-change="tabDirty[tab.path] = $event"
-          @saved="refreshGitStatus"
+        <EnvironmentPanel
+          v-if="project && mainView === 'environment' && managedEnvironment"
+          :key="managedEnvironment.path"
+          :environment="managedEnvironment"
+          :project-root="project.root"
+          @dirty-change="environmentPanelDirty = $event"
+          @saved="handleEnvironmentSaved"
+          @delete="handleDeleteEnvironment"
         />
-      </template>
-
-      <EnvironmentPanel
-        v-if="project && mainView === 'environment' && managedEnvironment"
-        :key="managedEnvironment.path"
-        :environment="managedEnvironment"
-        :project-root="project.root"
-        @dirty-change="environmentPanelDirty = $event"
-        @saved="handleEnvironmentSaved"
-        @delete="handleDeleteEnvironment"
-      />
-      <ProjectPanel
-        v-else-if="project && mainView === 'project'"
-        :project="project"
-        :validation-issues="validationIssues"
-        @dirty-change="projectPanelDirty = $event"
-        @saved="refreshProjectTree"
-      />
-      <EmptyState v-else-if="!project" :error="error" @open="handleOpen" />
+        <ProjectPanel
+          v-else-if="project && mainView === 'project'"
+          :project="project"
+          :validation-issues="validationIssues"
+          @dirty-change="projectPanelDirty = $event"
+          @saved="refreshProjectTree"
+        />
+        <EmptyState v-else-if="!project" :error="error" @open="handleOpen" />
+      </div>
     </main>
 
     <Modal v-if="notFoundPath !== null" title="No Nova project here" @cancel="cancelNotFound">

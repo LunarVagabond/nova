@@ -98,7 +98,6 @@ function methodClass(method: string): string {
     >
       <span class="collection-tree__label-main">
         <Icon name="chevron-down" class="collection-tree__chevron" />
-        <Icon name="folder" class="collection-tree__folder-icon" />
         <span class="collection-tree__label-name">{{ collection.name }}</span>
         <span v-if="hasDescendantChanges" class="collection-tree__git-badge" title="Has uncommitted changes"></span>
       </span>

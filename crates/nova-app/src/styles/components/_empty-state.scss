@@ -11,6 +11,13 @@
   color: var(--color-text-muted);
 }
 
+.empty-state__icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
+
 .empty-state__title {
   font-size: $font-size-lg;
   font-weight: 600;
@@ -26,17 +33,4 @@
 .empty-state__error {
   color: var(--color-danger);
   max-width: 40ch;
-}
-
-.button {
-  padding: $spacing-sm $spacing-lg;
-  border-radius: $radius-md;
-  border: 1px solid var(--color-accent);
-  background-color: var(--color-accent);
-  color: #ffffff;
-  font-weight: 500;
-
-  &:hover {
-    filter: brightness(1.05);
-  }
 }

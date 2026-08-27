@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 
 import { parseCurlCommand, readRequest, saveRequest, sendRequest } from "../api/nova";
 import type {
@@ -10,8 +10,22 @@ import type {
   RequestHeader,
   RequestResponse,
 } from "../types/nova";
+import {
+  BODY_TYPE_CONTENT_TYPES,
+  BODY_TYPE_LABELS,
+  BODY_TYPE_OPTIONS,
+  detectBodyType,
+  languageForContentType,
+  randomBoundary,
+  type BodyType,
+} from "../lib/bodyType";
+import { formatBytes, statusClass } from "../lib/format";
+import { parseQueryString, serializeQuery, splitUrlAndQuery } from "../lib/queryString";
+import { beautifyJson } from "../lib/jsonFormat";
+import { formatXml } from "../lib/xmlFormat";
 import AuthEditor from "./AuthEditor.vue";
 import CodeEditor, { type EditorLanguage } from "./CodeEditor.vue";
+import Icon from "./Icon.vue";
 import KeyValueEditor from "./KeyValueEditor.vue";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
@@ -50,47 +64,11 @@ const activeTab = ref<FieldTab>("auth");
 type ResponseTab = "headers" | "raw" | "preview";
 const activeResponseTab = ref<ResponseTab>("preview");
 
-type BodyType = "none" | "json" | "xml" | "form" | "multipart" | "text";
-
-const BODY_TYPE_OPTIONS: BodyType[] = ["none", "json", "xml", "form", "multipart", "text"];
-
-const BODY_TYPE_LABELS: Record<BodyType, string> = {
-  none: "No Body",
-  json: "JSON",
-  xml: "XML",
-  form: "Form URL Encoded",
-  multipart: "Multipart Form Data",
-  text: "Plain Text",
-};
-
-const BODY_TYPE_CONTENT_TYPES: Record<Exclude<BodyType, "none">, string> = {
-  json: "application/json",
-  xml: "application/xml",
-  form: "application/x-www-form-urlencoded",
-  multipart: "multipart/form-data",
-  text: "text/plain",
-};
-
 // Driven by the Content-Type header (and whether there's any body text at
 // all) — set explicitly by `handleBodyTypeChange` below, and re-derived
 // whenever a request is (re)loaded so it reflects what the file actually
 // has, not just the last selection made in this session.
 const bodyType = ref<BodyType>("none");
-
-function detectBodyType(currentHeaders: RequestHeader[], text: string): BodyType {
-  if (text.trim() === "") return "none";
-  const contentType = currentHeaders.find((h) => h.name.toLowerCase() === "content-type")?.value ?? "";
-  const essence = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
-  if (essence === "application/json" || essence.endsWith("+json")) return "json";
-  if (essence === "application/xml" || essence === "text/xml" || essence.endsWith("+xml")) return "xml";
-  if (essence === "application/x-www-form-urlencoded") return "form";
-  if (essence === "multipart/form-data") return "multipart";
-  return "text";
-}
-
-function randomBoundary(): string {
-  return `----NovaBoundary${Math.random().toString(16).slice(2)}`;
-}
 
 function upsertContentTypeHeader(value: string | null) {
   const index = headers.value.findIndex((h) => h.name.toLowerCase() === "content-type");
@@ -160,45 +138,12 @@ const editorLanguage = computed<EditorLanguage>(() => {
   return "text";
 });
 
-// Shared with the response pane below: a `+json`/`+xml` structured syntax
-// suffix (e.g. `application/vnd.api+json`) is treated the same as the bare
-// media type.
-function languageForContentType(contentType: string): EditorLanguage {
-  const essence = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
-  if (essence === "application/json" || essence.endsWith("+json")) return "json";
-  if (essence === "application/xml" || essence === "text/xml" || essence.endsWith("+xml")) return "xml";
-  return "text";
-}
-
 // Two-way sync between the URL field and the Params tab: `url` itself
 // always stays the bare base URL (what actually gets saved as
 // `[request].url`), and `query` is the single source of truth for
 // parameters — the URL *input*'s displayed/edited text is a derived view
-// (`urlDisplay` below) that merges the two back together for display and
-// splits them back apart on edit, so either surface can be used and the
-// other stays in sync.
-function serializeQuery(params: QueryParam[]): string {
-  const usp = new URLSearchParams();
-  for (const param of params) {
-    if (param.name === "" && param.value === "") continue;
-    usp.append(param.name, param.value);
-  }
-  return usp.toString();
-}
-
-function parseQueryString(queryString: string): QueryParam[] {
-  return Array.from(new URLSearchParams(queryString).entries()).map(([name, value]) => ({
-    name,
-    value,
-  }));
-}
-
-function splitUrlAndQuery(raw: string): { base: string; query: QueryParam[] } {
-  const index = raw.indexOf("?");
-  if (index === -1) return { base: raw, query: [] };
-  return { base: raw.slice(0, index), query: parseQueryString(raw.slice(index + 1)) };
-}
-
+// that merges the two back together for display and splits them back apart
+// on edit, so either surface can be used and the other stays in sync.
 const urlDisplay = computed<string>({
   get() {
     const queryString = serializeQuery(query.value);
@@ -210,6 +155,32 @@ const urlDisplay = computed<string>({
     query.value = split.query;
   },
 });
+
+// A structured view of the Body tab's `form` body type — reuses the same
+// URLSearchParams-based encode/decode the URL bar's query-string sync
+// already relies on, since `application/x-www-form-urlencoded` is exactly
+// that same wire format applied to the body instead of the URL.
+const formFields = computed<QueryParam[]>({
+  get() {
+    return parseQueryString(bodyText.value);
+  },
+  set(rows) {
+    bodyText.value = serializeQuery(rows);
+  },
+});
+
+function beautifyBody() {
+  if (bodyType.value === "json") {
+    try {
+      bodyText.value = beautifyJson(bodyText.value);
+    } catch {
+      // Leave it as-is — the editor's own JSON linter already flags what's
+      // wrong; beautify has nothing useful to do with genuinely invalid JSON.
+    }
+  } else if (bodyType.value === "xml") {
+    bodyText.value = formatXml(bodyText.value);
+  }
+}
 
 const curlPasteError = ref<string | null>(null);
 
@@ -356,17 +327,51 @@ async function handleSend() {
   }
 }
 
-function statusClass(status: number): string {
-  if (status >= 200 && status < 300) return "response-status--ok";
-  if (status >= 400) return "response-status--error";
-  return "response-status--other";
+const responseSize = computed(() =>
+  response.value ? new TextEncoder().encode(response.value.body).length : 0,
+);
+
+// Height (px) of the response pane below the draggable divider — shared
+// across every open tab's `RequestPanel` instance (they read/write the same
+// key), matching how a single split-pane position feels in Postman/VS Code
+// rather than each tab remembering its own.
+const RESPONSE_HEIGHT_KEY = "nova.responsePaneHeight";
+const responseHeight = ref(Number(localStorage.getItem(RESPONSE_HEIGHT_KEY)) || 320);
+let dragging = false;
+
+function startDrag(event: MouseEvent) {
+  dragging = true;
+  const startY = event.clientY;
+  const startHeight = responseHeight.value;
+  document.body.style.cursor = "row-resize";
+
+  function onMove(moveEvent: MouseEvent) {
+    if (!dragging) return;
+    const delta = startY - moveEvent.clientY;
+    responseHeight.value = Math.min(Math.max(startHeight + delta, 120), window.innerHeight - 200);
+  }
+  function onUp() {
+    dragging = false;
+    document.body.style.cursor = "";
+    localStorage.setItem(RESPONSE_HEIGHT_KEY, String(responseHeight.value));
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+  }
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onUp);
+  event.preventDefault();
 }
+
+onBeforeUnmount(() => {
+  dragging = false;
+});
 
 defineExpose({ dirty, save: handleSave });
 </script>
 
 <template>
-  <div>
+  <div class="request-view">
+    <div class="request-view__pane request-view__pane--top">
     <div class="request-panel__header">
       <div>
         <p class="request-panel__name">
@@ -382,9 +387,6 @@ defineExpose({ dirty, save: handleSave });
           @click="handleSave"
         >
           {{ saving ? "Saving…" : "Save" }}
-        </button>
-        <button class="button" :disabled="sending || loading" @click="handleSend">
-          {{ sending ? "Sending…" : "Send" }}
         </button>
       </div>
     </div>
@@ -417,7 +419,16 @@ defineExpose({ dirty, save: handleSave });
           class="request-panel__url-input"
           placeholder="{{base_url}}/path"
           @paste="handleUrlPaste"
+          @keydown.enter="handleSend"
         />
+        <button
+          type="button"
+          class="button request-panel__send"
+          :disabled="sending || loading"
+          @click="handleSend"
+        >
+          {{ sending ? "Sending…" : "Send" }}
+        </button>
       </div>
 
       <p v-if="curlPasteError" class="request-panel__save-error">
@@ -473,6 +484,10 @@ defineExpose({ dirty, save: handleSave });
 
       <div v-else-if="activeTab === 'headers'" class="request-panel__tab-panel">
         <KeyValueEditor v-model="headers" name-placeholder="Header" value-placeholder="Value" mode="headers" />
+        <p class="request-panel__hint-text">
+          Sent automatically if not set above: <code>User-Agent: Nova/…</code>,
+          <code>Accept: */*</code>.
+        </p>
       </div>
 
       <div v-else-if="activeTab === 'params'" class="request-panel__tab-panel">
@@ -501,10 +516,39 @@ defineExpose({ dirty, save: handleSave });
           Headers tab.
         </p>
         <p v-if="bodyType === 'none'" class="request-panel__hint-text">This request has no body.</p>
-        <CodeEditor v-else v-model="bodyText" :language="editorLanguage" />
+        <KeyValueEditor
+          v-else-if="bodyType === 'form'"
+          v-model="formFields"
+          name-placeholder="key"
+          value-placeholder="value"
+        />
+        <template v-else-if="bodyType === 'multipart'">
+          <p class="request-panel__hint-text">
+            Edited as raw multipart text for now — a structured field editor with real file
+            attachments is tracked separately (see the project's issue tracker); the format
+            itself (name/filename/Content-Type per part) is already fully supported end to end.
+          </p>
+          <CodeEditor v-model="bodyText" language="text" />
+        </template>
+        <div v-else class="request-panel__body-editor">
+          <CodeEditor v-model="bodyText" :language="editorLanguage" />
+          <button
+            v-if="bodyType === 'json' || bodyType === 'xml'"
+            type="button"
+            class="icon-button icon-button--outline request-panel__beautify"
+            title="Beautify"
+            @click="beautifyBody"
+          >
+            <Icon name="wand" />
+          </button>
+        </div>
       </div>
     </template>
+    </div>
 
+    <div class="request-view__divider" title="Drag to resize" @mousedown="startDrag"></div>
+
+    <div class="request-view__pane request-view__pane--bottom" :style="{ flexBasis: `${responseHeight}px` }">
     <div class="response-pane">
       <p v-if="sending" class="response-pane__hint">Sending request…</p>
 
@@ -515,7 +559,8 @@ defineExpose({ dirty, save: handleSave });
           <span class="response-status" :class="statusClass(response.status)">
             {{ response.status }}
           </span>
-          <span class="response-summary__elapsed">{{ response.elapsed_ms }}ms</span>
+          <span class="response-summary__meta">Time <strong>{{ response.elapsed_ms }} ms</strong></span>
+          <span class="response-summary__meta">Size <strong>{{ formatBytes(responseSize) }}</strong></span>
         </div>
 
         <div class="request-panel__tabs" role="tablist">
@@ -523,11 +568,13 @@ defineExpose({ dirty, save: handleSave });
             type="button"
             role="tab"
             class="request-panel__tab"
-            :class="{ 'request-panel__tab--active': activeResponseTab === 'preview' }"
-            :aria-selected="activeResponseTab === 'preview'"
-            @click="activeResponseTab = 'preview'"
+            :class="{ 'request-panel__tab--active': activeResponseTab === 'headers' }"
+            :aria-selected="activeResponseTab === 'headers'"
+            @click="activeResponseTab = 'headers'"
           >
-            Preview
+            Headers<span v-if="response.headers.length > 0" class="request-panel__tab-count">{{
+              response.headers.length
+            }}</span>
           </button>
           <button
             type="button"
@@ -543,13 +590,11 @@ defineExpose({ dirty, save: handleSave });
             type="button"
             role="tab"
             class="request-panel__tab"
-            :class="{ 'request-panel__tab--active': activeResponseTab === 'headers' }"
-            :aria-selected="activeResponseTab === 'headers'"
-            @click="activeResponseTab = 'headers'"
+            :class="{ 'request-panel__tab--active': activeResponseTab === 'preview' }"
+            :aria-selected="activeResponseTab === 'preview'"
+            @click="activeResponseTab = 'preview'"
           >
-            Headers<span v-if="response.headers.length > 0" class="request-panel__tab-count">{{
-              response.headers.length
-            }}</span>
+            Preview
           </button>
         </div>
 
@@ -586,6 +631,7 @@ defineExpose({ dirty, save: handleSave });
       </template>
 
       <p v-else class="response-pane__hint">Click Send to execute this request.</p>
+    </div>
     </div>
   </div>
 </template>

@@ -1,69 +1,5 @@
 @use "../variables" as *;
 
-.sidebar-header {
-  padding: $spacing-md;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.sidebar-header__project-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: $spacing-sm;
-}
-
-.sidebar-header__project {
-  font-weight: 600;
-  font-size: $font-size-lg;
-  margin: 0 0 $spacing-sm;
-  word-break: break-word;
-}
-
-.sidebar-header__switch {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  padding: 0;
-  border-radius: $radius-sm;
-  border: 1px solid var(--color-border);
-  background-color: var(--color-bg-raised);
-  color: var(--color-text-muted);
-  font-size: $font-size-base;
-
-  &:hover {
-    color: var(--color-accent);
-    border-color: var(--color-accent);
-  }
-}
-
-.sidebar-header__settings {
-  display: flex;
-  align-items: center;
-  gap: $spacing-xs;
-  width: 100%;
-  margin-top: $spacing-sm;
-  padding: $spacing-xs $spacing-sm;
-  border: none;
-  border-radius: $radius-sm;
-  background: none;
-  color: var(--color-text-muted);
-  font-size: $font-size-sm;
-  text-align: left;
-
-  &:hover {
-    color: var(--color-text);
-    background-color: var(--color-bg-raised);
-  }
-}
-
-.sidebar-header__settings--active {
-  color: var(--color-accent);
-  background-color: var(--color-bg-raised);
-}
-
 .sidebar-section-title {
   padding: $spacing-md $spacing-md $spacing-xs;
   font-size: $font-size-sm;
@@ -194,21 +130,45 @@
   overflow: hidden;
 }
 
+// A visibly bordered chip around the disclosure chevron — reserved for the
+// two major section headers (Collections/Environments), where a bare glyph
+// in muted-on-muted was nearly invisible at a glance. Individual collection
+// rows below them use a plain, unboxed chevron instead — one bordered chip
+// per row would be too much icon noise in a tree that can be many rows deep.
+.collection-tree__chevron-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: $radius-sm;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-raised);
+}
+
+.sidebar-section-title--collapsible:hover .collection-tree__chevron-box {
+  border-color: var(--color-accent);
+}
+
+.collection-tree__chevron-box .collection-tree__chevron {
+  color: var(--color-text);
+}
+
 .collection-tree__chevron {
   flex-shrink: 0;
-  width: 0.7em;
-  height: 0.7em;
-  transition: transform 0.1s ease;
+  width: 0.75em;
+  height: 0.75em;
+  // No explicit color: inherits the ambient text color of whichever row
+  // it's in (muted at rest, full-strength on hover via `.collection-tree__
+  // label:hover`/`.sidebar-section-title--collapsible:hover` below) rather
+  // than needing its own hover rule.
+  transition: transform 0.12s ease;
 }
 
 .collection-tree__label--collapsed .collection-tree__chevron,
 .sidebar-section-title--collapsed .collection-tree__chevron {
   transform: rotate(-90deg);
-}
-
-.collection-tree__folder-icon {
-  flex-shrink: 0;
-  color: var(--color-text-muted);
 }
 
 .collection-tree__label-name {

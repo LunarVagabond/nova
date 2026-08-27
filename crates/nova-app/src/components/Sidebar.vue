@@ -11,14 +11,10 @@ defineProps<{
   selectedEnvironment: string | null;
   selectedRequestPath?: string | null;
   gitStatus?: GitStatusMap | null;
-  /** Whether the project settings/manifest view is the one on screen, to highlight this nav entry. */
-  showingProjectSettings?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "selectRequest", request: RequestFile): void;
-  (e: "switchProject"): void;
-  (e: "projectSettings"): void;
   (e: "createRequest", collectionPath: string): void;
   (e: "createCollection", collectionPath: string): void;
   (e: "renameCollection", collection: Collection): void;
@@ -34,36 +30,15 @@ const environmentsExpanded = ref(true);
 
 <template>
   <div>
-    <div class="sidebar-header">
-      <div class="sidebar-header__project-row">
-        <p class="sidebar-header__project">{{ project.manifest.project.name }}</p>
-        <button
-          type="button"
-          class="sidebar-header__switch"
-          title="Switch project"
-          @click="emit('switchProject')"
-        >
-          <Icon name="swap" />
-        </button>
-      </div>
-      <button
-        type="button"
-        class="sidebar-header__settings"
-        :class="{ 'sidebar-header__settings--active': showingProjectSettings }"
-        @click="emit('projectSettings')"
-      >
-        <Icon name="settings" />
-        Project settings
-      </button>
-    </div>
-
     <button
       type="button"
       class="sidebar-section-title sidebar-section-title--collapsible"
       :class="{ 'sidebar-section-title--collapsed': !collectionsExpanded }"
       @click="collectionsExpanded = !collectionsExpanded"
     >
-      <Icon name="chevron-down" class="collection-tree__chevron" />
+      <span class="collection-tree__chevron-box">
+        <Icon name="chevron-down" class="collection-tree__chevron" />
+      </span>
       Collections
     </button>
     <div v-show="collectionsExpanded">
@@ -87,7 +62,9 @@ const environmentsExpanded = ref(true);
         :class="{ 'sidebar-section-title--collapsed': !environmentsExpanded }"
         @click="environmentsExpanded = !environmentsExpanded"
       >
-        <Icon name="chevron-down" class="collection-tree__chevron" />
+        <span class="collection-tree__chevron-box">
+          <Icon name="chevron-down" class="collection-tree__chevron" />
+        </span>
         Environments
       </button>
       <button

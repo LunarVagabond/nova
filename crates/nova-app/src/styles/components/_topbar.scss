@@ -1,0 +1,82 @@
+@use "../variables" as *;
+
+// The global app header — spans the full width above the sidebar and main
+// workspace (see `.app-shell`'s grid in _app-shell.scss).
+.topbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  height: $topbar-height;
+  padding: 0 $spacing-md;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-bg-sidebar);
+  -webkit-app-region: drag;
+}
+
+.topbar__brand {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  flex-shrink: 0;
+}
+
+.topbar__mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: $radius-sm;
+  background-color: var(--color-accent);
+  color: #ffffff;
+  font-size: $font-size-sm;
+  font-weight: 700;
+}
+
+.topbar__wordmark {
+  font-size: $font-size-md;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.topbar__sep {
+  color: var(--color-text-muted);
+  padding: 0 $spacing-xs;
+}
+
+.topbar__project {
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 20rem;
+}
+
+.topbar__spacer {
+  flex: 1;
+  // Lets the OS window be dragged from empty header space in the desktop
+  // shell, while buttons/selects placed on either side opt back out below.
+  -webkit-app-region: drag;
+}
+
+.topbar__brand,
+.topbar__project,
+.topbar :is(button, select) {
+  -webkit-app-region: no-drag;
+}
+
+.topbar__env-select {
+  height: $control-height-sm;
+  padding: 0 $spacing-sm;
+  border-radius: $radius-sm;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-raised);
+  font-size: $font-size-sm;
+
+  &:hover {
+    border-color: var(--color-text-muted);
+  }
+}

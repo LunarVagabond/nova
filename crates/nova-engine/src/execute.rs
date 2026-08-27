@@ -14,6 +14,14 @@ pub struct Response {
     pub elapsed_ms: u128,
 }
 
+/// Sent on every request unless the request's own `[headers]` already set
+/// the same name (case-insensitively) — mirrors what a browser or Postman's
+/// runtime adds automatically, so a `.nova` file doesn't need this
+/// boilerplate written into it just to look like a normal HTTP client.
+/// `nova-app`'s Headers tab shows this same pair as a read-only hint.
+const DEFAULT_USER_AGENT: &str = concat!("Nova/", env!("CARGO_PKG_VERSION"));
+const DEFAULT_ACCEPT: &str = "*/*";
+
 /// Send `request` over HTTP and capture its response.
 ///
 /// A non-2xx/3xx status is still a successful [`Response`] — callers (e.g.
@@ -23,6 +31,14 @@ pub struct Response {
 pub fn execute(request: &ParsedRequest) -> NovaResult<Response> {
     let agent = ureq::Agent::new();
     let mut req = agent.request(&request.method, &request.full_url());
+
+    let has_header = |name: &str| request.headers.iter().any(|h| h.name.eq_ignore_ascii_case(name));
+    if !has_header("User-Agent") {
+        req = req.set("User-Agent", DEFAULT_USER_AGENT);
+    }
+    if !has_header("Accept") {
+        req = req.set("Accept", DEFAULT_ACCEPT);
+    }
     for header in &request.headers {
         req = req.set(&header.name, &header.value);
     }

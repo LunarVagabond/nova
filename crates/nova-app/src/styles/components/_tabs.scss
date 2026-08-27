@@ -1,47 +1,26 @@
 @use "../variables" as *;
 
-// The persistent top bar (currently just the environment selector, the
-// project-wide equivalent of a browser's "which profile" switcher), the
-// open-request tab strip below it, and the breadcrumb shown above the
-// active tab's request panel — see `App.vue`'s
-// `openTabs`/`activeBreadcrumb`/`selectedEnvironment`.
-
-.main-topbar {
-  display: flex;
-  align-items: center;
-  gap: $spacing-md;
-  margin: (-$spacing-lg) (-$spacing-lg) $spacing-md;
-  padding: $spacing-sm $spacing-lg;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.main-topbar__spacer {
-  flex: 1;
-}
-
-.main-topbar__env-select {
-  padding: $spacing-xs $spacing-sm;
-  border-radius: $radius-sm;
-  border: 1px solid var(--color-border);
-  background-color: var(--color-bg-raised);
-  font-size: $font-size-sm;
-}
+// The open-request tab strip and the breadcrumb shown above the active
+// tab's request panel — see `App.vue`'s `openTabs`/`activeBreadcrumb`.
 
 .tab-strip {
   display: flex;
   align-items: stretch;
   overflow-x: auto;
   border-bottom: 1px solid var(--color-border);
-  margin: (-$spacing-lg) (-$spacing-lg) $spacing-md;
+  margin: 0 (-$spacing-lg) $spacing-sm;
+  padding: 0 $spacing-lg;
 }
 
 .tab-strip__tab {
   display: flex;
   align-items: center;
-  gap: $spacing-xs;
+  gap: $spacing-sm;
   flex-shrink: 0;
-  padding: $spacing-sm $spacing-md;
+  height: 2.25rem;
+  padding: 0 $spacing-sm 0 $spacing-md;
   border: none;
+  border-right: 1px solid var(--color-border);
   border-bottom: 2px solid transparent;
   background: none;
   color: var(--color-text-muted);
@@ -51,12 +30,13 @@
 
   &:hover {
     color: var(--color-text);
-    background-color: var(--color-bg-raised);
+    background-color: var(--color-bg-hover);
   }
 }
 
 .tab-strip__tab--active {
   color: var(--color-text);
+  background-color: var(--color-bg-raised);
   border-bottom-color: var(--color-accent);
 }
 
@@ -68,19 +48,24 @@
 
 .tab-strip__close {
   flex-shrink: 0;
-  width: 1rem;
-  height: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: $control-height-sm;
+  height: $control-height-sm;
   line-height: 1;
   border-radius: $radius-sm;
   color: var(--color-text-muted);
 
   &:hover {
     color: var(--color-danger);
+    background-color: var(--color-bg-hover);
   }
 }
 
 .request-breadcrumb {
   color: var(--color-text-muted);
-  font-size: $font-size-sm;
-  margin: 0 0 $spacing-md;
+  font-size: $font-size-xs;
+  padding: $spacing-xs 0 0;
+  margin: 0 0 $spacing-sm;
 }

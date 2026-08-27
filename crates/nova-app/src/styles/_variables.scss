@@ -2,20 +2,36 @@
 // _base.scss as CSS custom properties instead, since those need to change
 // at runtime based on the OS color scheme.
 
-$spacing-xs: 0.25rem;
-$spacing-sm: 0.5rem;
-$spacing-md: 1rem;
-$spacing-lg: 1.5rem;
-$spacing-xl: 2.5rem;
+$spacing-xs: 0.25rem; // 4px
+$spacing-sm: 0.5rem; // 8px
+$spacing-smd: 0.75rem; // 12px
+$spacing-md: 1rem; // 16px
+$spacing-lg: 1.5rem; // 24px
+$spacing-xl: 2rem; // 32px
 
 $radius-sm: 4px;
-$radius-md: 8px;
+$radius-md: 6px;
+$radius-lg: 8px;
 
 $font-family-base: Inter, Avenir, Helvetica, Arial, sans-serif;
 $font-family-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 
+// 12px metadata / 13px secondary UI / 14px primary UI / 16px section titles /
+// 18px headings — see the redesign brief's type-scale guidance. Kept
+// deliberately tight: this is a dense developer tool, not a marketing page.
+$font-size-xs: 0.75rem;
 $font-size-sm: 0.8125rem;
-$font-size-base: 0.9375rem;
-$font-size-lg: 1.25rem;
+$font-size-base: 0.875rem;
+$font-size-md: 1rem;
+$font-size-lg: 1.125rem;
 
-$sidebar-width: 260px;
+$sidebar-width: 252px;
+$topbar-height: 44px;
+
+// The common rendered height of a single-line control (button, input,
+// select) once its padding/border/line-height are accounted for — buttons
+// and inputs alike target this so a method-select/url-input/Send row (or a
+// toolbar of buttons) lines up edge to edge instead of drifting by a pixel
+// or two the way ad hoc padding tends to.
+$control-height: 1.875rem; // 30px
+$control-height-sm: 1.5rem; // 24px

@@ -88,6 +88,32 @@ const novaEditorTheme = EditorView.theme({
   ".cm-activeLineGutter": {
     backgroundColor: "var(--color-bg-raised)",
   },
+  // Lint hover tooltips (e.g. "invalid JSON") render outside `.cm-editor`'s
+  // own DOM subtree, so without explicit colors here they fall back to
+  // CodeMirror's built-in light-theme tooltip styling — white text on a
+  // white background under this app's dark palette. CodeMirror special-
+  // cases these selectors when they appear in a theme extension, applying
+  // them globally even though the elements render elsewhere.
+  ".cm-tooltip": {
+    backgroundColor: "var(--color-bg-raised)",
+    border: "1px solid var(--color-border)",
+    borderRadius: "var(--code-editor-radius)",
+    color: "var(--color-text)",
+  },
+  ".cm-tooltip.cm-tooltip-lint": {
+    padding: "0",
+  },
+  ".cm-diagnostic": {
+    padding: "4px 8px",
+    borderLeft: "3px solid var(--color-danger)",
+    color: "var(--color-text)",
+  },
+  ".cm-diagnosticText": {
+    color: "var(--color-text)",
+  },
+  ".cm-diagnostic-error": {
+    borderLeftColor: "var(--color-danger)",
+  },
 });
 
 // An empty body is valid (no body sent) — don't flag it as invalid JSON.

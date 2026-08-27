@@ -12,9 +12,12 @@
   --color-bg: #f6f6f6;
   --color-bg-raised: #ffffff;
   --color-bg-sidebar: #efefef;
+  --color-bg-inset: #eeeeee;
+  --color-bg-hover: rgba(15, 15, 15, 0.05);
   --color-border: #dcdcdc;
   --color-text: #0f0f0f;
   --color-text-muted: #6b6b6b;
+  --shadow-popover: 0 8px 24px rgb(0 0 0 / 14%);
 
   // The app's fixed "supernova" palette — four colors, used everywhere
   // something needs to be colored (buttons, links, badges, method tags,
@@ -38,7 +41,7 @@
   --color-code-number: #b45c00;
   --color-code-keyword: #0b6fb0;
 
-  --code-editor-radius: #{$radius-md};
+  --code-editor-radius: #{$radius-sm};
   --code-editor-font-size: #{$font-size-sm};
   --code-editor-font-family: #{$font-family-mono};
 }
@@ -47,12 +50,15 @@
   :root {
     color-scheme: dark;
 
-    --color-bg: #1f1f1f;
-    --color-bg-raised: #2a2a2a;
-    --color-bg-sidebar: #262626;
-    --color-border: #3a3a3a;
+    --color-bg: #1c1c1c;
+    --color-bg-raised: #262626;
+    --color-bg-sidebar: #202020;
+    --color-bg-inset: #202020;
+    --color-bg-hover: rgba(255, 255, 255, 0.06);
+    --color-border: #383838;
     --color-text: #f2f2f2;
     --color-text-muted: #9a9a9a;
+    --shadow-popover: 0 8px 24px rgb(0 0 0 / 45%);
 
     --color-accent: #9b85ff;
     --color-warning: #f5b942;
@@ -80,6 +86,7 @@ body,
 body {
   font-family: $font-family-base;
   font-size: $font-size-base;
+  line-height: 1.45;
   color: var(--color-text);
   background-color: var(--color-bg);
   font-synthesis: none;
@@ -88,9 +95,17 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
 button,
 input,
-select {
+select,
+textarea {
   font-family: inherit;
   font-size: inherit;
   color: inherit;
@@ -100,9 +115,174 @@ button {
   cursor: pointer;
 }
 
+// A restrained, always-visible keyboard focus ring — applies to every
+// interactive element uniformly rather than relying on browser defaults
+// (which vary per platform and are easy to lose track of against a dark
+// background). `:focus-visible` keeps it from flashing on every mouse click.
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
 .icon {
   width: 1em;
   height: 1em;
   flex-shrink: 0;
   vertical-align: -0.125em;
+}
+
+// Thin, unobtrusive scrollbars — a dense multi-pane tool has a lot of
+// independently scrolling regions (sidebar, request editor, response
+// viewer), and the platform-default scrollbar width reads as visual noise
+// at that density. Firefox + WebKit only; falls back to the native
+// scrollbar elsewhere, which is harmless.
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: $radius-sm;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-muted);
+  background-clip: padding-box;
+}
+
+// --- Buttons -----------------------------------------------------------
+// A small, deliberate hierarchy: primary for the one emphasized action per
+// view (Send, Save-when-it's-the-only-action), secondary for supporting
+// actions, ghost for low-priority/toolbar actions, danger for destructive
+// ones, and icon for icon-only controls. Every variant shares the same
+// height/radius/font so switching between them never shifts layout.
+
+.button,
+.button--secondary,
+.button--ghost,
+.button--danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing-xs;
+  height: $control-height;
+  padding: 0 $spacing-md;
+  border-radius: $radius-sm;
+  border: 1px solid transparent;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+}
+
+.button {
+  border-color: var(--color-accent);
+  background-color: var(--color-accent);
+  color: #ffffff;
+
+  &:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
+}
+
+.button--secondary {
+  background-color: var(--color-bg-raised);
+  color: var(--color-text);
+  border-color: var(--color-border);
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+}
+
+.button--ghost {
+  background-color: transparent;
+  color: var(--color-text-muted);
+  border-color: transparent;
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-bg-hover);
+    color: var(--color-text);
+  }
+}
+
+.button--danger {
+  background-color: var(--color-danger);
+  border-color: var(--color-danger);
+  color: #ffffff;
+
+  &:hover:not(:disabled) {
+    filter: brightness(1.05);
+  }
+}
+
+// Square icon-only control (toolbar/tab-strip close buttons, sidebar row
+// actions) — sized off `$control-height-sm` since it carries a single glyph
+// rather than a text label.
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: $control-height-sm;
+  height: $control-height-sm;
+  padding: 0;
+  border-radius: $radius-sm;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: $font-size-base;
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-bg-hover);
+    color: var(--color-text);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.icon-button--danger:hover:not(:disabled) {
+  color: var(--color-danger);
+}
+
+// A visibly bordered variant — for an icon control sitting on its own
+// (not inside an already-obvious toolbar/row) that needs to read as a
+// clickable control at a glance, not just on hover.
+.icon-button--outline {
+  border-color: var(--color-border);
+  background-color: var(--color-bg-raised);
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    background-color: var(--color-bg-raised);
+  }
+}
+
+.icon-button--active {
+  border-color: var(--color-accent);
+  background-color: var(--color-bg-hover);
+  color: var(--color-accent);
 }

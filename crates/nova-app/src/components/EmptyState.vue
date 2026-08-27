@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Icon from "./Icon.vue";
+
 defineProps<{
   error?: string | null;
 }>();
@@ -10,6 +12,7 @@ const emit = defineEmits<{
 
 <template>
   <div class="empty-state">
+    <Icon name="folder" class="empty-state__icon" />
     <p class="empty-state__title">No project open</p>
     <p class="empty-state__hint">
       Open a directory containing a <code>nova/nova.yaml</code> manifest, or a

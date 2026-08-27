@@ -3,19 +3,48 @@
 .app-shell {
   display: grid;
   grid-template-columns: $sidebar-width 1fr;
+  grid-template-rows: $topbar-height 1fr;
   height: 100vh;
   width: 100vw;
 }
 
 .app-shell__sidebar {
+  grid-row: 2;
   border-right: 1px solid var(--color-border);
   background-color: var(--color-bg-sidebar);
   overflow-y: auto;
 }
 
 .app-shell__main {
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+// Non-scrolling chrome above the workspace content: the env selector, the
+// open-tab strip, and the active tab's breadcrumb. Stays put while the
+// content region below it scrolls (or, for a request tab, manages its own
+// internal scroll regions — see `.app-shell__content--flush`).
+.app-shell__chrome {
+  flex-shrink: 0;
+  padding: $spacing-sm $spacing-lg 0;
+}
+
+.app-shell__content {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
-  padding: $spacing-lg;
+  padding: $spacing-md $spacing-lg $spacing-lg;
+}
+
+// A request tab lays out its own top/bottom split pane and scrolls each
+// half independently, so the outer content region must not also scroll or
+// pad — that would produce two nested scrollbars.
+.app-shell__content--flush {
+  padding: 0;
+  overflow: hidden;
 }
 
 .app-shell__error {

@@ -14,14 +14,14 @@
   width: min(28rem, calc(100vw - #{$spacing-xl}));
   background-color: var(--color-bg-raised);
   border: 1px solid var(--color-border);
-  border-radius: $radius-md;
+  border-radius: $radius-lg;
   padding: $spacing-lg;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 25%);
+  box-shadow: var(--shadow-popover);
 }
 
 .modal__title {
   margin: 0 0 $spacing-md;
-  font-size: $font-size-lg;
+  font-size: $font-size-md;
   font-weight: 600;
   color: var(--color-text);
 }
@@ -40,14 +40,23 @@
 
 .modal__input {
   width: 100%;
+  height: $control-height;
   box-sizing: border-box;
-  padding: $spacing-sm;
+  padding: 0 $spacing-sm;
   border-radius: $radius-sm;
   border: 1px solid var(--color-border);
   background-color: var(--color-bg);
   color: var(--color-text);
   font-size: $font-size-base;
   font-family: $font-family-base;
+
+  &:hover {
+    border-color: var(--color-text-muted);
+  }
+
+  &:focus-visible {
+    border-color: var(--color-accent);
+  }
 }
 
 /// Explanatory line above a form in a modal, for a dialog whose action
@@ -81,14 +90,4 @@
   display: flex;
   justify-content: flex-end;
   gap: $spacing-sm;
-}
-
-.button--danger {
-  background-color: var(--color-danger);
-  border-color: var(--color-danger);
-  color: #ffffff;
-
-  &:hover {
-    filter: brightness(1.05);
-  }
 }

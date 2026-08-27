@@ -8,76 +8,141 @@
   border-radius: $radius-md;
 }
 
+// A compact key/value table (request headers, query params, environment
+// variables) — one bordered region with row dividers rather than a stack of
+// individually-bordered pill inputs, closer to how a professional API
+// client renders this kind of editable table.
 .kv-editor {
   display: flex;
   flex-direction: column;
-  gap: $spacing-xs;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-sm;
+  overflow: hidden;
 }
 
 .kv-editor__row {
   display: flex;
-  gap: $spacing-xs;
-  align-items: center;
+  align-items: stretch;
+  border-bottom: 1px solid var(--color-border);
+
+  &:hover {
+    background-color: var(--color-bg-hover);
+  }
 }
 
 .kv-editor__input {
   flex: 1;
-  padding: $spacing-xs $spacing-sm;
-  border-radius: $radius-sm;
-  border: 1px solid var(--color-border);
-  background-color: var(--color-bg-raised);
+  min-width: 0;
+  height: $control-height;
+  padding: 0 $spacing-sm;
+  border: none;
+  border-right: 1px solid var(--color-border);
+  background: none;
   font-family: $font-family-mono;
   font-size: $font-size-sm;
+
+  &:focus-visible {
+    outline-offset: -2px;
+    position: relative;
+    z-index: 1;
+  }
 }
 
 .kv-editor__remove {
   flex-shrink: 0;
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: $radius-sm;
-  border: 1px solid var(--color-border);
-  background-color: var(--color-bg-raised);
+  width: $control-height;
+  height: $control-height;
+  border: none;
+  background: none;
   color: var(--color-text-muted);
   line-height: 1;
 
   &:hover {
     color: var(--color-danger);
-    border-color: var(--color-danger);
+    background-color: var(--color-bg-hover);
   }
 }
 
 .kv-editor__add {
-  align-self: flex-start;
+  align-self: stretch;
   padding: $spacing-xs $spacing-sm;
-  border-radius: $radius-sm;
-  border: 1px dashed var(--color-border);
+  border: none;
   background: none;
   color: var(--color-text-muted);
   font-size: $font-size-sm;
+  text-align: left;
 
   &:hover {
     color: var(--color-accent);
-    border-color: var(--color-accent);
+    background-color: var(--color-bg-hover);
+  }
+}
+
+// Resizable request/response split pane — the top pane (request editor)
+// grows to fill available space, the bottom pane (response) has an explicit
+// height dragged via the divider between them, and each scrolls on its own
+// rather than the outer workspace region scrolling as one long column.
+.request-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.request-view__pane {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.request-view__pane--top {
+  flex: 1 1 auto;
+  min-height: 96px;
+  padding: $spacing-md $spacing-lg $spacing-lg;
+}
+
+.request-view__pane--bottom {
+  flex: 0 0 auto;
+  min-height: 96px;
+  max-height: calc(100% - 96px);
+}
+
+.request-view__divider {
+  flex: 0 0 7px;
+  position: relative;
+  cursor: row-resize;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 3px 0 auto;
+    height: 1px;
+    background-color: var(--color-border);
+  }
+
+  &:hover::after,
+  &:active::after {
+    inset: 2px 0 auto;
+    height: 2px;
+    background-color: var(--color-accent);
   }
 }
 
 .request-panel__tabs {
   display: flex;
-  gap: $spacing-md;
+  gap: $spacing-lg;
   border-bottom: 1px solid var(--color-border);
   margin-bottom: $spacing-md;
 }
 
 .request-panel__tab {
-  padding: $spacing-sm 0;
+  height: 2rem;
+  padding: 0;
   border: none;
   border-bottom: 2px solid transparent;
   background: none;
   color: var(--color-text-muted);
   font-size: $font-size-sm;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -96,9 +161,15 @@
 .request-panel__tab-count {
   padding: 0 $spacing-xs;
   border-radius: $radius-sm;
-  background-color: var(--color-bg-sidebar);
-  font-size: $font-size-sm;
+  background-color: var(--color-bg-inset);
+  color: var(--color-text-muted);
+  font-size: $font-size-xs;
   font-weight: 600;
+}
+
+.request-panel__tab--active .request-panel__tab-count {
+  color: var(--color-accent);
+  background-color: rgba(124, 92, 255, 0.14);
 }
 
 .request-panel__tab-panel {
@@ -117,8 +188,24 @@
   color: var(--color-text-muted);
 }
 
+.request-panel__body-editor {
+  position: relative;
+}
+
+// Floats over the code editor's bottom-right corner rather than sitting in
+// the toolbar row above it, so it reads as acting directly on the text
+// beneath it.
+.request-panel__beautify {
+  position: absolute;
+  right: $spacing-sm;
+  bottom: $spacing-sm;
+  z-index: 1;
+  box-shadow: var(--shadow-popover);
+}
+
 .request-panel__body-type-select {
-  padding: $spacing-xs $spacing-sm;
+  height: $control-height;
+  padding: 0 $spacing-sm;
   border-radius: $radius-sm;
   border: 1px solid var(--color-border);
   background-color: var(--color-bg-raised);
@@ -126,29 +213,58 @@
   font-size: $font-size-sm;
 }
 
+// Method select + URL input read as one joined control (a single outer
+// border with an internal divider) rather than two separate fields side by
+// side — the primary action row of the whole app, so it gets the most
+// visual care: [METHOD ▼][ URL ][Send].
 .request-panel__method-url {
   display: flex;
-  gap: $spacing-sm;
+  height: $control-height * 1.2;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-sm;
+  background-color: var(--color-bg-raised);
   margin-bottom: $spacing-lg;
+  overflow: hidden;
+
+  &:focus-within {
+    border-color: var(--color-accent);
+  }
 }
 
 .request-panel__method-select {
-  padding: $spacing-xs $spacing-sm;
-  border-radius: $radius-sm;
-  border: 1px solid var(--color-border);
-  background-color: var(--color-bg-raised);
-  font-weight: 600;
+  flex-shrink: 0;
+  padding: 0 $spacing-sm;
+  border: none;
+  border-right: 1px solid var(--color-border);
+  background: none;
+  font-weight: 700;
   font-family: $font-family-mono;
+  font-size: $font-size-sm;
 }
 
 .request-panel__url-input {
   flex: 1;
-  padding: $spacing-xs $spacing-sm;
-  border-radius: $radius-sm;
-  border: 1px solid var(--color-border);
-  background-color: var(--color-bg-raised);
+  min-width: 0;
+  padding: 0 $spacing-md;
+  border: none;
+  background: none;
   font-family: $font-family-mono;
   font-size: $font-size-base;
+
+  &:focus-visible {
+    outline: none;
+  }
+}
+
+// The Send button is visually fused onto the end of the method/URL group
+// (no radius/border of its own on that side) rather than floating as a
+// separate control — it's the one primary action of the whole request row.
+.request-panel__send {
+  flex-shrink: 0;
+  height: auto;
+  min-width: 5.5rem;
+  border-radius: 0;
+  border: none;
 }
 
 .request-panel__dirty-dot {
@@ -179,21 +295,6 @@
   flex-shrink: 0;
 }
 
-.button--secondary {
-  background-color: var(--color-bg-raised);
-  color: var(--color-text);
-  border-color: var(--color-border);
-
-  &:hover {
-    border-color: var(--color-accent);
-  }
-
-  &:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-}
-
 .request-panel__header {
   display: flex;
   align-items: flex-start;
@@ -203,16 +304,20 @@
 }
 
 .request-panel__name {
-  font-size: $font-size-lg;
+  font-size: $font-size-md;
   font-weight: 600;
   margin: 0 0 $spacing-xs;
 }
 
+.request-panel__path {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-family: $font-family-mono;
+  font-size: $font-size-xs;
+}
+
 .response-pane {
-  border: 1px solid var(--color-border);
-  border-radius: $radius-md;
-  background-color: var(--color-bg-raised);
-  padding: $spacing-lg;
+  padding: $spacing-md $spacing-lg $spacing-lg;
 }
 
 .response-pane__hint {
@@ -225,27 +330,21 @@
   margin: 0;
 }
 
-.response-pane__section-title {
-  font-size: $font-size-sm;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-muted);
-  margin: $spacing-lg 0 $spacing-sm;
-}
-
 .response-summary {
   display: flex;
   align-items: center;
-  gap: $spacing-md;
+  gap: $spacing-lg;
+  padding-bottom: $spacing-sm;
+  margin-bottom: $spacing-sm;
 }
 
 .response-status {
   display: inline-block;
-  padding: $spacing-xs $spacing-sm;
+  padding: 1px $spacing-sm;
   border-radius: $radius-sm;
-  font-weight: 600;
+  font-weight: 700;
   font-family: $font-family-mono;
+  font-size: $font-size-sm;
 }
 
 .response-status--ok {
@@ -263,10 +362,15 @@
   color: var(--color-text-muted);
 }
 
-.response-summary__elapsed {
+.response-summary__meta {
   color: var(--color-text-muted);
-  font-family: $font-family-mono;
   font-size: $font-size-sm;
+
+  strong {
+    color: var(--color-text);
+    font-weight: 600;
+    font-family: $font-family-mono;
+  }
 }
 
 .response-headers {

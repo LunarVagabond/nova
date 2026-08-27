@@ -16,7 +16,8 @@ const props = defineProps<{
     | "x"
     | "settings"
     | "check"
-    | "swap";
+    | "swap"
+    | "wand";
 }>();
 </script>
 
@@ -76,6 +77,15 @@ const props = defineProps<{
 
     <path v-else-if="name === 'check'" d="M5 13l4 4L19 7" />
 
-    <path v-else-if="name === 'swap'" d="M7 4v13M7 17l-3-3M7 17l3-3M17 20V7M17 7l-3 3M17 7l3 3" />
+    <template v-else-if="name === 'swap'">
+      <path d="M4 8h14M14 8l3.5-3.5M14 8l3.5 3.5" />
+      <path d="M20 16H6M10 16l-3.5-3.5M10 16l-3.5 3.5" />
+    </template>
+
+    <template v-else-if="name === 'wand'">
+      <path d="M4 20L15 9" />
+      <path d="M18 3l.8 1.7L20.5 5.5l-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z" />
+      <path d="M13 6l1 1" />
+    </template>
   </svg>
 </template>

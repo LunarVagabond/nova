@@ -3,6 +3,7 @@
 // <style> blocks; they only reference these classes.
 
 @use "base";
+@use "components/topbar";
 @use "components/app-shell";
 @use "components/sidebar";
 @use "components/empty-state";
