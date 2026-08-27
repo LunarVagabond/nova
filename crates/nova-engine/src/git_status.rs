@@ -10,13 +10,22 @@ use crate::error::{NovaError, NovaResult};
 /// committed" to "closest": a file with changes in more than one stage
 /// (e.g. staged, then edited again) reports the earlier/more-actionable
 /// state — [`Self::Untracked`] over [`Self::Unstaged`] over [`Self::Staged`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GitFileStatus {
     Untracked,
     Unstaged,
     Staged,
     Committed,
+    /// A rename `git status` itself reported (staged, `R  old -> new`) or
+    /// one nova detected on its own: an unstaged delete and an untracked
+    /// file elsewhere with byte-identical content. `git status` only does
+    /// rename detection for staged (index-vs-HEAD) changes, never for the
+    /// worktree-vs-index comparison, so the unstaged case never shows up
+    /// as a single porcelain line the way the staged case does.
+    Renamed {
+        from: PathBuf,
+    },
 }
 
 /// Per-file git status for every non-clean file in the git repository
@@ -48,6 +57,11 @@ pub fn git_status(project_root: &Path) -> NovaResult<Option<HashMap<PathBuf, Git
     }
 
     let mut statuses = HashMap::new();
+    // Unstaged deletions and untracked files, collected separately so we
+    // can try to pair them up by content after the main pass — see below.
+    let mut unstaged_deletions: Vec<PathBuf> = Vec::new();
+    let mut untracked: Vec<PathBuf> = Vec::new();
+
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         // Porcelain v1 lines are "XY <path>" (or "XY <old> -> <new>" for a
         // rename) — X is the index/staged column, Y the worktree column.
@@ -56,22 +70,137 @@ pub fn git_status(project_root: &Path) -> NovaResult<Option<HashMap<PathBuf, Git
         }
         let index_status = line.as_bytes()[0] as char;
         let worktree_status = line.as_bytes()[1] as char;
-        let raw_path = line[3..].rsplit(" -> ").next().unwrap_or(&line[3..]);
+        let rest = &line[3..];
 
-        let status = if index_status == '?' && worktree_status == '?' {
-            GitFileStatus::Untracked
-        } else if worktree_status != ' ' {
-            GitFileStatus::Unstaged
-        } else {
-            GitFileStatus::Staged
-        };
+        if let Some((old_raw, new_raw)) = rest.split_once(" -> ") {
+            // git only reports a single "R old -> new" line for a rename it
+            // detected itself, which only happens for staged changes.
+            let old_joined = toplevel.join(old_raw);
+            let old_canonical = old_joined.canonicalize().unwrap_or(old_joined);
+            let new_joined = toplevel.join(new_raw);
+            let new_canonical = new_joined.canonicalize().unwrap_or(new_joined);
+            statuses.insert(
+                new_canonical,
+                GitFileStatus::Renamed {
+                    from: old_canonical,
+                },
+            );
+            continue;
+        }
 
-        let joined = toplevel.join(raw_path);
+        let joined = toplevel.join(rest);
         let canonical = joined.canonicalize().unwrap_or(joined);
-        statuses.insert(canonical, status);
+
+        if index_status == '?' && worktree_status == '?' {
+            untracked.push(canonical.clone());
+            statuses.insert(canonical, GitFileStatus::Untracked);
+        } else if index_status == ' ' && worktree_status == 'D' {
+            unstaged_deletions.push(canonical.clone());
+            statuses.insert(canonical, GitFileStatus::Unstaged);
+        } else if worktree_status != ' ' {
+            statuses.insert(canonical, GitFileStatus::Unstaged);
+        } else {
+            statuses.insert(canonical, GitFileStatus::Staged);
+        }
+    }
+
+    for (deleted_path, new_path) in
+        match_unstaged_renames(&toplevel, &unstaged_deletions, &untracked)
+    {
+        statuses.remove(&deleted_path);
+        statuses.insert(new_path, GitFileStatus::Renamed { from: deleted_path });
     }
 
     Ok(Some(statuses))
+}
+
+/// Pairs up unstaged deletions with untracked files that have byte-identical
+/// content, treating each pair as an unstaged rename `git status` didn't
+/// report as one line (see [`GitFileStatus::Renamed`]). Ambiguous matches
+/// (more than one candidate on either side sharing a hash) are skipped
+/// rather than guessed at.
+fn match_unstaged_renames(
+    toplevel: &Path,
+    unstaged_deletions: &[PathBuf],
+    untracked: &[PathBuf],
+) -> Vec<(PathBuf, PathBuf)> {
+    if unstaged_deletions.is_empty() || untracked.is_empty() {
+        return Vec::new();
+    }
+
+    let deleted_hashes = index_blob_hashes(toplevel, unstaged_deletions);
+    let untracked_hashes = working_tree_hashes(toplevel, untracked);
+
+    let mut hash_to_deleted: HashMap<&str, Vec<&PathBuf>> = HashMap::new();
+    for (path, hash) in &deleted_hashes {
+        hash_to_deleted.entry(hash.as_str()).or_default().push(path);
+    }
+    let mut hash_to_untracked: HashMap<&str, Vec<&PathBuf>> = HashMap::new();
+    for (path, hash) in &untracked_hashes {
+        hash_to_untracked
+            .entry(hash.as_str())
+            .or_default()
+            .push(path);
+    }
+
+    let mut pairs = Vec::new();
+    for (hash, deleted_paths) in &hash_to_deleted {
+        let [deleted] = deleted_paths.as_slice() else {
+            continue;
+        };
+        let Some([untracked_path]) = hash_to_untracked.get(hash).map(Vec::as_slice) else {
+            continue;
+        };
+        pairs.push(((*deleted).clone(), (*untracked_path).clone()));
+    }
+    pairs
+}
+
+/// The git object hash each of `paths` has in the index right now, via a
+/// single batched `git ls-files -s`.
+fn index_blob_hashes(toplevel: &Path, paths: &[PathBuf]) -> Vec<(PathBuf, String)> {
+    let Ok(output) = Command::new("git")
+        .arg("-C")
+        .arg(toplevel)
+        .arg("ls-files")
+        .arg("-s")
+        .arg("--")
+        .args(paths)
+        .output()
+    else {
+        return Vec::new();
+    };
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            // "<mode> <sha> <stage>\t<path>"
+            let (meta, path) = line.split_once('\t')?;
+            let hash = meta.split_whitespace().nth(1)?;
+            Some((toplevel.join(path), hash.to_string()))
+        })
+        .collect()
+}
+
+/// The git object hash each of `paths` would have if added right now, via a
+/// single batched `git hash-object`.
+fn working_tree_hashes(toplevel: &Path, paths: &[PathBuf]) -> Vec<(PathBuf, String)> {
+    let Ok(output) = Command::new("git")
+        .arg("-C")
+        .arg(toplevel)
+        .arg("hash-object")
+        .arg("--")
+        .args(paths)
+        .output()
+    else {
+        return Vec::new();
+    };
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .zip(paths)
+        .map(|(hash, path)| (path.clone(), hash.to_string()))
+        .collect()
 }
 
 fn git_toplevel(path: &Path) -> Option<PathBuf> {

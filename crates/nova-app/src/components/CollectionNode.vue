@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 
-import type { Collection, GitFileStatus, GitStatusMap, RequestFile } from "../types/nova";
+import { gitStatusKind, type Collection, type GitFileStatus, type GitStatusMap, type RequestFile } from "../types/nova";
 import Icon from "./Icon.vue";
 
 const props = defineProps<{
@@ -35,12 +35,21 @@ function statusFor(path: string): GitFileStatus | null {
   return props.gitStatus?.[path] ?? null;
 }
 
-const statusLabels: Record<GitFileStatus, string> = {
+const statusLabels: Record<ReturnType<typeof gitStatusKind>, string> = {
   untracked: "Untracked",
   unstaged: "Modified, not staged",
   staged: "Staged",
   committed: "Committed",
+  renamed: "Renamed",
 };
+
+function statusTitle(status: GitFileStatus): string {
+  if (typeof status !== "string") {
+    const fromName = status.renamed.from.split("/").pop() ?? status.renamed.from;
+    return `Renamed from ${fromName}`;
+  }
+  return statusLabels[status];
+}
 
 // A small dot on the collection's own label when anything underneath it
 // (at any depth) has a non-clean git status, so a collapsed/nested
@@ -173,8 +182,8 @@ function methodClass(method: string): string {
             <span
               v-if="statusFor(request.path)"
               class="collection-tree__git-badge"
-              :class="`collection-tree__git-badge--${statusFor(request.path)}`"
-              :title="statusLabels[statusFor(request.path)!]"
+              :class="`collection-tree__git-badge--${gitStatusKind(statusFor(request.path)!)}`"
+              :title="statusTitle(statusFor(request.path)!)"
             ></span>
           </span>
           <span class="collection-tree__actions">
