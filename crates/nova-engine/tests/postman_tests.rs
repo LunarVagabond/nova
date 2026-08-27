@@ -40,6 +40,31 @@ fn top_level_requests_have_no_collection_path() {
 }
 
 #[test]
+fn warns_about_auth_that_was_not_translated_into_a_generated_request() {
+    let collection = fixture("collection.json");
+    let project = generate_from_postman_collection(&collection).unwrap();
+
+    assert_eq!(
+        project.warnings.len(),
+        1,
+        "warnings: {:?}",
+        project.warnings
+    );
+    assert!(project.warnings[0].contains("List Users"));
+    assert!(project.warnings[0].contains("bearer"));
+
+    // No request generated has an [auth] section either way — mapping a
+    // Postman auth block in is out of scope, this only makes the drop
+    // visible instead of silent.
+    let list_users = project
+        .requests
+        .iter()
+        .find(|r| r.file_name == "list_users.nova")
+        .expect("List Users should still generate a request");
+    assert!(!list_users.contents.contains("[auth]"));
+}
+
+#[test]
 fn folders_map_to_nested_collection_directories() {
     let collection = fixture("collection.json");
     let project = generate_from_postman_collection(&collection).unwrap();
