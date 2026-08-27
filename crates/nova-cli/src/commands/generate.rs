@@ -80,6 +80,10 @@ fn write_generated_project(generated: &GeneratedProject, output: &Path) -> Resul
         generated.requests.len()
     );
 
+    for warning in &generated.warnings {
+        println!("warning: {warning}");
+    }
+
     Ok(())
 }
 

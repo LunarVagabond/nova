@@ -86,9 +86,20 @@ pub fn send_request(request_path: String, environment: Option<String>) -> Result
     };
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
 
+    let collection_variables = project
+        .collections
+        .containing(path)
+        .map(|collection| collection.variables.clone())
+        .unwrap_or_default();
+
     let mut session = Session::new();
     let (_resolved, response) = session
-        .resolve_and_execute(&project.root, &parsed, &resolved_environment)
+        .resolve_and_execute_in_collection(
+            &project.root,
+            &parsed,
+            &resolved_environment,
+            &collection_variables,
+        )
         .map_err(|e| e.to_string())?;
     Ok(response)
 }

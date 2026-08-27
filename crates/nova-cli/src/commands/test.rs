@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use nova_engine::{evaluate, Environment, NovaProject, RequestFile, Session};
+use nova_engine::{evaluate, Collection, Environment, NovaProject, RequestFile, Session};
 
 use crate::discovery::{requests_at, resolve_environment};
 
@@ -28,7 +28,13 @@ pub fn run(path: &Path, environment: Option<&str>) -> Result<(), String> {
     let mut had_error = false;
 
     for request_file in requests {
-        match test_one(&project.root, request_file, &environment, &mut session) {
+        match test_one(
+            &project.root,
+            request_file,
+            &environment,
+            &project.collections,
+            &mut session,
+        ) {
             Ok(summary) => {
                 total_passed += summary.passed;
                 total_failed += summary.failed;
@@ -54,11 +60,21 @@ fn test_one(
     project_root: &Path,
     request_file: &RequestFile,
     environment: &Environment,
+    collections: &Collection,
     session: &mut Session,
 ) -> Result<TestSummary, String> {
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
+    let collection_variables = collections
+        .containing(&request_file.path)
+        .map(|collection| collection.variables.clone())
+        .unwrap_or_default();
     let (resolved, response) = session
-        .resolve_and_execute(project_root, &parsed, environment)
+        .resolve_and_execute_in_collection(
+            project_root,
+            &parsed,
+            environment,
+            &collection_variables,
+        )
         .map_err(|e| e.to_string())?;
 
     println!("{} {}", resolved.method, resolved.full_url());

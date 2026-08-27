@@ -173,7 +173,32 @@ impl Session {
         parsed: &ParsedRequest,
         environment: &Environment,
     ) -> NovaResult<(ParsedRequest, Response)> {
-        let effective_environment = self.environment_with_chained_variables(environment);
+        self.resolve_and_execute_in_collection(project_root, parsed, environment, &HashMap::new())
+    }
+
+    /// Like [`Session::resolve_and_execute`], but also folds in
+    /// `collection_variables` — the values from the request's owning
+    /// collection's `_collection.yaml` (see
+    /// [`crate::collection::Collection::variables`] /
+    /// [`crate::collection::Collection::containing`]).
+    ///
+    /// Precedence, from lowest to highest: collection variables, then this
+    /// session's chained variables, then the environment's own variables
+    /// — an environment-declared variable always wins over a same-named
+    /// collection or chained one, and a chained one wins over a
+    /// same-named collection one. Collection variables exist to hold
+    /// shared, rarely-changing values (a base path, a constant) so they
+    /// don't need duplicating into every environment file; anything more
+    /// specific still overrides them.
+    pub fn resolve_and_execute_in_collection(
+        &mut self,
+        project_root: &Path,
+        parsed: &ParsedRequest,
+        environment: &Environment,
+        collection_variables: &HashMap<String, String>,
+    ) -> NovaResult<(ParsedRequest, Response)> {
+        let effective_environment =
+            self.environment_with_variables(environment, collection_variables);
         let resolved = parsed.resolve(&effective_environment)?;
         let response = self.execute(project_root, &resolved)?;
         self.store_extractions(&resolved, &response)?;
@@ -224,8 +249,13 @@ impl Session {
         Ok(Some(header))
     }
 
-    fn environment_with_chained_variables(&self, environment: &Environment) -> Environment {
-        let mut variables = self.chained_variables.clone();
+    fn environment_with_variables(
+        &self,
+        environment: &Environment,
+        collection_variables: &HashMap<String, String>,
+    ) -> Environment {
+        let mut variables = collection_variables.clone();
+        variables.extend(self.chained_variables.clone());
         variables.extend(environment.variables.clone());
         Environment {
             name: environment.name.clone(),
@@ -256,6 +286,8 @@ impl Session {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     #[test]
@@ -296,6 +328,65 @@ mod tests {
         assert_eq!(
             jar.header_for(&url::Url::parse("http://example.com/admin/dashboard").unwrap()),
             Some("admin_token=xyz".to_string())
+        );
+    }
+
+    fn environment(variables: &[(&str, &str)]) -> Environment {
+        Environment {
+            name: "local".to_string(),
+            variables: variables
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            auth: None,
+            path: PathBuf::from("local.yaml"),
+        }
+    }
+
+    #[test]
+    fn collection_variables_fill_in_a_variable_missing_from_the_environment() {
+        let session = Session::new();
+        let environment = environment(&[]);
+        let collection_variables = HashMap::from([("base_path".to_string(), "/api".to_string())]);
+
+        let effective = session.environment_with_variables(&environment, &collection_variables);
+
+        assert_eq!(
+            effective.variables.get("base_path").map(String::as_str),
+            Some("/api")
+        );
+    }
+
+    #[test]
+    fn an_environment_variable_overrides_a_same_named_collection_variable() {
+        let session = Session::new();
+        let environment = environment(&[("base_path", "/from-env")]);
+        let collection_variables =
+            HashMap::from([("base_path".to_string(), "/from-collection".to_string())]);
+
+        let effective = session.environment_with_variables(&environment, &collection_variables);
+
+        assert_eq!(
+            effective.variables.get("base_path").map(String::as_str),
+            Some("/from-env")
+        );
+    }
+
+    #[test]
+    fn a_chained_variable_overrides_a_same_named_collection_variable() {
+        let mut session = Session::new();
+        session
+            .chained_variables
+            .insert("token".to_string(), "chained-token".to_string());
+        let environment = environment(&[]);
+        let collection_variables =
+            HashMap::from([("token".to_string(), "collection-token".to_string())]);
+
+        let effective = session.environment_with_variables(&environment, &collection_variables);
+
+        assert_eq!(
+            effective.variables.get("token").map(String::as_str),
+            Some("chained-token")
         );
     }
 

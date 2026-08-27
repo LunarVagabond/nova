@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import {
   parseCurlCommand,
@@ -44,6 +44,7 @@ const props = defineProps<{
   selectedEnvironment: string | null;
   /** The open project's Nova root (`NovaProject.root`) — a multipart file attachment's path is stored relative to this. */
   projectRoot: string;
+  active: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -443,8 +444,22 @@ function startDrag(event: MouseEvent) {
   event.preventDefault();
 }
 
+// Every open tab keeps its own live RequestPanel instance (see the
+// `v-show` block in App.vue), so this listener is per-tab too — gate on
+// `active` or Ctrl/Cmd+Enter in a background tab would send it as well.
+function onGlobalKeydown(event: KeyboardEvent) {
+  if (!props.active || event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
+  event.preventDefault();
+  handleSend();
+}
+
+onMounted(() => {
+  window.addEventListener("keydown", onGlobalKeydown);
+});
+
 onBeforeUnmount(() => {
   dragging = false;
+  window.removeEventListener("keydown", onGlobalKeydown);
 });
 
 defineExpose({ dirty, save: handleSave });

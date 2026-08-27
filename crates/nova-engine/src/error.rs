@@ -14,7 +14,11 @@ pub enum NovaError {
     #[error("manifest not found at {0}")]
     ManifestNotFound(PathBuf),
 
-    #[error("failed to read {path}")]
+    // Covers reads, writes, and precondition checks (e.g. "already
+    // exists") alike — `source`'s own message says which, so the format
+    // here doesn't hardcode "read" for what might be a write or an
+    // existence check instead.
+    #[error("{path}: {source}")]
     Io {
         path: PathBuf,
         #[source]
@@ -103,6 +107,19 @@ pub enum NovaError {
 
     #[error("environment not found at {0}")]
     EnvironmentNotFound(PathBuf),
+
+    #[error("failed to parse collection variables at {path}")]
+    CollectionVariablesParse {
+        path: PathBuf,
+        #[source]
+        source: serde_yaml::Error,
+    },
+
+    #[error("failed to serialize collection variables for {path}: {message}")]
+    CollectionVariablesSerialize { path: PathBuf, message: String },
+
+    #[error("collection variables not found at {0}")]
+    CollectionVariablesNotFound(PathBuf),
 
     #[error("{0} already exists — refusing to overwrite an existing Nova project")]
     ProjectAlreadyExists(PathBuf),

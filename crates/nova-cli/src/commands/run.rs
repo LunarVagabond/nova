@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use nova_engine::{Environment, NovaProject, RequestFile, Session};
+use nova_engine::{Collection, Environment, NovaProject, RequestFile, Session};
 
 use crate::discovery::{requests_at, resolve_environment};
 
@@ -27,7 +27,13 @@ pub fn run(request: &Path, environment: Option<&str>) -> Result<(), String> {
     let mut session = Session::new();
     let mut had_failure = false;
     for request_file in requests {
-        if let Err(message) = run_one(&project.root, request_file, &environment, &mut session) {
+        if let Err(message) = run_one(
+            &project.root,
+            request_file,
+            &environment,
+            &project.collections,
+            &mut session,
+        ) {
             eprintln!("{}: {message}", request_file.path.display());
             had_failure = true;
         }
@@ -45,11 +51,21 @@ fn run_one(
     project_root: &Path,
     request_file: &RequestFile,
     environment: &Environment,
+    collections: &Collection,
     session: &mut Session,
 ) -> Result<(), String> {
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
+    let collection_variables = collections
+        .containing(&request_file.path)
+        .map(|collection| collection.variables.clone())
+        .unwrap_or_default();
     let (resolved, response) = session
-        .resolve_and_execute(project_root, &parsed, environment)
+        .resolve_and_execute_in_collection(
+            project_root,
+            &parsed,
+            environment,
+            &collection_variables,
+        )
         .map_err(|e| e.to_string())?;
 
     println!("{} {}", resolved.method, resolved.full_url());

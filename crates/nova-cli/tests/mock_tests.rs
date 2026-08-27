@@ -1,7 +1,18 @@
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
+
+/// Serializes the three tests below so only one `nova mock` child process
+/// runs at a time. Running all three concurrently (default Rust test
+/// parallelism within a binary) was found to intermittently starve one of
+/// them out entirely on a resource-constrained CI runner — its connection
+/// stayed refused for the *entire* retry deadline below rather than
+/// succeeding partway through, which points to the process itself dying
+/// (e.g. OOM) rather than just being slow to get scheduled. One at a time
+/// removes that contention regardless of the exact cause.
+static SERIAL: Mutex<()> = Mutex::new(());
 
 fn temp_project_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -77,17 +88,24 @@ fn spawn_mock_server(project_dir: &Path) -> (String, std::process::Child) {
 }
 
 /// `nova mock` reports its bound address as soon as the socket is listening,
-/// but under CI load the very first connection can still land before the
-/// server's accept loop is actually scheduled and get torn down with a
-/// connection reset. Retry a few times before treating that as a real
-/// failure, since it's a startup race rather than a mock-server behavior bug.
-fn get_with_retry(url: &str) -> Result<ureq::Response, Box<ureq::Error>> {
-    let mut attempts = 0;
+/// but under CI load the server process can take a while after that to
+/// actually get scheduled and start accepting. Retry for several seconds
+/// before treating a connection failure as a real failure, since it's
+/// (usually) a startup race rather than a mock-server behavior bug — this
+/// only costs time on the rare run that actually races.
+///
+/// If `child` has actually exited, though, no amount of retrying will ever
+/// succeed — fail immediately with its exit status rather than waiting out
+/// the full deadline to report a bare, uninformative "connection refused".
+fn get_with_retry(url: &str, child: &mut Child) -> Result<ureq::Response, Box<ureq::Error>> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
         match ureq::get(url).call() {
-            Err(ureq::Error::Transport(_)) if attempts < 4 => {
-                attempts += 1;
-                std::thread::sleep(std::time::Duration::from_millis(50));
+            Err(ureq::Error::Transport(transport)) if std::time::Instant::now() < deadline => {
+                if let Ok(Some(status)) = child.try_wait() {
+                    panic!("nova mock exited early with {status} instead of accepting a connection (last error: {transport})");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
             }
             result => return result.map_err(Box::new),
         }
@@ -96,12 +114,13 @@ fn get_with_retry(url: &str) -> Result<ureq::Response, Box<ureq::Error>> {
 
 #[test]
 fn serves_the_example_response_for_a_request_that_declares_one() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let dir = temp_project_dir("example-response");
     write_project(&dir);
 
     let (base_url, mut child) = spawn_mock_server(&dir);
 
-    let response = get_with_retry(&format!("{base_url}/hello")).unwrap();
+    let response = get_with_retry(&format!("{base_url}/hello"), &mut child).unwrap();
     assert_eq!(response.status(), 200);
     assert_eq!(response.into_string().unwrap().trim(), "hi there");
 
@@ -112,12 +131,13 @@ fn serves_the_example_response_for_a_request_that_declares_one() {
 
 #[test]
 fn returns_501_for_a_registered_route_with_no_example_response() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let dir = temp_project_dir("no-example");
     write_project(&dir);
 
     let (base_url, mut child) = spawn_mock_server(&dir);
 
-    let err = get_with_retry(&format!("{base_url}/missing")).unwrap_err();
+    let err = get_with_retry(&format!("{base_url}/missing"), &mut child).unwrap_err();
     match *err {
         ureq::Error::Status(code, _) => assert_eq!(code, 501),
         ureq::Error::Transport(transport) => panic!("unexpected transport error: {transport}"),
@@ -130,12 +150,13 @@ fn returns_501_for_a_registered_route_with_no_example_response() {
 
 #[test]
 fn returns_404_for_a_path_with_no_matching_route() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let dir = temp_project_dir("no-route");
     write_project(&dir);
 
     let (base_url, mut child) = spawn_mock_server(&dir);
 
-    let err = get_with_retry(&format!("{base_url}/nope")).unwrap_err();
+    let err = get_with_retry(&format!("{base_url}/nope"), &mut child).unwrap_err();
     match *err {
         ureq::Error::Status(code, _) => assert_eq!(code, 404),
         ureq::Error::Transport(transport) => panic!("unexpected transport error: {transport}"),

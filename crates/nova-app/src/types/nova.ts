@@ -82,7 +82,17 @@ export interface NovaProject {
 }
 
 /** Mirrors `nova_engine::GitFileStatus`. */
-export type GitFileStatus = "untracked" | "unstaged" | "staged" | "committed";
+export type GitFileStatus =
+  | "untracked"
+  | "unstaged"
+  | "staged"
+  | "committed"
+  | { renamed: { from: string } };
+
+/** The status "kind" regardless of whether it's a plain string or `Renamed`'s object shape. */
+export function gitStatusKind(status: GitFileStatus): "untracked" | "unstaged" | "staged" | "committed" | "renamed" {
+  return typeof status === "string" ? status : "renamed";
+}
 
 /**
  * Per-file git status for a project, keyed by absolute path (matching

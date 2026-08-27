@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use crate::collection_variables::load_collection_variables;
 use crate::error::{NovaError, NovaResult};
 use crate::request::RequestFile;
 
@@ -17,6 +19,12 @@ pub struct Collection {
     pub path: PathBuf,
     pub children: Vec<Collection>,
     pub requests: Vec<RequestFile>,
+    /// Variables scoped to this collection directory, loaded from a
+    /// `_collection.yaml` file directly inside it (see
+    /// [`crate::collection_variables`]). Empty when no such file exists.
+    /// Scoping is per-directory, not inherited by children — see
+    /// [`crate::CollectionVariables`] for why.
+    pub variables: HashMap<String, String>,
 }
 
 impl Collection {
@@ -28,6 +36,20 @@ impl Collection {
                 .iter()
                 .map(Collection::request_count)
                 .sum::<usize>()
+    }
+
+    /// Find the collection (this one, or a descendant) whose `requests`
+    /// directly contains a request at `request_path`, so a caller with
+    /// just a request's filesystem path can look up the variables that
+    /// apply to it (`&collection.variables`) without re-walking the tree
+    /// itself.
+    pub fn containing(&self, request_path: &Path) -> Option<&Collection> {
+        if self.requests.iter().any(|r| r.path == request_path) {
+            return Some(self);
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.containing(request_path))
     }
 }
 
@@ -84,11 +106,14 @@ fn load_collection_dir(dir: &Path) -> NovaResult<Collection> {
         }
     }
 
+    let variables = load_collection_variables(dir)?.variables;
+
     Ok(Collection {
         name,
         path: dir.to_path_buf(),
         children,
         requests,
+        variables,
     })
 }
 
@@ -148,6 +173,7 @@ pub fn create_collection(parent_dir: &Path, name: &str) -> NovaResult<Collection
         path,
         children: Vec::new(),
         requests: Vec::new(),
+        variables: HashMap::new(),
     })
 }
 
