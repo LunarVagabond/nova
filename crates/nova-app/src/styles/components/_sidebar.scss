@@ -313,6 +313,13 @@
   background-color: var(--color-success);
 }
 
+// Reuses the warning color rather than introducing a fifth palette color
+// (see _base.scss) — a rename is an in-progress change either way, whether
+// git itself detected it staged or nova matched it up unstaged by content.
+.collection-tree__git-badge--renamed {
+  background-color: var(--color-warning);
+}
+
 // A short, colored HTTP-method tag — reuses the app's fixed 4-color
 // palette (see _base.scss) rather than a per-method color of its own.
 .method-badge {
