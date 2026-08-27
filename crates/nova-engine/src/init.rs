@@ -7,6 +7,7 @@ use std::process::Command;
 use serde::Serialize;
 
 use crate::error::{NovaError, NovaResult};
+use crate::git_diagnostics::describe_spawn_failure;
 use crate::manifest::{Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION};
 
 /// The environment name (and file stem) used for the single starter
@@ -339,7 +340,7 @@ fn git_hooks_dir(path: &Path) -> NovaResult<PathBuf> {
         .args(["rev-parse", "--git-dir"])
         .output()
         .map_err(|source| NovaError::HookInstall {
-            message: format!("failed to run git: {source}"),
+            message: describe_spawn_failure(&source),
         })?;
 
     if !output.status.success() {
@@ -349,7 +350,9 @@ fn git_hooks_dir(path: &Path) -> NovaResult<PathBuf> {
     let relative_to_cwd = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if relative_to_cwd.is_empty() {
         return Err(NovaError::HookInstall {
-            message: "git reported an empty git-dir".to_string(),
+            message: "git reported an empty git-dir — this repository may be in an unusual \
+                      state (e.g. a corrupt or partially-initialized .git directory)"
+                .to_string(),
         });
     }
 

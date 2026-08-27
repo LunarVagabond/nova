@@ -5,6 +5,7 @@ use std::process::Command;
 use serde::Serialize;
 
 use crate::error::{NovaError, NovaResult};
+use crate::git_diagnostics::{describe_command_failure, describe_spawn_failure};
 
 /// Where a single file stands relative to git, ordered from "furthest from
 /// committed" to "closest": a file with changes in more than one stage
@@ -47,12 +48,12 @@ pub fn git_status(project_root: &Path) -> NovaResult<Option<HashMap<PathBuf, Git
         .args(["status", "--porcelain=v1", "--untracked-files=all"])
         .output()
         .map_err(|source| NovaError::GitStatus {
-            message: source.to_string(),
+            message: describe_spawn_failure(&source),
         })?;
 
     if !output.status.success() {
         return Err(NovaError::GitStatus {
-            message: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            message: describe_command_failure(&output.stderr),
         });
     }
 
