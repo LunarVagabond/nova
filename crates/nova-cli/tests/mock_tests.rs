@@ -76,6 +76,24 @@ fn spawn_mock_server(project_dir: &Path) -> (String, std::process::Child) {
     (base_url, child)
 }
 
+/// `nova mock` reports its bound address as soon as the socket is listening,
+/// but under CI load the very first connection can still land before the
+/// server's accept loop is actually scheduled and get torn down with a
+/// connection reset. Retry a few times before treating that as a real
+/// failure, since it's a startup race rather than a mock-server behavior bug.
+fn get_with_retry(url: &str) -> Result<ureq::Response, Box<ureq::Error>> {
+    let mut attempts = 0;
+    loop {
+        match ureq::get(url).call() {
+            Err(ureq::Error::Transport(_)) if attempts < 4 => {
+                attempts += 1;
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            result => return result.map_err(Box::new),
+        }
+    }
+}
+
 #[test]
 fn serves_the_example_response_for_a_request_that_declares_one() {
     let dir = temp_project_dir("example-response");
@@ -83,7 +101,7 @@ fn serves_the_example_response_for_a_request_that_declares_one() {
 
     let (base_url, mut child) = spawn_mock_server(&dir);
 
-    let response = ureq::get(&format!("{base_url}/hello")).call().unwrap();
+    let response = get_with_retry(&format!("{base_url}/hello")).unwrap();
     assert_eq!(response.status(), 200);
     assert_eq!(response.into_string().unwrap().trim(), "hi there");
 
@@ -99,10 +117,8 @@ fn returns_501_for_a_registered_route_with_no_example_response() {
 
     let (base_url, mut child) = spawn_mock_server(&dir);
 
-    let err = ureq::get(&format!("{base_url}/missing"))
-        .call()
-        .unwrap_err();
-    match err {
+    let err = get_with_retry(&format!("{base_url}/missing")).unwrap_err();
+    match *err {
         ureq::Error::Status(code, _) => assert_eq!(code, 501),
         ureq::Error::Transport(transport) => panic!("unexpected transport error: {transport}"),
     }
@@ -119,8 +135,8 @@ fn returns_404_for_a_path_with_no_matching_route() {
 
     let (base_url, mut child) = spawn_mock_server(&dir);
 
-    let err = ureq::get(&format!("{base_url}/nope")).call().unwrap_err();
-    match err {
+    let err = get_with_retry(&format!("{base_url}/nope")).unwrap_err();
+    match *err {
         ureq::Error::Status(code, _) => assert_eq!(code, 404),
         ureq::Error::Transport(transport) => panic!("unexpected transport error: {transport}"),
     }
