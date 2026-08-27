@@ -751,6 +751,7 @@ async function confirmDeleteEnvironment() {
         <template v-for="tab in openTabs" :key="tab.path">
           <RequestPanel
             v-show="project && mainView === 'request' && tab.path === activeRequestPath"
+            :active="project !== null && mainView === 'request' && tab.path === activeRequestPath"
             :request="tab"
             :selected-environment="selectedEnvironment"
             @dirty-change="tabDirty[tab.path] = $event"
