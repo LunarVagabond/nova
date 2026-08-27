@@ -22,6 +22,7 @@ mod project;
 mod request;
 mod session;
 mod validate;
+mod websocket;
 mod xml;
 
 pub use assertion::{
@@ -51,8 +52,9 @@ pub use project::{discover_or_not_found, NovaProject, OpenProjectOutcome, MANIFE
 pub use request::{
     delete_request, duplicate_request, multipart_fields_to_body_text, parse_multipart_fields,
     rename_request, ExampleResponse, GraphQlBody, Header, MultipartField, ParsedRequest,
-    QueryParam, RequestBody, RequestDraft, RequestFile,
+    ParsedWebSocketRequest, QueryParam, RequestBody, RequestDraft, RequestFile,
 };
 pub use session::Session;
 pub use validate::{validate, ValidationIssue};
+pub use websocket::{connect_and_exchange, WebSocketExchange, DEFAULT_READ_TIMEOUT};
 pub use xml::{XmlElement, XmlNode};

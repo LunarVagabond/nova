@@ -36,6 +36,24 @@ impl RequestFile {
         })
     }
 
+    /// Read and parse this file's contents as a WebSocket connection
+    /// declaration — the WebSocket counterpart to [`RequestFile::parse`].
+    /// See [`ParsedWebSocketRequest`].
+    ///
+    /// Errors (as a [`NovaError::RequestParse`], same as `parse`) if the
+    /// file's `[request]` section doesn't declare `protocol: websocket`,
+    /// e.g. when called on an ordinary HTTP request file.
+    pub fn parse_websocket(&self) -> NovaResult<ParsedWebSocketRequest> {
+        let contents = fs::read_to_string(&self.path).map_err(|source| NovaError::Io {
+            path: self.path.clone(),
+            source,
+        })?;
+        parse_nova_websocket(&contents).map_err(|message| NovaError::RequestParse {
+            path: self.path.clone(),
+            message,
+        })
+    }
+
     /// Write an edited [`RequestDraft`] — method/URL/query/headers/body,
     /// plus the request's `[auth]` scheme and `[settings]` — back to this
     /// file on disk, going through [`ParsedRequest::to_nova_string`]
@@ -890,6 +908,177 @@ impl ParsedRequest {
     }
 }
 
+/// A `.nova` file parsed as a WebSocket connection declaration —
+/// `protocol: websocket` under `[request]` — rather than an HTTP request.
+///
+/// Only `url`, `[headers]`, and `[messages]` apply: there's no method,
+/// query params, body, auth, or example response for a WebSocket endpoint
+/// in this first pass. See [`crate::websocket`] for what actually opens
+/// the connection and exchanges messages once a request like this has been
+/// parsed and resolved.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ParsedWebSocketRequest {
+    pub url: String,
+    pub headers: Vec<Header>,
+    /// Text messages to send, in order, once the connection is open —
+    /// declared under `[messages]`, one per line.
+    pub messages: Vec<String>,
+}
+
+impl ParsedWebSocketRequest {
+    /// Resolve `{{variable}}` placeholders in the URL, header values, and
+    /// messages against `environment`'s variables — the WebSocket
+    /// counterpart to [`ParsedRequest::resolve`]. There's no auth scheme or
+    /// body to resolve here, just these three.
+    pub fn resolve(&self, environment: &Environment) -> NovaResult<ParsedWebSocketRequest> {
+        let headers = self
+            .headers
+            .iter()
+            .map(|h| {
+                Ok(Header {
+                    name: h.name.clone(),
+                    value: substitute(&h.value, environment)?,
+                })
+            })
+            .collect::<NovaResult<Vec<_>>>()?;
+        let messages = self
+            .messages
+            .iter()
+            .map(|message| substitute(message, environment))
+            .collect::<NovaResult<Vec<_>>>()?;
+
+        Ok(ParsedWebSocketRequest {
+            url: substitute(&self.url, environment)?,
+            headers,
+            messages,
+        })
+    }
+}
+
+/// Parse a `.nova` file's raw contents as a WebSocket connection
+/// declaration — the WebSocket counterpart to [`parse_nova`].
+///
+/// Expected shape:
+/// ```text
+/// [request]
+/// protocol: websocket
+/// url: {{ws_base_url}}/socket
+///
+/// [headers]
+/// Authorization: Bearer {{token}}
+///
+/// [messages]
+/// {"type": "subscribe", "channel": "prices"}
+/// ping
+/// ```
+/// `[request]` must declare `protocol: websocket` (any other or missing
+/// value is an error — that's how a caller tells an HTTP request file
+/// apart from a WebSocket one before parsing which kind it needs).
+/// `[params]`, `[auth]`, `[body]`, `[assert]`, `[settings]`, and
+/// `[response ...]` sections don't apply to a WebSocket connection and are
+/// silently ignored if present.
+fn parse_nova_websocket(contents: &str) -> Result<ParsedWebSocketRequest, String> {
+    let mut current: Option<Section> = None;
+    let mut request_lines: Vec<&str> = Vec::new();
+    let mut header_lines: Vec<&str> = Vec::new();
+    let mut message_lines: Vec<&str> = Vec::new();
+
+    for line in contents.lines() {
+        if let Some((section, _status)) = parse_section_marker(line) {
+            current = Some(section);
+            continue;
+        }
+
+        match current {
+            None => {
+                if !line.trim().is_empty() {
+                    return Err(format!(
+                        "content before the first [section] marker (expected \"[request]\" first): {line:?}"
+                    ));
+                }
+            }
+            Some(Section::Request) => request_lines.push(line),
+            Some(Section::Headers) => header_lines.push(line),
+            Some(Section::Messages) => message_lines.push(line),
+            // Not meaningful for a WebSocket connection — ignored rather
+            // than rejected, so a file can carry, say, a `[settings]`
+            // section without that being an error here.
+            Some(
+                Section::Settings
+                | Section::Params
+                | Section::Auth
+                | Section::Body
+                | Section::Assert
+                | Section::Response,
+            ) => {}
+        }
+    }
+
+    if request_lines.is_empty() && current.is_none() {
+        return Err("empty request file".to_string());
+    }
+
+    let mut protocol = None;
+    let mut url = None;
+    for line in &request_lines {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let (key, value) = line.split_once(':').ok_or_else(|| {
+            format!("malformed [request] line (expected \"key: value\"): {line:?}")
+        })?;
+        match key.trim().to_ascii_lowercase().as_str() {
+            "protocol" => protocol = Some(value.trim().to_string()),
+            "url" => url = Some(value.trim().to_string()),
+            _ => {}
+        }
+    }
+
+    match protocol.as_deref() {
+        Some(value) if value.eq_ignore_ascii_case("websocket") => {}
+        Some(other) => {
+            return Err(format!(
+                "[request] section's \"protocol:\" is {other:?}, expected \"websocket\""
+            ))
+        }
+        None => {
+            return Err("[request] section is missing a \"protocol: websocket\" line".to_string())
+        }
+    }
+
+    let url = url.ok_or_else(|| "[request] section is missing a \"url:\" line".to_string())?;
+    if url.is_empty() {
+        return Err("[request] section's \"url:\" line has no value".to_string());
+    }
+
+    let mut headers = Vec::new();
+    for line in &header_lines {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let (name, value) = line.split_once(':').ok_or_else(|| {
+            format!("malformed [headers] line (expected \"Name: Value\"): {line:?}")
+        })?;
+        headers.push(Header {
+            name: name.trim().to_string(),
+            value: value.trim().to_string(),
+        });
+    }
+
+    let messages = message_lines
+        .iter()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .map(|line| line.to_string())
+        .collect();
+
+    Ok(ParsedWebSocketRequest {
+        url,
+        headers,
+        messages,
+    })
+}
+
 /// Replace every `{{name}}` placeholder in `text` with the matching
 /// variable from `environment`. A placeholder with no closing `}}` is left
 /// as literal text; a placeholder naming a variable the environment doesn't
@@ -1040,6 +1229,11 @@ enum Section {
     Body,
     Assert,
     Response,
+    /// `[messages]` — text messages to send, one per line, in order, once
+    /// a WebSocket connection is open. Only meaningful for a request whose
+    /// `[request]` section declares `protocol: websocket` — see
+    /// [`ParsedWebSocketRequest`].
+    Messages,
 }
 
 /// Recognize a line as a section marker, returning the section it starts
@@ -1062,6 +1256,7 @@ fn parse_section_marker(line: &str) -> Option<(Section, Option<String>)> {
         "body" => Some((Section::Body, None)),
         "assert" => Some((Section::Assert, None)),
         "response" => Some((Section::Response, None)),
+        "messages" => Some((Section::Messages, None)),
         _ => {
             let status = inner.strip_prefix("response ")?;
             if !status.is_empty() && status.chars().all(|c| c.is_ascii_digit()) {
@@ -1134,6 +1329,11 @@ fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
                     lines.push(line);
                 }
             }
+            // `[messages]` only applies to a WebSocket request (see
+            // `parse_nova_websocket`) — an HTTP request's `.nova` file
+            // never has one, but a stray one is ignored rather than
+            // rejected outright.
+            Some(Section::Messages) => {}
         }
     }
 
@@ -2506,5 +2706,82 @@ mod tests {
             reparsed.body,
             RequestBody::Json(serde_json::json!({"name": "Jane"}))
         );
+    }
+
+    #[test]
+    fn parses_a_minimal_websocket_request() {
+        let contents = "[request]\nprotocol: websocket\nurl: {{ws_base_url}}/socket\n";
+
+        let parsed = parse_nova_websocket(contents).unwrap();
+
+        assert_eq!(parsed.url, "{{ws_base_url}}/socket");
+        assert!(parsed.headers.is_empty());
+        assert!(parsed.messages.is_empty());
+    }
+
+    #[test]
+    fn parses_a_websocket_request_with_headers_and_messages() {
+        let contents = "[request]\nprotocol: websocket\nurl: wss://example.com/socket\n\n[headers]\nAuthorization: Bearer {{token}}\n\n[messages]\n{\"type\": \"subscribe\"}\nping\n";
+
+        let parsed = parse_nova_websocket(contents).unwrap();
+
+        assert_eq!(parsed.url, "wss://example.com/socket");
+        assert_eq!(
+            parsed.headers,
+            vec![Header {
+                name: "Authorization".to_string(),
+                value: "Bearer {{token}}".to_string(),
+            }]
+        );
+        assert_eq!(
+            parsed.messages,
+            vec!["{\"type\": \"subscribe\"}".to_string(), "ping".to_string()]
+        );
+    }
+
+    #[test]
+    fn websocket_parse_rejects_a_missing_protocol_declaration() {
+        let contents = "[request]\nurl: ws://example.com/socket\n";
+
+        let err = parse_nova_websocket(contents).unwrap_err();
+
+        assert!(err.contains("protocol"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn websocket_parse_rejects_an_http_request_file() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/users\n";
+
+        let err = parse_nova_websocket(contents).unwrap_err();
+
+        assert!(err.contains("protocol"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn websocket_request_resolves_url_headers_and_messages() {
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("ws_base_url".to_string(), "wss://example.com".to_string());
+        variables.insert("token".to_string(), "secret123".to_string());
+        let environment = Environment {
+            name: "local".to_string(),
+            variables,
+            auth: None,
+            path: PathBuf::from("local.yaml"),
+        };
+
+        let parsed = ParsedWebSocketRequest {
+            url: "{{ws_base_url}}/socket".to_string(),
+            headers: vec![Header {
+                name: "Authorization".to_string(),
+                value: "Bearer {{token}}".to_string(),
+            }],
+            messages: vec!["hello {{token}}".to_string()],
+        };
+
+        let resolved = parsed.resolve(&environment).unwrap();
+
+        assert_eq!(resolved.url, "wss://example.com/socket");
+        assert_eq!(resolved.headers[0].value, "Bearer secret123");
+        assert_eq!(resolved.messages[0], "hello secret123");
     }
 }

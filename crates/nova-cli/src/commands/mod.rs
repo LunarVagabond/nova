@@ -9,3 +9,4 @@ pub mod new;
 pub mod run;
 pub mod test;
 pub mod validate;
+pub mod websocket;

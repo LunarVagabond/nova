@@ -24,6 +24,12 @@ fn main() {
             request,
             environment,
         }) => commands::run::run(&request, environment.as_deref()),
+        Some(Command::Ws {
+            request,
+            environment,
+            messages,
+            timeout_secs,
+        }) => commands::websocket::run(&request, environment.as_deref(), &messages, timeout_secs),
         Some(Command::Test { path, environment }) => {
             commands::test::run(&path, environment.as_deref())
         }

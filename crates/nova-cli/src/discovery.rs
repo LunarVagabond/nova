@@ -49,6 +49,14 @@ pub fn requests_at<'a>(
     ))
 }
 
+/// Find the single request file at `target` — unlike [`requests_at`], never
+/// expands a directory into every request under it. A WebSocket connection
+/// operates on exactly one `.nova` file at a time, so `nova ws` uses this
+/// instead.
+pub fn request_at<'a>(root: &'a Collection, target: &Path) -> Result<&'a RequestFile, String> {
+    find_request(root, target).ok_or_else(|| format!("no request found at {}", target.display()))
+}
+
 fn find_request<'a>(collection: &'a Collection, target: &Path) -> Option<&'a RequestFile> {
     collection
         .requests

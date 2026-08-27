@@ -1,0 +1,10 @@
+[request]
+protocol: websocket
+url: {{ws_base_url}}/echo
+
+[headers]
+Authorization: Bearer {{auth_token}}
+
+[messages]
+hello
+world

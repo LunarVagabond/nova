@@ -1,0 +1,5 @@
+name: local
+
+variables:
+  ws_base_url: ws://localhost:9999
+  auth_token: dev-token

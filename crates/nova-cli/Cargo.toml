@@ -18,4 +18,5 @@ tiny_http.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+tungstenite.workspace = true
 ureq.workspace = true
