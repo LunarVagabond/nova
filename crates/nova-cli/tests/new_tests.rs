@@ -75,6 +75,32 @@ fn new_request_with_collection_flag_creates_it_in_the_named_subdirectory() {
 }
 
 #[test]
+fn new_request_with_graphql_flag_scaffolds_a_graphql_body() {
+    let dir = temp_dir("request-graphql");
+    write_project(&dir);
+
+    let output = nova(&[
+        "new",
+        "request",
+        "get-user",
+        dir.to_str().unwrap(),
+        "--graphql",
+    ]);
+
+    assert!(output.status.success(), "{output:?}");
+    let contents = fs::read_to_string(dir.join("nova/collections/get-user.nova")).unwrap();
+    assert!(contents.contains("method: POST"), "{contents}");
+    assert!(contents.contains("url: {{base_url}}/graphql"), "{contents}");
+    assert!(
+        contents.contains("Content-Type: application/graphql+json"),
+        "{contents}"
+    );
+    assert!(contents.contains("[variables]"), "{contents}");
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn new_request_refuses_an_empty_name() {
     let dir = temp_dir("request-empty-name");
     write_project(&dir);

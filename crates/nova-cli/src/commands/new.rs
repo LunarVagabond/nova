@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use nova_engine::{create_collection, create_environment, NovaProject, RequestFile};
+use nova_engine::{
+    create_collection, create_environment, Header, NovaProject, RequestDraft, RequestFile,
+};
 
 /// A name is a plain file/directory name inside the target directory,
 /// never a path — same rule the desktop app's own "new request" action
@@ -18,7 +20,12 @@ fn validate_request_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn request(path: &Path, collection: Option<&str>, name: &str) -> Result<(), String> {
+pub fn request(
+    path: &Path,
+    collection: Option<&str>,
+    name: &str,
+    graphql: bool,
+) -> Result<(), String> {
     validate_request_name(name)?;
 
     let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
@@ -34,6 +41,26 @@ pub fn request(path: &Path, collection: Option<&str>, name: &str) -> Result<(), 
     };
 
     let created = RequestFile::create(collection_dir.join(file_name)).map_err(|e| e.to_string())?;
+
+    if graphql {
+        let draft = RequestDraft {
+            method: "POST".to_string(),
+            url: "{{base_url}}/graphql".to_string(),
+            query: vec![],
+            headers: vec![Header {
+                name: "Content-Type".to_string(),
+                value: "application/graphql+json".to_string(),
+            }],
+            body_text: "query {\n  \n}\n\n[variables]\n{}\n".to_string(),
+            auth: None,
+            sync_content_type: true,
+            has_assertions: false,
+            has_extractions: false,
+            has_example_response: false,
+        };
+        created.write(&draft).map_err(|e| e.to_string())?;
+    }
+
     println!("Created {}", created.path.display());
     Ok(())
 }

@@ -195,7 +195,7 @@ Nova should prefer established formats where practical rather than creating prop
 Initial focus:
 
 * HTTP / REST
-* JSON, XML, form and multipart bodies
+* JSON, XML, GraphQL, form and multipart bodies
 * common authentication schemes
 * environment variables
 * cookies
@@ -204,7 +204,6 @@ Initial focus:
 
 Future protocol support:
 
-* GraphQL
 * gRPC
 * Server-Sent Events
 
