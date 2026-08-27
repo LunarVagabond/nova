@@ -32,7 +32,12 @@ pub fn execute(request: &ParsedRequest) -> NovaResult<Response> {
     let agent = ureq::Agent::new();
     let mut req = agent.request(&request.method, &request.full_url());
 
-    let has_header = |name: &str| request.headers.iter().any(|h| h.name.eq_ignore_ascii_case(name));
+    let has_header = |name: &str| {
+        request
+            .headers
+            .iter()
+            .any(|h| h.name.eq_ignore_ascii_case(name))
+    };
     if !has_header("User-Agent") {
         req = req.set("User-Agent", DEFAULT_USER_AGENT);
     }
