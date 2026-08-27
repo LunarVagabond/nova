@@ -49,6 +49,9 @@
 }
 
 .kv-editor__remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   width: $control-height;
   height: $control-height;
@@ -64,6 +67,9 @@
 }
 
 .kv-editor__add {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
   align-self: stretch;
   padding: $spacing-xs $spacing-sm;
   border: none;
