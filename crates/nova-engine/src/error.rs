@@ -14,7 +14,11 @@ pub enum NovaError {
     #[error("manifest not found at {0}")]
     ManifestNotFound(PathBuf),
 
-    #[error("failed to read {path}")]
+    // Covers reads, writes, and precondition checks (e.g. "already
+    // exists") alike — `source`'s own message says which, so the format
+    // here doesn't hardcode "read" for what might be a write or an
+    // existence check instead.
+    #[error("{path}: {source}")]
     Io {
         path: PathBuf,
         #[source]

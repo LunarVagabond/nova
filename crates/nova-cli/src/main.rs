@@ -4,7 +4,7 @@ mod discovery;
 
 use clap::Parser;
 
-use cli::{Cli, Command};
+use cli::{Cli, Command, NewKind};
 
 fn main() {
     let cli = Cli::parse();
@@ -32,6 +32,17 @@ fn main() {
         Some(Command::Mock { path, host, port }) => commands::mock::run(&path, &host, port),
         Some(Command::CheckSecrets { path, staged }) => commands::check_secrets::run(&path, staged),
         Some(Command::InstallHook { path }) => commands::install_hook::run(&path),
+        Some(Command::New(NewKind::Request {
+            name,
+            path,
+            collection,
+        })) => commands::new::request(&path, collection.as_deref(), &name),
+        Some(Command::New(NewKind::Collection { name, path, parent })) => {
+            commands::new::collection(&path, parent.as_deref(), &name)
+        }
+        Some(Command::New(NewKind::Environment { name, path })) => {
+            commands::new::environment(&path, &name)
+        }
     };
 
     if let Err(message) = result {
