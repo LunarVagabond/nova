@@ -1,7 +1,14 @@
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 
 use nova_engine::{ParsedRequest, RequestBody, Session};
+
+/// `Session::execute` only consults this for a multipart file attachment;
+/// none of these tests send one, so any existing directory works.
+fn project_root() -> PathBuf {
+    std::env::temp_dir()
+}
 
 fn cookie_header_of(request: &tiny_http::Request) -> Option<String> {
     request
@@ -51,7 +58,7 @@ fn persists_cookies_across_requests_in_the_same_session() {
         extractions: vec![],
         example_response: None,
     };
-    session.execute(&login_request).unwrap();
+    session.execute(&project_root(), &login_request).unwrap();
 
     let me_request = ParsedRequest {
         method: "GET".to_string(),
@@ -65,7 +72,7 @@ fn persists_cookies_across_requests_in_the_same_session() {
         extractions: vec![],
         example_response: None,
     };
-    session.execute(&me_request).unwrap();
+    session.execute(&project_root(), &me_request).unwrap();
 
     handle.join().unwrap();
 
@@ -114,7 +121,9 @@ fn a_fresh_session_does_not_carry_cookies_from_another_session() {
         extractions: vec![],
         example_response: None,
     };
-    first_session.execute(&login_request).unwrap();
+    first_session
+        .execute(&project_root(), &login_request)
+        .unwrap();
 
     let mut second_session = Session::new();
     let check_request = ParsedRequest {
@@ -129,7 +138,9 @@ fn a_fresh_session_does_not_carry_cookies_from_another_session() {
         extractions: vec![],
         example_response: None,
     };
-    second_session.execute(&check_request).unwrap();
+    second_session
+        .execute(&project_root(), &check_request)
+        .unwrap();
 
     handle.join().unwrap();
 

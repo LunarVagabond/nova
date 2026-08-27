@@ -1,9 +1,17 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
-import { parseCurlCommand, readRequest, saveRequest, sendRequest } from "../api/nova";
+import {
+  parseCurlCommand,
+  parseMultipartBody,
+  readRequest,
+  saveRequest,
+  sendRequest,
+  serializeMultipartBody,
+} from "../api/nova";
 import type {
   AuthScheme,
+  MultipartField,
   QueryParam,
   RequestDraft,
   RequestFile,
@@ -27,12 +35,15 @@ import AuthEditor from "./AuthEditor.vue";
 import CodeEditor, { type EditorLanguage } from "./CodeEditor.vue";
 import Icon from "./Icon.vue";
 import KeyValueEditor from "./KeyValueEditor.vue";
+import MultipartEditor from "./MultipartEditor.vue";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
 const props = defineProps<{
   request: RequestFile;
   selectedEnvironment: string | null;
+  /** The open project's Nova root (`NovaProject.root`) — a multipart file attachment's path is stored relative to this. */
+  projectRoot: string;
   active: boolean;
 }>();
 
@@ -98,6 +109,14 @@ function handleBodyTypeChange(next: BodyType) {
   if (next === bodyType.value) return;
   bodyType.value = next;
 
+  if (next === "multipart") {
+    // Whatever text the body held under its previous type almost never
+    // means anything as multipart parts — start the field table empty
+    // rather than trying to reinterpret it.
+    multipartFields.value = [];
+    multipartParseError.value = null;
+  }
+
   if (!syncContentType.value) return;
 
   if (next === "none") {
@@ -110,6 +129,56 @@ function handleBodyTypeChange(next: BodyType) {
     next === "multipart" ? `multipart/form-data; boundary=${randomBoundary()}` : BODY_TYPE_CONTENT_TYPES[next],
   );
 }
+
+// Structured view of the Body tab's `multipart` body type — mirrors
+// `formFields` below, but the multipart wire format (boundaries,
+// Content-Disposition/-Type/-Location per part) is parsed/serialized by
+// the engine rather than reimplemented here, so it can't be a plain
+// computed get/set: `parseMultipartBody`/`serializeMultipartBody` are
+// async Tauri calls.
+//
+// `multipartFields` is therefore its own ref, kept in sync with `bodyText`
+// in one direction at a time:
+//  - `refreshMultipartFieldsFromText` (called on load, and after a curl
+//    paste) parses `bodyText` into `multipartFields`.
+//  - the watcher below serializes `multipartFields` back into `bodyText`
+//    whenever the user edits a row.
+// `applyingParsedFields` guards against the second reacting to the first's
+// own assignment and immediately re-serializing (usually harmless, but
+// pointlessly marks a freshly loaded request dirty before it's touched).
+const multipartFields = ref<MultipartField[]>([]);
+const multipartParseError = ref<string | null>(null);
+let applyingParsedFields = false;
+
+async function refreshMultipartFieldsFromText() {
+  multipartParseError.value = null;
+  try {
+    const fields = await parseMultipartBody(headers.value, bodyText.value);
+    applyingParsedFields = true;
+    multipartFields.value = fields;
+    await nextTick();
+    applyingParsedFields = false;
+  } catch (e) {
+    multipartFields.value = [];
+    multipartParseError.value = String(e);
+  }
+}
+
+watch(
+  multipartFields,
+  async (fields) => {
+    if (applyingParsedFields) return;
+    try {
+      bodyText.value = await serializeMultipartBody(fields, headers.value);
+    } catch {
+      // Nothing sensible to show the user here — the engine only rejects
+      // this when the Content-Type header stopped naming a boundary out
+      // from under the editor, which the Body tab's own controls don't
+      // allow while `bodyType` is "multipart".
+    }
+  },
+  { deep: true },
+);
 
 const saving = ref(false);
 const saveError = ref<string | null>(null);
@@ -204,6 +273,12 @@ async function handleUrlPaste(event: ClipboardEvent) {
     headers.value = parsed.headers.map((h) => ({ ...h }));
     bodyText.value = parsed.body ?? "";
     bodyType.value = detectBodyType(headers.value, bodyText.value);
+    if (bodyType.value === "multipart") {
+      await refreshMultipartFieldsFromText();
+    } else {
+      multipartFields.value = [];
+      multipartParseError.value = null;
+    }
   } catch (e) {
     urlDisplay.value = text;
     curlPasteError.value = String(e);
@@ -261,6 +336,12 @@ async function load() {
     auth.value = draft.auth ? { ...draft.auth } : null;
     syncContentType.value = draft.sync_content_type;
     bodyType.value = detectBodyType(headers.value, bodyText.value);
+    if (bodyType.value === "multipart") {
+      await refreshMultipartFieldsFromText();
+    } else {
+      multipartFields.value = [];
+      multipartParseError.value = null;
+    }
   } catch (e) {
     loadError.value = String(e);
     original.value = null;
@@ -538,12 +619,11 @@ defineExpose({ dirty, save: handleSave });
           value-placeholder="value"
         />
         <template v-else-if="bodyType === 'multipart'">
-          <p class="request-panel__hint-text">
-            Edited as raw multipart text for now — a structured field editor with real file
-            attachments is tracked separately (see the project's issue tracker); the format
-            itself (name/filename/Content-Type per part) is already fully supported end to end.
+          <p v-if="multipartParseError" class="request-panel__save-error">
+            Couldn't parse this request's existing multipart body: {{ multipartParseError }}. Editing
+            here will replace it.
           </p>
-          <CodeEditor v-model="bodyText" language="text" />
+          <MultipartEditor v-model="multipartFields" :project-root="projectRoot" />
         </template>
         <div v-else class="request-panel__body-editor">
           <CodeEditor v-model="bodyText" :language="editorLanguage" />

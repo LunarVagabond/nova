@@ -1,3 +1,5 @@
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -24,11 +26,16 @@ const DEFAULT_ACCEPT: &str = "*/*";
 
 /// Send `request` over HTTP and capture its response.
 ///
+/// `project_root` is only consulted for a `Multipart` body carrying a file
+/// reference (see [`MultipartField::file_path`]) — every other body ignores
+/// it. It should be the same [`crate::NovaProject::root`] the request was
+/// discovered under.
+///
 /// A non-2xx/3xx status is still a successful [`Response`] — callers (e.g.
 /// assertions) decide what a given status means. Only a genuine transport
-/// failure (connection refused, DNS failure, timeout, ...) is a typed
-/// `NovaError`.
-pub fn execute(request: &ParsedRequest) -> NovaResult<Response> {
+/// failure (connection refused, DNS failure, timeout, ...) or a missing
+/// multipart file attachment is a typed `NovaError`.
+pub fn execute(project_root: &Path, request: &ParsedRequest) -> NovaResult<Response> {
     let agent = ureq::Agent::new();
     let mut req = agent.request(&request.method, &request.full_url());
 
@@ -49,7 +56,7 @@ pub fn execute(request: &ParsedRequest) -> NovaResult<Response> {
     }
 
     let started = Instant::now();
-    let result = send(req, &request.body);
+    let result = send(project_root, req, &request.body)?;
     let elapsed = started.elapsed();
 
     match result {
@@ -64,8 +71,12 @@ pub fn execute(request: &ParsedRequest) -> NovaResult<Response> {
 // ureq::Error is large (carries a full Response on the Status variant); it's
 // matched immediately by the only caller, not stored or propagated further.
 #[allow(clippy::result_large_err)]
-fn send(req: ureq::Request, body: &RequestBody) -> Result<ureq::Response, ureq::Error> {
-    match body {
+fn send(
+    project_root: &Path,
+    req: ureq::Request,
+    body: &RequestBody,
+) -> NovaResult<Result<ureq::Response, ureq::Error>> {
+    Ok(match body {
         RequestBody::None => req.call(),
         RequestBody::Text(text) => req.send_string(text),
         RequestBody::Json(value) => {
@@ -79,21 +90,29 @@ fn send(req: ureq::Request, body: &RequestBody) -> Result<ureq::Response, ureq::
             req.send_string(&encoded)
         }
         RequestBody::Multipart(fields) => {
-            let (boundary, bytes) = encode_multipart(fields);
+            let (boundary, bytes) = encode_multipart(project_root, fields)?;
             req.set(
                 "Content-Type",
                 &format!("multipart/form-data; boundary={boundary}"),
             )
             .send_bytes(&bytes)
         }
-    }
+    })
 }
 
 /// Re-encode multipart fields as wire bytes with a fresh boundary — the
 /// boundary from the original `Content-Type` header isn't reused since
 /// `{{variable}}` resolution may have changed field values in ways that
 /// happen to collide with it.
-fn encode_multipart(fields: &[MultipartField]) -> (String, Vec<u8>) {
+///
+/// A field carrying a `file_path` has its bytes read from disk, resolved
+/// relative to `project_root`; a missing file is a typed
+/// [`NovaError::MultipartFileNotFound`] rather than silently sending an
+/// empty part.
+fn encode_multipart(
+    project_root: &Path,
+    fields: &[MultipartField],
+) -> NovaResult<(String, Vec<u8>)> {
     const BOUNDARY: &str = "NovaFormBoundary7MA4YWxkTrZu0gW";
 
     let mut body = Vec::new();
@@ -112,12 +131,68 @@ fn encode_multipart(fields: &[MultipartField]) -> (String, Vec<u8>) {
         }
 
         body.extend_from_slice(b"\r\n");
-        body.extend_from_slice(field.value.as_bytes());
+        match &field.file_path {
+            Some(file_path) => {
+                let resolved = resolve_multipart_file_path(project_root, &field.name, file_path)?;
+                let bytes = fs::read(&resolved).map_err(|_| NovaError::MultipartFileNotFound {
+                    field: field.name.clone(),
+                    path: resolved,
+                })?;
+                body.extend_from_slice(&bytes);
+            }
+            None => body.extend_from_slice(field.value.as_bytes()),
+        }
         body.extend_from_slice(b"\r\n");
     }
     body.extend_from_slice(format!("--{BOUNDARY}--\r\n").as_bytes());
 
-    (BOUNDARY.to_string(), body)
+    Ok((BOUNDARY.to_string(), body))
+}
+
+/// Resolve a multipart field's `file_path` (a reference meant to be
+/// project-root-relative, see [`MultipartField::file_path`]) to an actual
+/// path on disk, refusing anything that isn't genuinely inside
+/// `project_root`.
+///
+/// `.nova` files are plain text committed to a repo — a malicious one could
+/// otherwise set `file_path` to an absolute path (`/etc/passwd`) or a
+/// relative one that escapes the project via `..` components, and have
+/// opening/sending that request exfiltrate an arbitrary file from whoever's
+/// machine sends it. An absolute `file_path` is rejected outright (this is
+/// only ever meant to be a project-relative reference); anything else is
+/// joined onto `project_root` and then canonicalized alongside it, so a
+/// `..` escape — even through a symlink — is caught by checking the
+/// resolved path is still inside the resolved root, not just by pattern-
+/// matching on `..` in the text.
+fn resolve_multipart_file_path(
+    project_root: &Path,
+    field_name: &str,
+    file_path: &str,
+) -> NovaResult<PathBuf> {
+    let requested = Path::new(file_path);
+    let not_found = |path: PathBuf| NovaError::MultipartFileNotFound {
+        field: field_name.to_string(),
+        path,
+    };
+
+    if requested.is_absolute() {
+        return Err(not_found(requested.to_path_buf()));
+    }
+
+    let joined = project_root.join(requested);
+
+    let canonical_root = project_root
+        .canonicalize()
+        .map_err(|_| not_found(joined.clone()))?;
+    let canonical_target = joined
+        .canonicalize()
+        .map_err(|_| not_found(joined.clone()))?;
+
+    if !canonical_target.starts_with(&canonical_root) {
+        return Err(not_found(joined));
+    }
+
+    Ok(canonical_target)
 }
 
 fn build_response(response: ureq::Response, elapsed: Duration) -> NovaResult<Response> {

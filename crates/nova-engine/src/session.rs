@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use crate::assertion::resolve_extraction;
 use crate::auth::{fetch_client_credentials_token, AccessToken, AuthScheme};
@@ -111,7 +112,15 @@ impl Session {
     /// [`AuthScheme::Oauth2ClientCredentials`] has its credentials
     /// exchanged for an access token (reusing this session's cached one
     /// when it's still valid) and goes out with a `Bearer` header.
-    pub fn execute(&mut self, request: &ParsedRequest) -> NovaResult<Response> {
+    ///
+    /// `project_root` is forwarded to [`crate::execute::execute`] — it's
+    /// only consulted when the request's body has a multipart field
+    /// referencing a file on disk (see [`crate::MultipartField::file_path`]).
+    pub fn execute(
+        &mut self,
+        project_root: &Path,
+        request: &ParsedRequest,
+    ) -> NovaResult<Response> {
         let url = url::Url::parse(&request.url).map_err(|source| NovaError::RequestExecution {
             message: format!("invalid URL {:?}: {source}", request.url),
         })?;
@@ -130,7 +139,7 @@ impl Session {
             }
         }
 
-        let response = execute(&request)?;
+        let response = execute(project_root, &request)?;
 
         let set_cookie_values: Vec<&str> = response
             .headers
@@ -160,10 +169,11 @@ impl Session {
     /// that went out, not just what came back.
     pub fn resolve_and_execute(
         &mut self,
+        project_root: &Path,
         parsed: &ParsedRequest,
         environment: &Environment,
     ) -> NovaResult<(ParsedRequest, Response)> {
-        self.resolve_and_execute_in_collection(parsed, environment, &HashMap::new())
+        self.resolve_and_execute_in_collection(project_root, parsed, environment, &HashMap::new())
     }
 
     /// Like [`Session::resolve_and_execute`], but also folds in
@@ -182,6 +192,7 @@ impl Session {
     /// specific still overrides them.
     pub fn resolve_and_execute_in_collection(
         &mut self,
+        project_root: &Path,
         parsed: &ParsedRequest,
         environment: &Environment,
         collection_variables: &HashMap<String, String>,
@@ -189,7 +200,7 @@ impl Session {
         let effective_environment =
             self.environment_with_variables(environment, collection_variables);
         let resolved = parsed.resolve(&effective_environment)?;
-        let response = self.execute(&resolved)?;
+        let response = self.execute(project_root, &resolved)?;
         self.store_extractions(&resolved, &response)?;
         Ok((resolved, response))
     }

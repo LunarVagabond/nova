@@ -84,6 +84,74 @@
   }
 }
 
+// Multipart field rows' Text/File toggle and file-attachment slot — reuses
+// `.kv-editor`'s row/input/remove/add chrome above, adding just what a
+// multipart part needs beyond a plain name/value pair.
+.kv-editor__type-toggle {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-border);
+}
+
+.kv-editor__type-btn {
+  height: $control-height;
+  padding: 0 $spacing-sm;
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: $font-size-sm;
+
+  &:hover {
+    color: var(--color-text);
+    background-color: var(--color-bg-hover);
+  }
+
+  &--active {
+    color: var(--color-accent);
+    font-weight: 600;
+  }
+}
+
+.kv-editor__file-slot {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: $spacing-xs;
+  padding: 0 $spacing-sm;
+  border-right: 1px solid var(--color-border);
+}
+
+.kv-editor__file-btn {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  flex-shrink: 0;
+  height: $control-height-sm;
+  padding: 0 $spacing-xs;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-sm;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: $font-size-sm;
+
+  &:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+}
+
+.kv-editor__file-chip {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 // Resizable request/response split pane — the top pane (request editor)
 // grows to fill available space, the bottom pane (response) has an explicit
 // height dragged via the divider between them, and each scrolls on its own

@@ -29,6 +29,7 @@ pub fn run(path: &Path, environment: Option<&str>) -> Result<(), String> {
 
     for request_file in requests {
         match test_one(
+            &project.root,
             request_file,
             &environment,
             &project.collections,
@@ -56,6 +57,7 @@ pub fn run(path: &Path, environment: Option<&str>) -> Result<(), String> {
 }
 
 fn test_one(
+    project_root: &Path,
     request_file: &RequestFile,
     environment: &Environment,
     collections: &Collection,
@@ -67,7 +69,12 @@ fn test_one(
         .map(|collection| collection.variables.clone())
         .unwrap_or_default();
     let (resolved, response) = session
-        .resolve_and_execute_in_collection(&parsed, environment, &collection_variables)
+        .resolve_and_execute_in_collection(
+            project_root,
+            &parsed,
+            environment,
+            &collection_variables,
+        )
         .map_err(|e| e.to_string())?;
 
     println!("{} {}", resolved.method, resolved.full_url());

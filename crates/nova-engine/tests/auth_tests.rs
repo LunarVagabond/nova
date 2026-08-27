@@ -2,9 +2,18 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use std::path::PathBuf;
+
 use nova_engine::{
     execute, ApiKeyLocation, AuthScheme, Environment, NovaError, RequestFile, Session,
 };
+
+/// `execute`/`Session::resolve_and_execute` only consult this for a
+/// multipart file attachment; none of these tests send one, so any
+/// existing directory works.
+fn project_root() -> PathBuf {
+    std::env::temp_dir()
+}
 
 /// What a mock server actually received: the request URL (query string
 /// included), its headers, and its body.
@@ -159,7 +168,7 @@ fn a_manually_written_bearer_header_reaches_the_wire_unchanged() {
     assert_eq!(parsed.auth, None, "no [auth] section means no scheme");
 
     let resolved = parsed.resolve(&env).unwrap();
-    execute(&resolved).unwrap();
+    execute(&project_root(), &resolved).unwrap();
 
     assert_eq!(
         server.nth(0).header("Authorization"),
@@ -177,7 +186,7 @@ fn a_manually_written_api_key_header_reaches_the_wire_unchanged() {
     let env = env_with(&[("base_url", &server.url), ("api_key", "abc123")]);
 
     let resolved = request.0.parse().unwrap().resolve(&env).unwrap();
-    execute(&resolved).unwrap();
+    execute(&project_root(), &resolved).unwrap();
 
     assert_eq!(server.nth(0).header("X-Api-Key"), Some("abc123"));
 }
@@ -197,7 +206,7 @@ fn a_manually_written_api_key_query_param_reaches_the_wire_unchanged() {
         format!("{}/me?api_key=abc123", server.url)
     );
 
-    execute(&resolved).unwrap();
+    execute(&project_root(), &resolved).unwrap();
 
     assert!(server.nth(0).url.contains("api_key=abc123"));
 }
@@ -221,7 +230,7 @@ fn a_manually_written_raw_basic_header_is_still_base64_encoded_on_the_wire() {
         Some("Basic ZGV2ZWxvcGVyOmh1bnRlcjI=")
     );
 
-    execute(&resolved).unwrap();
+    execute(&project_root(), &resolved).unwrap();
 
     assert_eq!(
         server.nth(0).header("Authorization"),
@@ -252,7 +261,7 @@ fn an_auth_section_bearer_token_reaches_the_wire() {
         Some("Bearer secret-token")
     );
 
-    execute(&resolved).unwrap();
+    execute(&project_root(), &resolved).unwrap();
 
     assert_eq!(
         server.nth(0).header("Authorization"),
@@ -274,7 +283,7 @@ fn an_auth_section_basic_scheme_is_base64_encoded_on_the_wire() {
     ]);
 
     let resolved = request.0.parse().unwrap().resolve(&env).unwrap();
-    execute(&resolved).unwrap();
+    execute(&project_root(), &resolved).unwrap();
 
     assert_eq!(
         server.nth(0).header("Authorization"),
@@ -292,7 +301,7 @@ fn an_auth_section_api_key_defaults_to_a_header() {
     let env = env_with(&[("base_url", &server.url), ("api_key", "abc123")]);
 
     let resolved = request.0.parse().unwrap().resolve(&env).unwrap();
-    execute(&resolved).unwrap();
+    execute(&project_root(), &resolved).unwrap();
 
     assert_eq!(server.nth(0).header("X-API-Key"), Some("abc123"));
 }
@@ -317,7 +326,7 @@ fn an_auth_section_api_key_can_ride_as_a_query_parameter() {
         "a query-located key must not also become a header"
     );
 
-    execute(&resolved).unwrap();
+    execute(&project_root(), &resolved).unwrap();
 
     assert!(server.nth(0).url.contains("api_key=abc123"));
 }
@@ -361,7 +370,7 @@ fn an_environment_default_scheme_applies_when_the_request_declares_no_auth() {
         Some("Bearer env-default-token")
     );
 
-    execute(&resolved).unwrap();
+    execute(&project_root(), &resolved).unwrap();
 
     assert_eq!(
         server.nth(0).header("Authorization"),
@@ -572,7 +581,9 @@ fn session_execute_exchanges_credentials_and_sends_a_bearer_header() {
 
     let parsed = request.0.parse().unwrap();
     let mut session = Session::new();
-    session.resolve_and_execute(&parsed, &env).unwrap();
+    session
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
 
     assert_eq!(tokens.count(), 1);
 
@@ -610,7 +621,9 @@ fn an_omitted_scope_is_left_out_of_the_token_request() {
     let env = oauth2_env(&api, &tokens);
 
     let parsed = request.0.parse().unwrap();
-    Session::new().resolve_and_execute(&parsed, &env).unwrap();
+    Session::new()
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
 
     let form: Vec<String> = url::form_urlencoded::parse(tokens.nth(0).body.as_bytes())
         .map(|(k, _)| k.into_owned())
@@ -630,9 +643,15 @@ fn a_cached_token_is_reused_across_requests_in_the_same_session() {
 
     let parsed = request.0.parse().unwrap();
     let mut session = Session::new();
-    session.resolve_and_execute(&parsed, &env).unwrap();
-    session.resolve_and_execute(&parsed, &env).unwrap();
-    session.resolve_and_execute(&parsed, &env).unwrap();
+    session
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
+    session
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
+    session
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
 
     assert_eq!(
         tokens.count(),
@@ -659,8 +678,12 @@ fn an_expired_token_is_re_fetched() {
 
     let parsed = request.0.parse().unwrap();
     let mut session = Session::new();
-    session.resolve_and_execute(&parsed, &env).unwrap();
-    session.resolve_and_execute(&parsed, &env).unwrap();
+    session
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
+    session
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
 
     assert_eq!(tokens.count(), 2, "an expired token should not be reused");
     assert_eq!(api.nth(0).header("Authorization"), Some("Bearer token-1"));
@@ -676,8 +699,12 @@ fn a_token_with_no_advertised_expiry_is_cached_for_the_session() {
 
     let parsed = request.0.parse().unwrap();
     let mut session = Session::new();
-    session.resolve_and_execute(&parsed, &env).unwrap();
-    session.resolve_and_execute(&parsed, &env).unwrap();
+    session
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
+    session
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
 
     assert_eq!(tokens.count(), 1);
 }
@@ -690,8 +717,12 @@ fn separate_sessions_do_not_share_a_token_cache() {
     let env = oauth2_env(&api, &tokens);
 
     let parsed = request.0.parse().unwrap();
-    Session::new().resolve_and_execute(&parsed, &env).unwrap();
-    Session::new().resolve_and_execute(&parsed, &env).unwrap();
+    Session::new()
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
+    Session::new()
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
 
     assert_eq!(tokens.count(), 2);
 }
@@ -706,14 +737,18 @@ fn a_different_client_id_gets_its_own_cache_entry() {
     let mut session = Session::new();
 
     let mut first = oauth2_env(&api, &tokens);
-    session.resolve_and_execute(&parsed, &first).unwrap();
+    session
+        .resolve_and_execute(&project_root(), &parsed, &first)
+        .unwrap();
 
     // Same token endpoint, different client — the cache is keyed by both,
     // so this must not hand back the first client's token.
     first
         .variables
         .insert("client_id".to_string(), "other-client".to_string());
-    session.resolve_and_execute(&parsed, &first).unwrap();
+    session
+        .resolve_and_execute(&project_root(), &parsed, &first)
+        .unwrap();
 
     assert_eq!(tokens.count(), 2);
     assert_eq!(api.nth(0).header("Authorization"), Some("Bearer token-1"));
@@ -737,7 +772,9 @@ fn an_environment_default_oauth2_scheme_is_also_exchanged() {
     });
 
     let parsed = request.0.parse().unwrap();
-    Session::new().resolve_and_execute(&parsed, &env).unwrap();
+    Session::new()
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
 
     assert_eq!(tokens.count(), 1);
     assert_eq!(api.nth(0).header("Authorization"), Some("Bearer token-1"));
@@ -757,7 +794,7 @@ fn a_rejecting_token_endpoint_is_a_typed_error_carrying_the_reason() {
 
     let parsed = request.0.parse().unwrap();
     let err = Session::new()
-        .resolve_and_execute(&parsed, &env)
+        .resolve_and_execute(&project_root(), &parsed, &env)
         .unwrap_err();
 
     let NovaError::OAuth2TokenRequest { token_url, message } = &err else {
@@ -783,7 +820,7 @@ fn a_token_response_without_an_access_token_is_a_typed_error() {
 
     let parsed = request.0.parse().unwrap();
     let err = Session::new()
-        .resolve_and_execute(&parsed, &env)
+        .resolve_and_execute(&project_root(), &parsed, &env)
         .unwrap_err();
 
     let NovaError::OAuth2TokenRequest { message, .. } = &err else {
@@ -801,7 +838,7 @@ fn a_non_json_token_response_is_a_typed_error() {
 
     let parsed = request.0.parse().unwrap();
     let err = Session::new()
-        .resolve_and_execute(&parsed, &env)
+        .resolve_and_execute(&project_root(), &parsed, &env)
         .unwrap_err();
 
     assert!(
@@ -825,7 +862,7 @@ fn an_unreachable_token_endpoint_is_a_typed_error() {
 
     let parsed = request.0.parse().unwrap();
     let err = Session::new()
-        .resolve_and_execute(&parsed, &env)
+        .resolve_and_execute(&project_root(), &parsed, &env)
         .unwrap_err();
 
     assert!(
