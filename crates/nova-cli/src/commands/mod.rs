@@ -5,6 +5,7 @@ pub mod init;
 pub mod inspect;
 pub mod install_hook;
 pub mod mock;
+pub mod new;
 pub mod run;
 pub mod test;
 pub mod validate;

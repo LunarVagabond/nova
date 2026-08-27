@@ -160,4 +160,50 @@ pub enum Command {
         #[arg(default_value = ".")]
         path: PathBuf,
     },
+
+    /// Scaffold a new request, collection, or environment — the same
+    /// engine functions the desktop app's own "new" actions call.
+    #[command(subcommand)]
+    New(NewKind),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum NewKind {
+    /// Create a new `.nova` file with a minimal default request
+    /// (`GET {{base_url}}/`).
+    Request {
+        /// File name for the new request (a `.nova` suffix is added if missing).
+        name: String,
+
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Collection subdirectory (relative to the project's collections
+        /// root) to create the request in. Defaults to the collections
+        /// root itself.
+        #[arg(long)]
+        collection: Option<String>,
+    },
+
+    /// Create a new, empty collection subdirectory.
+    Collection {
+        name: String,
+
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Parent collection subdirectory (relative to the project's
+        /// collections root) to create it inside. Defaults to the
+        /// collections root itself.
+        #[arg(long)]
+        parent: Option<String>,
+    },
+
+    /// Create a new environment file with no variables set.
+    Environment {
+        name: String,
+
+        #[arg(default_value = ".")]
+        path: PathBuf,
+    },
 }
