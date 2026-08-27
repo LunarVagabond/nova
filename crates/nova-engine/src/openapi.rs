@@ -417,6 +417,9 @@ fn body_example(body: &RequestBody) -> Option<(&'static str, serde_json::Value)>
             "application/xml",
             serde_json::Value::String(element.to_xml_string()),
         )),
+        RequestBody::Graphql(graphql) => {
+            Some(("application/graphql+json", graphql.to_json_envelope()))
+        }
         RequestBody::Form(pairs) => Some((
             "application/x-www-form-urlencoded",
             serde_json::Value::Object(

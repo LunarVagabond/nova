@@ -209,6 +209,75 @@ fn sends_xml_body_on_the_wire() {
 }
 
 #[test]
+fn sends_graphql_body_as_a_json_envelope_on_the_wire() {
+    let (url, rx) = mock_server_capturing_request();
+
+    let request = ParsedRequest {
+        method: "POST".to_string(),
+        url,
+        query: vec![],
+        headers: vec![],
+        body: RequestBody::Graphql(nova_engine::GraphQlBody {
+            query: "query GetUser($id: ID!) { user(id: $id) { name } }".to_string(),
+            variables: Some(serde_json::json!({"id": "42"})),
+            operation_name: Some("GetUser".to_string()),
+        }),
+        auth: None,
+        sync_content_type: true,
+        assertions: vec![],
+        extractions: vec![],
+        example_response: None,
+    };
+
+    execute(&project_root(), &request).unwrap();
+
+    let (_, body) = rx.recv().unwrap();
+    let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "query": "query GetUser($id: ID!) { user(id: $id) { name } }",
+            "variables": {"id": "42"},
+            "operationName": "GetUser",
+        })
+    );
+}
+
+#[test]
+fn sends_graphql_body_with_default_empty_variables_when_none_declared() {
+    let (url, rx) = mock_server_capturing_request();
+
+    let request = ParsedRequest {
+        method: "POST".to_string(),
+        url,
+        query: vec![],
+        headers: vec![],
+        body: RequestBody::Graphql(nova_engine::GraphQlBody {
+            query: "{ users { name } }".to_string(),
+            variables: None,
+            operation_name: None,
+        }),
+        auth: None,
+        sync_content_type: true,
+        assertions: vec![],
+        extractions: vec![],
+        example_response: None,
+    };
+
+    execute(&project_root(), &request).unwrap();
+
+    let (_, body) = rx.recv().unwrap();
+    let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "query": "{ users { name } }",
+            "variables": {},
+        })
+    );
+}
+
+#[test]
 fn sends_multipart_body_with_boundary_on_the_wire() {
     let (url, rx) = mock_server_capturing_request();
 

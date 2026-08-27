@@ -324,6 +324,51 @@ pub struct MultipartField {
     pub file_path: Option<String>,
 }
 
+/// A GraphQL request body: a raw query/mutation/subscription document plus
+/// optional structured `variables` (JSON) and `operationName`, kept apart
+/// so each can be authored/edited independently rather than hand-rolled
+/// into one JSON blob. See [`RequestBody::to_body_text`]/
+/// [`RequestBody::from_text`] for how this maps to a `.nova` file's
+/// `[body]` text, and [`crate::execute`] for how it's assembled into the
+/// standard `{"query", "variables", "operationName"}` JSON envelope that
+/// actually goes out on the wire.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct GraphQlBody {
+    pub query: String,
+    pub variables: Option<serde_json::Value>,
+    pub operation_name: Option<String>,
+}
+
+impl GraphQlBody {
+    /// Assemble into the standard `{"query", "variables", "operationName"}`
+    /// JSON envelope GraphQL servers expect as the actual request body —
+    /// used both by [`crate::execute::execute`] to build the bytes sent on
+    /// the wire and by OpenAPI export to describe a request's body example.
+    /// `variables` defaults to an empty object when the request declares
+    /// none, matching how most GraphQL clients behave; `operationName` is
+    /// included only when the request actually names one.
+    pub fn to_json_envelope(&self) -> serde_json::Value {
+        let mut envelope = serde_json::Map::new();
+        envelope.insert(
+            "query".to_string(),
+            serde_json::Value::String(self.query.clone()),
+        );
+        envelope.insert(
+            "variables".to_string(),
+            self.variables
+                .clone()
+                .unwrap_or_else(|| serde_json::Value::Object(Default::default())),
+        );
+        if let Some(operation_name) = &self.operation_name {
+            envelope.insert(
+                "operationName".to_string(),
+                serde_json::Value::String(operation_name.clone()),
+            );
+        }
+        serde_json::Value::Object(envelope)
+    }
+}
+
 /// A request body, dispatched on the request's `Content-Type` header.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -331,6 +376,7 @@ pub enum RequestBody {
     None,
     Json(serde_json::Value),
     Xml(crate::xml::XmlElement),
+    Graphql(GraphQlBody),
     Text(String),
     Form(Vec<(String, String)>),
     Multipart(Vec<MultipartField>),
@@ -369,6 +415,9 @@ impl RequestBody {
             let element = crate::xml::parse_xml(body_text)
                 .map_err(|source| format!("invalid XML body: {source}"))?;
             RequestBody::Xml(element)
+        } else if content_type_essence.as_deref() == Some("application/graphql+json") {
+            let graphql = parse_graphql_body(body_text)?;
+            RequestBody::Graphql(graphql)
         } else if content_type_essence.as_deref() == Some("application/x-www-form-urlencoded") {
             let pairs = url::form_urlencoded::parse(body_text.as_bytes())
                 .map(|(k, v)| (k.into_owned(), v.into_owned()))
@@ -397,6 +446,8 @@ impl RequestBody {
             RequestBody::Json(value) => serde_json::to_string_pretty(value)
                 .map_err(|source| format!("failed to serialize JSON body: {source}"))?,
             RequestBody::Xml(element) => element.to_xml_string(),
+            RequestBody::Graphql(graphql) => graphql_body_to_text(graphql)
+                .map_err(|source| format!("failed to serialize GraphQL body: {source}"))?,
             RequestBody::Form(pairs) => {
                 let mut serializer = url::form_urlencoded::Serializer::new(String::new());
                 for (name, value) in pairs {
@@ -744,8 +795,9 @@ impl ParsedRequest {
     ///
     /// Not guaranteed byte-identical to whatever was originally parsed:
     /// a JSON body is re-pretty-printed, an XML body is re-serialized from
-    /// its element tree (see [`crate::xml::XmlElement::to_xml_string`]),
-    /// and a `[response 200]` section that named the (already-default) 200
+    /// its element tree (see [`crate::xml::XmlElement::to_xml_string`]), a
+    /// GraphQL body's `variables` are likewise re-pretty-printed, and a
+    /// `[response 200]` section that named the (already-default) 200
     /// status explicitly comes back out as bare `[response]`. When a file
     /// mixes assertion and extraction lines in its `[assert]` section,
     /// they're re-emitted grouped by kind (all extractions, then all
@@ -879,6 +931,19 @@ fn substitute_body(body: &RequestBody, environment: &Environment) -> NovaResult<
         RequestBody::Text(text) => RequestBody::Text(substitute(text, environment)?),
         RequestBody::Json(value) => RequestBody::Json(substitute_json(value, environment)?),
         RequestBody::Xml(element) => RequestBody::Xml(substitute_xml(element, environment)?),
+        RequestBody::Graphql(graphql) => RequestBody::Graphql(GraphQlBody {
+            query: substitute(&graphql.query, environment)?,
+            variables: graphql
+                .variables
+                .as_ref()
+                .map(|value| substitute_json(value, environment))
+                .transpose()?,
+            operation_name: graphql
+                .operation_name
+                .as_ref()
+                .map(|name| substitute(name, environment))
+                .transpose()?,
+        }),
         RequestBody::Form(pairs) => RequestBody::Form(
             pairs
                 .iter()
@@ -1232,6 +1297,101 @@ fn parse_response_section(status_text: &str, lines: &[&str]) -> Result<ExampleRe
     })
 }
 
+/// A GraphQL body's `[body]` text is its own tiny nested format: a raw
+/// query/mutation/subscription document, optionally followed by a
+/// `[variables]` marker line introducing its JSON variables, and/or an
+/// `[operationName]` marker line introducing its operation name. Neither
+/// marker collides with the outer `.nova` section parser (see
+/// [`parse_section_marker`]) since `variables` and `operationName` aren't
+/// among its recognized names, so they're just ordinary content as far as
+/// the outer parser is concerned — the same reasoning that lets a JSON or
+/// XML body safely contain lines that happen to look bracketed.
+fn parse_graphql_body(text: &str) -> Result<GraphQlBody, String> {
+    #[derive(PartialEq)]
+    enum Part {
+        Query,
+        Variables,
+        OperationName,
+    }
+
+    let mut current = Part::Query;
+    let mut query_lines = Vec::new();
+    let mut variables_lines = Vec::new();
+    let mut operation_name_lines = Vec::new();
+
+    for line in text.lines() {
+        match line.trim() {
+            "[variables]" => {
+                current = Part::Variables;
+                continue;
+            }
+            "[operationName]" => {
+                current = Part::OperationName;
+                continue;
+            }
+            _ => {}
+        }
+
+        match current {
+            Part::Query => query_lines.push(line),
+            Part::Variables => variables_lines.push(line),
+            Part::OperationName => operation_name_lines.push(line),
+        }
+    }
+
+    let query = query_lines.join("\n").trim().to_string();
+
+    let variables_text = variables_lines.join("\n");
+    let variables_text = variables_text.trim();
+    let variables = if variables_text.is_empty() {
+        None
+    } else {
+        Some(
+            serde_json::from_str(variables_text)
+                .map_err(|source| format!("invalid GraphQL variables JSON: {source}"))?,
+        )
+    };
+
+    let operation_name_text = operation_name_lines.join("\n");
+    let operation_name_text = operation_name_text.trim();
+    let operation_name = if operation_name_text.is_empty() {
+        None
+    } else {
+        Some(operation_name_text.to_string())
+    };
+
+    Ok(GraphQlBody {
+        query,
+        variables,
+        operation_name,
+    })
+}
+
+/// Serialize a [`GraphQlBody`] back to the `[body]` text
+/// [`parse_graphql_body`] reads — query first, then an optional
+/// `[variables]` block, then an optional `[operationName]` block.
+fn graphql_body_to_text(graphql: &GraphQlBody) -> Result<String, String> {
+    let mut out = graphql.query.trim_end().to_string();
+    out.push('\n');
+
+    if let Some(variables) = &graphql.variables {
+        out.push_str("\n[variables]\n");
+        out.push_str(
+            &serde_json::to_string_pretty(variables)
+                .map_err(|source| format!("failed to serialize GraphQL variables: {source}"))?,
+        );
+        out.push('\n');
+    }
+
+    if let Some(operation_name) = &graphql.operation_name {
+        out.push_str("\n[operationName]\n");
+        out.push_str(operation_name);
+        out.push('\n');
+    }
+
+    Ok(out)
+}
+
 /// Extract a `name=value` parameter from a `Content-Type` header value, e.g.
 /// `boundary` from `multipart/form-data; boundary=----abc123`. Handles an
 /// optionally quoted value.
@@ -1399,6 +1559,57 @@ mod tests {
             element.attributes,
             vec![("id".to_string(), "42".to_string())]
         );
+    }
+
+    #[test]
+    fn parses_request_with_graphql_body() {
+        let contents = "[request]\nmethod: POST\nurl: {{base_url}}/graphql\n\n[headers]\nContent-Type: application/graphql+json\n\n[body]\nquery GetUser($id: ID!) {\n  user(id: $id) {\n    name\n  }\n}\n\n[variables]\n{\n  \"id\": \"42\"\n}\n\n[operationName]\nGetUser\n";
+
+        let parsed = parse_nova(contents).unwrap();
+
+        let RequestBody::Graphql(graphql) = parsed.body else {
+            panic!("expected a GraphQL body");
+        };
+        assert_eq!(
+            graphql.query,
+            "query GetUser($id: ID!) {\n  user(id: $id) {\n    name\n  }\n}"
+        );
+        assert_eq!(graphql.variables, Some(serde_json::json!({"id": "42"})));
+        assert_eq!(graphql.operation_name, Some("GetUser".to_string()));
+    }
+
+    #[test]
+    fn parses_a_graphql_body_with_no_variables_or_operation_name() {
+        let contents = "[request]\nmethod: POST\nurl: {{base_url}}/graphql\n\n[headers]\nContent-Type: application/graphql+json\n\n[body]\n{ users { name } }\n";
+
+        let parsed = parse_nova(contents).unwrap();
+
+        let RequestBody::Graphql(graphql) = parsed.body else {
+            panic!("expected a GraphQL body");
+        };
+        assert_eq!(graphql.query, "{ users { name } }");
+        assert_eq!(graphql.variables, None);
+        assert_eq!(graphql.operation_name, None);
+    }
+
+    #[test]
+    fn malformed_graphql_variables_json_is_a_typed_error() {
+        let contents = "[request]\nmethod: POST\nurl: {{base_url}}/graphql\n\n[headers]\nContent-Type: application/graphql+json\n\n[body]\n{ users { name } }\n\n[variables]\nnot json\n";
+
+        let err = parse_nova(contents).unwrap_err();
+
+        assert!(err.contains("invalid GraphQL variables JSON"), "{err}");
+    }
+
+    #[test]
+    fn graphql_body_round_trips_through_to_nova_string() {
+        let contents = "[request]\nmethod: POST\nurl: {{base_url}}/graphql\n\n[headers]\nContent-Type: application/graphql+json\n\n[body]\nquery GetUser($id: ID!) {\n  user(id: $id) {\n    name\n  }\n}\n\n[variables]\n{\n  \"id\": \"42\"\n}\n\n[operationName]\nGetUser\n";
+        let parsed = parse_nova(contents).unwrap();
+
+        let regenerated = parsed.to_nova_string().unwrap();
+        let reparsed = parse_nova(&regenerated).unwrap();
+
+        assert_eq!(parsed.body, reparsed.body);
     }
 
     #[test]
@@ -1677,6 +1888,24 @@ mod tests {
             name_element.children,
             vec![XmlNode::Text("John".to_string())]
         );
+    }
+
+    #[test]
+    fn resolve_substitutes_variables_in_graphql_query_and_variables() {
+        let contents = "[request]\nmethod: POST\nurl: {{base_url}}/graphql\n\n[headers]\nContent-Type: application/graphql+json\n\n[body]\nquery GetUser($id: ID!) {\n  user(id: {{user_id}}) {\n    name\n  }\n}\n\n[variables]\n{\n  \"id\": \"{{user_id}}\"\n}\n\n[operationName]\nGetUser\n";
+        let parsed = parse_nova(contents).unwrap();
+        let env = test_environment(
+            "local",
+            &[("base_url", "http://localhost:8080"), ("user_id", "42")],
+        );
+
+        let resolved = parsed.resolve(&env).unwrap();
+
+        let RequestBody::Graphql(graphql) = resolved.body else {
+            panic!("expected a GraphQL body");
+        };
+        assert!(graphql.query.contains("user(id: 42)"), "{}", graphql.query);
+        assert_eq!(graphql.variables, Some(serde_json::json!({"id": "42"})));
     }
 
     fn test_environment_with_auth(

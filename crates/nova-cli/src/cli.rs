@@ -183,6 +183,12 @@ pub enum NewKind {
         /// root itself.
         #[arg(long)]
         collection: Option<String>,
+
+        /// Scaffold a GraphQL request instead: `POST {{base_url}}/graphql`
+        /// with an `application/graphql+json` body holding a starter query
+        /// and empty variables.
+        #[arg(long)]
+        graphql: bool,
     },
 
     /// Create a new, empty collection subdirectory.
