@@ -19,6 +19,9 @@ const emit = defineEmits<{
   (e: "createCollection", collectionPath: string): void;
   (e: "renameCollection", collection: Collection): void;
   (e: "deleteCollection", collection: Collection): void;
+  (e: "renameRequest", request: RequestFile): void;
+  (e: "duplicateRequest", request: RequestFile): void;
+  (e: "deleteRequest", request: RequestFile): void;
   (e: "createEnvironment"): void;
   /** Open the editor for the named environment. */
   (e: "manageEnvironment", name: string): void;
@@ -52,6 +55,9 @@ const environmentsExpanded = ref(true);
         @create-collection="emit('createCollection', $event)"
         @rename-collection="emit('renameCollection', $event)"
         @delete-collection="emit('deleteCollection', $event)"
+        @rename-request="emit('renameRequest', $event)"
+        @duplicate-request="emit('duplicateRequest', $event)"
+        @delete-request="emit('deleteRequest', $event)"
       />
     </div>
 

@@ -218,6 +218,8 @@
 
   .collection-tree__label:hover &,
   .collection-tree__label:focus-within &,
+  .collection-tree__request:hover &,
+  .collection-tree__request:focus-within &,
   &:focus-within {
     opacity: 1;
   }

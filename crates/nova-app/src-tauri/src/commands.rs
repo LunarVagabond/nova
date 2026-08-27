@@ -159,6 +159,29 @@ pub fn create_request(collection_path: String, name: String) -> Result<RequestFi
     RequestFile::create(path).map_err(|e| e.to_string())
 }
 
+/// Delete the request file at `request_path` — see
+/// [`nova_engine::delete_request`].
+#[tauri::command]
+pub fn delete_request(request_path: String) -> Result<(), String> {
+    nova_engine::delete_request(std::path::Path::new(&request_path)).map_err(|e| e.to_string())
+}
+
+/// Rename the request file at `request_path` to `new_name`, keeping it in
+/// the same collection directory — see [`nova_engine::rename_request`].
+#[tauri::command]
+pub fn rename_request(request_path: String, new_name: String) -> Result<RequestFile, String> {
+    nova_engine::rename_request(std::path::Path::new(&request_path), &new_name)
+        .map_err(|e| e.to_string())
+}
+
+/// Duplicate the request file at `request_path` to `new_name` inside the
+/// same collection directory — see [`nova_engine::duplicate_request`].
+#[tauri::command]
+pub fn duplicate_request(request_path: String, new_name: String) -> Result<RequestFile, String> {
+    nova_engine::duplicate_request(std::path::Path::new(&request_path), &new_name)
+        .map_err(|e| e.to_string())
+}
+
 /// Parse a pasted `curl`/`wget` command into the pieces of a request, for
 /// the request panel's paste-into-the-URL-field convenience.
 #[tauri::command]

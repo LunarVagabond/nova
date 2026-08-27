@@ -22,6 +22,9 @@ const emit = defineEmits<{
   (e: "createCollection", collectionPath: string): void;
   (e: "renameCollection", collection: Collection): void;
   (e: "deleteCollection", collection: Collection): void;
+  (e: "renameRequest", request: RequestFile): void;
+  (e: "duplicateRequest", request: RequestFile): void;
+  (e: "deleteRequest", request: RequestFile): void;
 }>();
 
 // Non-root collections start expanded; the root's own tree can't collapse
@@ -167,13 +170,39 @@ function methodClass(method: string): string {
               {{ methodLabel(request.method) }}
             </span>
             <span class="collection-tree__request-name">{{ request.name }}</span>
+            <span
+              v-if="statusFor(request.path)"
+              class="collection-tree__git-badge"
+              :class="`collection-tree__git-badge--${statusFor(request.path)}`"
+              :title="statusLabels[statusFor(request.path)!]"
+            ></span>
           </span>
-          <span
-            v-if="statusFor(request.path)"
-            class="collection-tree__git-badge"
-            :class="`collection-tree__git-badge--${statusFor(request.path)}`"
-            :title="statusLabels[statusFor(request.path)!]"
-          ></span>
+          <span class="collection-tree__actions">
+            <button
+              type="button"
+              class="collection-tree__action"
+              title="Rename request"
+              @click.stop="emit('renameRequest', request)"
+            >
+              <Icon name="pencil" />
+            </button>
+            <button
+              type="button"
+              class="collection-tree__action"
+              title="Duplicate request"
+              @click.stop="emit('duplicateRequest', request)"
+            >
+              <Icon name="copy" />
+            </button>
+            <button
+              type="button"
+              class="collection-tree__action collection-tree__action--danger"
+              title="Delete request"
+              @click.stop="emit('deleteRequest', request)"
+            >
+              <Icon name="trash" />
+            </button>
+          </span>
         </span>
       </li>
       <li v-for="child in collection.children" :key="child.path">
@@ -186,6 +215,9 @@ function methodClass(method: string): string {
           @create-collection="emit('createCollection', $event)"
           @rename-collection="emit('renameCollection', $event)"
           @delete-collection="emit('deleteCollection', $event)"
+          @rename-request="emit('renameRequest', $event)"
+          @duplicate-request="emit('duplicateRequest', $event)"
+          @delete-request="emit('deleteRequest', $event)"
         />
       </li>
     </ul>

@@ -90,6 +90,27 @@ export function createRequest(collectionPath: string, name: string): Promise<Req
   return invoke<RequestFile>("create_request", { collectionPath, name });
 }
 
+/** Deletes the request file at `requestPath`. */
+export function deleteRequest(requestPath: string): Promise<void> {
+  return invoke<void>("delete_request", { requestPath });
+}
+
+/**
+ * Renames the request file at `requestPath` to `newName` (a `.nova` suffix
+ * is added if missing), keeping it in the same collection directory.
+ */
+export function renameRequest(requestPath: string, newName: string): Promise<RequestFile> {
+  return invoke<RequestFile>("rename_request", { requestPath, newName });
+}
+
+/**
+ * Duplicates the request file at `requestPath` to `newName` inside the same
+ * collection directory, copying its contents.
+ */
+export function duplicateRequest(requestPath: string, newName: string): Promise<RequestFile> {
+  return invoke<RequestFile>("duplicate_request", { requestPath, newName });
+}
+
 /** Parses a pasted `curl`/`wget` command into method/URL/headers/body. */
 export function parseCurlCommand(command: string): Promise<ParsedCurlRequest> {
   return invoke<ParsedCurlRequest>("parse_curl_command", { command });
