@@ -1,0 +1,4 @@
+name: local
+
+variables:
+  greeting: hello-from-environment

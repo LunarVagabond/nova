@@ -1,0 +1,13 @@
+version: 1
+
+project:
+  name: Collection Variables Fixture
+
+defaults:
+  environment: local
+
+collections:
+  path: collections
+
+environments:
+  path: envs
