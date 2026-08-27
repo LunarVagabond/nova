@@ -2,6 +2,8 @@
 // Editable list of name/value rows — shared by the request panel's headers
 // and query-param editors. Emits the whole updated array on every change;
 // callers own what the array actually means (header vs. query param).
+import Icon from "./Icon.vue";
+
 type Row = { name: string; value: string };
 
 // Common HTTP header names offered as autocomplete suggestions when
@@ -79,9 +81,12 @@ function removeRow(index: number) {
         title="Remove"
         @click="removeRow(index)"
       >
-        &times;
+        <Icon name="x" />
       </button>
     </div>
-    <button type="button" class="kv-editor__add" @click="addRow">+ Add</button>
+    <button type="button" class="kv-editor__add" @click="addRow">
+      <Icon name="plus" />
+      Add
+    </button>
   </div>
 </template>
