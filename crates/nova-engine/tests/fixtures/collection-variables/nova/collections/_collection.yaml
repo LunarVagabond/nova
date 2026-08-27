@@ -1,0 +1,3 @@
+variables:
+  base_path: /api/v1
+  greeting: hello-from-collection

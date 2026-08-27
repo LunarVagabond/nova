@@ -1,0 +1,6 @@
+[request]
+method: GET
+url: http://example.com{{base_path}}/ping
+
+[headers]
+X-Greeting: {{greeting}}
