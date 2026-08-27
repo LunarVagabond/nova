@@ -1,0 +1,18 @@
+[request]
+method: POST
+url: {{base_url}}/upload
+
+[headers]
+Content-Type: multipart/form-data; boundary=BOUNDARY
+
+[body]
+--BOUNDARY
+Content-Disposition: form-data; name="title"
+
+My Upload
+--BOUNDARY
+Content-Disposition: form-data; name="file"; filename="notes.txt"
+Content-Type: text/plain
+Content-Location: attachments/notes.txt
+
+--BOUNDARY--

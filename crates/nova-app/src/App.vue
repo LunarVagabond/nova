@@ -753,6 +753,7 @@ async function confirmDeleteEnvironment() {
             v-show="project && mainView === 'request' && tab.path === activeRequestPath"
             :request="tab"
             :selected-environment="selectedEnvironment"
+            :project-root="project?.root ?? ''"
             @dirty-change="tabDirty[tab.path] = $event"
             @saved="refreshGitStatus"
           />

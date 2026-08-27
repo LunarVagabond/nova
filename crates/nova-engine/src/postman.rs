@@ -263,6 +263,13 @@ fn convert_body(body: Option<&PostmanBody>, headers: &mut Vec<Header>) -> Reques
                             _ if is_file => "(file content not included in export)".to_string(),
                             _ => String::new(),
                         },
+                        // A Postman `file` entry's `src` is a path on the
+                        // machine that exported the collection, not
+                        // necessarily relative to this project's root —
+                        // there's nothing safe to carry over into
+                        // `file_path` here, so the import stays a text
+                        // placeholder until someone re-attaches the file.
+                        file_path: None,
                     }
                 })
                 .collect::<Vec<_>>();

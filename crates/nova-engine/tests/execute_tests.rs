@@ -1,7 +1,23 @@
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 
-use nova_engine::{execute, Header, MultipartField, NovaError, ParsedRequest, RequestBody};
+use nova_engine::{
+    execute, Header, MultipartField, NovaError, NovaProject, ParsedRequest, RequestBody,
+};
+
+fn fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
+}
+
+/// A project root for tests that never actually reference a multipart file
+/// attachment — `execute` only consults it in that case, so any existing
+/// directory works.
+fn project_root() -> PathBuf {
+    fixture("basic-project")
+}
 
 /// Starts a mock HTTP server on an OS-assigned local port and returns its
 /// base URL plus the join handle for the single request it will serve.
@@ -41,7 +57,7 @@ fn executes_a_request_and_captures_the_response() {
         example_response: None,
     };
 
-    let response = execute(&request).unwrap();
+    let response = execute(&project_root(), &request).unwrap();
 
     assert_eq!(response.status, 200);
     assert_eq!(response.body, "{\"ok\":true}");
@@ -73,7 +89,7 @@ fn non_2xx_status_is_still_a_successful_response() {
         example_response: None,
     };
 
-    let response = execute(&request).unwrap();
+    let response = execute(&project_root(), &request).unwrap();
 
     assert_eq!(response.status, 404);
     assert_eq!(response.body, "{\"error\":\"not found\"}");
@@ -130,7 +146,7 @@ fn sends_json_body_on_the_wire() {
         example_response: None,
     };
 
-    execute(&request).unwrap();
+    execute(&project_root(), &request).unwrap();
 
     let (_, body) = rx.recv().unwrap();
     assert_eq!(body, "{\"name\":\"John\"}");
@@ -157,7 +173,7 @@ fn sends_xml_body_on_the_wire() {
         example_response: None,
     };
 
-    execute(&request).unwrap();
+    execute(&project_root(), &request).unwrap();
 
     let (_, body) = rx.recv().unwrap();
     assert_eq!(body, r#"<user id="42">John</user>"#);
@@ -178,12 +194,14 @@ fn sends_multipart_body_with_boundary_on_the_wire() {
                 filename: None,
                 content_type: None,
                 value: "My Upload".to_string(),
+                file_path: None,
             },
             MultipartField {
                 name: "file".to_string(),
                 filename: Some("notes.txt".to_string()),
                 content_type: Some("text/plain".to_string()),
                 value: "hello".to_string(),
+                file_path: None,
             },
         ]),
         auth: None,
@@ -193,7 +211,7 @@ fn sends_multipart_body_with_boundary_on_the_wire() {
         example_response: None,
     };
 
-    execute(&request).unwrap();
+    execute(&project_root(), &request).unwrap();
 
     let (content_type, body) = rx.recv().unwrap();
     let content_type = content_type.unwrap();
@@ -202,6 +220,59 @@ fn sends_multipart_body_with_boundary_on_the_wire() {
     assert!(body.contains("My Upload"));
     assert!(body.contains("filename=\"notes.txt\""));
     assert!(body.contains("Content-Type: text/plain"));
+}
+
+#[test]
+fn sends_a_multipart_file_attachment_read_from_disk() {
+    let (url, rx) = mock_server_capturing_request();
+
+    let project = NovaProject::discover(&fixture("multipart-project")).unwrap();
+    let request_file = project
+        .collections
+        .requests
+        .iter()
+        .find(|r| r.name == "upload")
+        .expect("upload.nova fixture request");
+    let parsed = request_file.parse().unwrap();
+    let mut resolved = parsed.resolve(&project.environments[0]).unwrap();
+    resolved.url = url;
+
+    execute(&project.root, &resolved).unwrap();
+
+    let (content_type, body) = rx.recv().unwrap();
+    let content_type = content_type.unwrap();
+    assert!(content_type.starts_with("multipart/form-data; boundary="));
+    assert!(body.contains("filename=\"notes.txt\""));
+    assert!(body.contains("hello from an attached file"));
+}
+
+#[test]
+fn a_missing_multipart_file_attachment_is_a_typed_error() {
+    let request = ParsedRequest {
+        method: "POST".to_string(),
+        url: "http://127.0.0.1:1/upload".to_string(),
+        query: vec![],
+        headers: vec![],
+        body: RequestBody::Multipart(vec![MultipartField {
+            name: "file".to_string(),
+            filename: Some("missing.txt".to_string()),
+            content_type: None,
+            value: String::new(),
+            file_path: Some("does/not/exist.txt".to_string()),
+        }]),
+        auth: None,
+        sync_content_type: true,
+        assertions: vec![],
+        extractions: vec![],
+        example_response: None,
+    };
+
+    let err = execute(&project_root(), &request).unwrap_err();
+
+    assert!(
+        matches!(&err, NovaError::MultipartFileNotFound { field, .. } if field == "file"),
+        "unexpected error: {err:?}"
+    );
 }
 
 #[test]
@@ -221,7 +292,7 @@ fn network_failure_is_a_typed_error() {
         example_response: None,
     };
 
-    let err = execute(&request).unwrap_err();
+    let err = execute(&project_root(), &request).unwrap_err();
 
     assert!(
         matches!(err, NovaError::RequestExecution { .. }),

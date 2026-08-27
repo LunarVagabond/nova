@@ -1,7 +1,15 @@
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 
 use nova_engine::{Environment, NovaError, ParsedRequest, RequestBody, Session};
+
+/// `Session::resolve_and_execute` only consults this for a multipart file
+/// attachment; none of these tests send one, so any existing directory
+/// works.
+fn project_root() -> PathBuf {
+    std::env::temp_dir()
+}
 
 fn env_with(vars: &[(&str, &str)]) -> Environment {
     Environment {
@@ -81,7 +89,9 @@ fn login_create_get_chain_carries_extracted_values_forward() {
         name: "access_token".to_string(),
         path: vec!["access_token".to_string()],
     });
-    session.resolve_and_execute(&login_request, &env).unwrap();
+    session
+        .resolve_and_execute(&project_root(), &login_request, &env)
+        .unwrap();
 
     // Create User -> extract user_id, using the token from Login
     let mut create_request = ParsedRequest {
@@ -104,12 +114,14 @@ fn login_create_get_chain_carries_extracted_values_forward() {
         name: "user_id".to_string(),
         path: vec!["user_id".to_string()],
     });
-    session.resolve_and_execute(&create_request, &env).unwrap();
+    session
+        .resolve_and_execute(&project_root(), &create_request, &env)
+        .unwrap();
 
     // Get User, using the id from Create User
     let get_user_request = get_request(format!("{base_url}/users/{{{{user_id}}}}"));
     session
-        .resolve_and_execute(&get_user_request, &env)
+        .resolve_and_execute(&project_root(), &get_user_request, &env)
         .unwrap();
 
     handle.join().unwrap();
@@ -131,7 +143,9 @@ fn referencing_an_extraction_before_its_producing_request_ran_is_a_typed_error()
 
     let request = get_request("http://example.invalid/users/{{user_id}}".to_string());
 
-    let err = session.resolve_and_execute(&request, &env).unwrap_err();
+    let err = session
+        .resolve_and_execute(&project_root(), &request, &env)
+        .unwrap_err();
 
     assert!(matches!(
         err,

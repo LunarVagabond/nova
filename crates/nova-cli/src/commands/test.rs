@@ -28,7 +28,7 @@ pub fn run(path: &Path, environment: Option<&str>) -> Result<(), String> {
     let mut had_error = false;
 
     for request_file in requests {
-        match test_one(request_file, &environment, &mut session) {
+        match test_one(&project.root, request_file, &environment, &mut session) {
             Ok(summary) => {
                 total_passed += summary.passed;
                 total_failed += summary.failed;
@@ -51,13 +51,14 @@ pub fn run(path: &Path, environment: Option<&str>) -> Result<(), String> {
 }
 
 fn test_one(
+    project_root: &Path,
     request_file: &RequestFile,
     environment: &Environment,
     session: &mut Session,
 ) -> Result<TestSummary, String> {
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
     let (resolved, response) = session
-        .resolve_and_execute(&parsed, environment)
+        .resolve_and_execute(project_root, &parsed, environment)
         .map_err(|e| e.to_string())?;
 
     println!("{} {}", resolved.method, resolved.full_url());

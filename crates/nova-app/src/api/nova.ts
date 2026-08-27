@@ -12,11 +12,13 @@ import type {
   GitStatusMap,
   InitOutcome,
   Manifest,
+  MultipartField,
   NovaEnvironment,
   OpenProjectOutcome,
   ParsedCurlRequest,
   RequestDraft,
   RequestFile,
+  RequestHeader,
   RequestResponse,
 } from "../types/nova";
 
@@ -79,6 +81,29 @@ export function readRequest(requestPath: string): Promise<RequestDraft> {
  */
 export function saveRequest(requestPath: string, draft: RequestDraft): Promise<void> {
   return invoke<void>("save_request", { requestPath, draft });
+}
+
+/**
+ * Parses a multipart body's raw wire text (the same text `RequestDraft.body_text`
+ * carries) into structured fields, for the Body tab's multipart field table.
+ */
+export function parseMultipartBody(
+  headers: RequestHeader[],
+  bodyText: string,
+): Promise<MultipartField[]> {
+  return invoke<MultipartField[]>("parse_multipart_body", { headers, bodyText });
+}
+
+/**
+ * Serializes structured multipart fields back to the raw wire text a
+ * `.nova` file's `[body]` marker would hold for them — the inverse of
+ * `parseMultipartBody`.
+ */
+export function serializeMultipartBody(
+  fields: MultipartField[],
+  headers: RequestHeader[],
+): Promise<string> {
+  return invoke<string>("serialize_multipart_body", { fields, headers });
 }
 
 /**
@@ -187,5 +212,11 @@ export function deleteEnvironment(environmentPath: string): Promise<void> {
 /** Opens the native folder picker and returns the chosen path, or null if cancelled. */
 export async function pickProjectDirectory(): Promise<string | null> {
   const selected = await open({ directory: true, multiple: false });
+  return typeof selected === "string" ? selected : null;
+}
+
+/** Opens the native file picker and returns the chosen file's path, or null if cancelled. */
+export async function pickFile(): Promise<string | null> {
+  const selected = await open({ directory: false, multiple: false });
   return typeof selected === "string" ? selected : null;
 }

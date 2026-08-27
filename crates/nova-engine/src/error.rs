@@ -59,6 +59,12 @@ pub enum NovaError {
     #[error("failed to execute request: {message}")]
     RequestExecution { message: String },
 
+    #[error(
+        "multipart field {field:?} references a file at {path} that doesn't exist \
+         (looked relative to the project root)"
+    )]
+    MultipartFileNotFound { field: String, path: PathBuf },
+
     #[error("failed to obtain an OAuth2 access token from {token_url}: {message}")]
     OAuth2TokenRequest { token_url: String, message: String },
 

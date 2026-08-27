@@ -143,6 +143,21 @@ export interface QueryParam {
 }
 
 /**
+ * Mirrors `nova_engine::MultipartField` — a single part of a
+ * `multipart/form-data` body. A field's content is either typed in by hand
+ * (`value`) or attached from a file on disk (`file_path`, a path relative
+ * to the project root whose bytes are read at send time); when `file_path`
+ * is set, `value` is empty and ignored.
+ */
+export interface MultipartField {
+  name: string;
+  filename: string | null;
+  content_type: string | null;
+  value: string;
+  file_path: string | null;
+}
+
+/**
  * Mirrors `nova_engine::RequestDraft` — a flattened, GUI-editable view of a
  * `.nova` file's method/URL/query/headers/body. The body always comes back
  * as plain text (the engine reduces whatever body shape the file declares

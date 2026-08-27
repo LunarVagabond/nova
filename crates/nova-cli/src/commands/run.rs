@@ -27,7 +27,7 @@ pub fn run(request: &Path, environment: Option<&str>) -> Result<(), String> {
     let mut session = Session::new();
     let mut had_failure = false;
     for request_file in requests {
-        if let Err(message) = run_one(request_file, &environment, &mut session) {
+        if let Err(message) = run_one(&project.root, request_file, &environment, &mut session) {
             eprintln!("{}: {message}", request_file.path.display());
             had_failure = true;
         }
@@ -42,13 +42,14 @@ pub fn run(request: &Path, environment: Option<&str>) -> Result<(), String> {
 }
 
 fn run_one(
+    project_root: &Path,
     request_file: &RequestFile,
     environment: &Environment,
     session: &mut Session,
 ) -> Result<(), String> {
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
     let (resolved, response) = session
-        .resolve_and_execute(&parsed, environment)
+        .resolve_and_execute(project_root, &parsed, environment)
         .map_err(|e| e.to_string())?;
 
     println!("{} {}", resolved.method, resolved.full_url());

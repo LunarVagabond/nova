@@ -9,9 +9,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use nova_engine::{
-    parse_curl, AuthScheme, Collection, Environment, GitFileStatus, InitOptions, InitOutcome,
-    Manifest, NovaProject, OpenProjectOutcome, ParsedCurlRequest, RequestDraft, RequestFile,
-    Response, Session,
+    multipart_fields_to_body_text, parse_curl, parse_multipart_fields, AuthScheme, Collection,
+    Environment, GitFileStatus, Header, InitOptions, InitOutcome, Manifest, MultipartField,
+    NovaProject, OpenProjectOutcome, ParsedCurlRequest, RequestDraft, RequestFile, Response,
+    Session,
 };
 
 /// Open the project at `path`. A directory with no project in it comes
@@ -87,7 +88,7 @@ pub fn send_request(request_path: String, environment: Option<String>) -> Result
 
     let mut session = Session::new();
     let (_resolved, response) = session
-        .resolve_and_execute(&parsed, &resolved_environment)
+        .resolve_and_execute(&project.root, &parsed, &resolved_environment)
         .map_err(|e| e.to_string())?;
     Ok(response)
 }
@@ -119,6 +120,29 @@ pub fn save_request(request_path: String, draft: RequestDraft) -> Result<(), Str
         method: String::new(),
     };
     request_file.write(&draft).map_err(|e| e.to_string())
+}
+
+/// Parse a multipart body's raw wire text — the same text
+/// [`RequestDraft::body_text`] carries — into structured fields, for the
+/// Body tab's multipart field table. See
+/// [`nova_engine::parse_multipart_fields`].
+#[tauri::command]
+pub fn parse_multipart_body(
+    headers: Vec<Header>,
+    body_text: String,
+) -> Result<Vec<MultipartField>, String> {
+    parse_multipart_fields(&headers, &body_text)
+}
+
+/// Serialize structured multipart fields back to the raw wire text a
+/// `.nova` file's `[body]` marker would hold for them — the inverse of
+/// [`parse_multipart_body`]. See [`nova_engine::multipart_fields_to_body_text`].
+#[tauri::command]
+pub fn serialize_multipart_body(
+    fields: Vec<MultipartField>,
+    headers: Vec<Header>,
+) -> Result<String, String> {
+    multipart_fields_to_body_text(&fields, &headers)
 }
 
 /// Write an edited [`Manifest`] back to `project_root`'s `nova.yaml`,

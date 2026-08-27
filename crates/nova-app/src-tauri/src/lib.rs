@@ -13,6 +13,8 @@ pub fn run() {
             commands::send_request,
             commands::read_request,
             commands::save_request,
+            commands::parse_multipart_body,
+            commands::serialize_multipart_body,
             commands::save_manifest,
             commands::create_request,
             commands::delete_request,
