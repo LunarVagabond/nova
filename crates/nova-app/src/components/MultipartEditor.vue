@@ -4,6 +4,8 @@
 // one addition: each row is either a typed-in text value or a file
 // attached from disk (a path stored relative to the project root; see
 // `nova_engine::MultipartField::file_path`).
+import { ref } from "vue";
+
 import { pickFile } from "../api/nova";
 import { relativeToRoot } from "../lib/relativePath";
 import type { MultipartField } from "../types/nova";
@@ -14,6 +16,8 @@ const props = defineProps<{
   /** The project's Nova root (`NovaProject.root`) — a chosen file's path is stored relative to this. */
   projectRoot: string;
 }>();
+
+const fileOutsideProjectError = ref<string | null>(null);
 
 const emit = defineEmits<{
   (e: "update:modelValue", value: MultipartField[]): void;
@@ -50,16 +54,31 @@ function setMode(index: number, mode: "text" | "file") {
 }
 
 async function chooseFile(index: number) {
+  fileOutsideProjectError.value = null;
   const picked = await pickFile();
   if (!picked) return;
-  const relative = props.projectRoot ? relativeToRoot(props.projectRoot, picked) : picked;
+
+  // A `file_path` is only ever meant to be a reference relative to the
+  // project root (the engine refuses anything else at send time) — a file
+  // picked from outside the project has nothing sensible to write here,
+  // so it's refused here too rather than silently saving a path that
+  // won't resolve for anyone else who opens the project.
+  const relative = props.projectRoot ? relativeToRoot(props.projectRoot, picked) : null;
+  if (relative === null) {
+    fileOutsideProjectError.value =
+      "That file is outside the project — move or copy it under the project directory first.";
+    return;
+  }
+
   const filename = relative.split("/").pop() ?? relative;
   update(index, { file_path: relative, filename, value: "" });
 }
 </script>
 
 <template>
-  <div class="kv-editor">
+  <div>
+    <p v-if="fileOutsideProjectError" class="request-panel__save-error">{{ fileOutsideProjectError }}</p>
+    <div class="kv-editor">
     <div v-for="(field, index) in modelValue" :key="index" class="kv-editor__row">
       <input
         class="kv-editor__input"
@@ -111,5 +130,6 @@ async function chooseFile(index: number) {
       <Icon name="plus" />
       Add field
     </button>
+    </div>
   </div>
 </template>

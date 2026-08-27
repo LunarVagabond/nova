@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -133,10 +133,10 @@ fn encode_multipart(
         body.extend_from_slice(b"\r\n");
         match &field.file_path {
             Some(file_path) => {
-                let full_path = project_root.join(file_path);
-                let bytes = fs::read(&full_path).map_err(|_| NovaError::MultipartFileNotFound {
+                let resolved = resolve_multipart_file_path(project_root, &field.name, file_path)?;
+                let bytes = fs::read(&resolved).map_err(|_| NovaError::MultipartFileNotFound {
                     field: field.name.clone(),
-                    path: full_path,
+                    path: resolved,
                 })?;
                 body.extend_from_slice(&bytes);
             }
@@ -147,6 +147,52 @@ fn encode_multipart(
     body.extend_from_slice(format!("--{BOUNDARY}--\r\n").as_bytes());
 
     Ok((BOUNDARY.to_string(), body))
+}
+
+/// Resolve a multipart field's `file_path` (a reference meant to be
+/// project-root-relative, see [`MultipartField::file_path`]) to an actual
+/// path on disk, refusing anything that isn't genuinely inside
+/// `project_root`.
+///
+/// `.nova` files are plain text committed to a repo — a malicious one could
+/// otherwise set `file_path` to an absolute path (`/etc/passwd`) or a
+/// relative one that escapes the project via `..` components, and have
+/// opening/sending that request exfiltrate an arbitrary file from whoever's
+/// machine sends it. An absolute `file_path` is rejected outright (this is
+/// only ever meant to be a project-relative reference); anything else is
+/// joined onto `project_root` and then canonicalized alongside it, so a
+/// `..` escape — even through a symlink — is caught by checking the
+/// resolved path is still inside the resolved root, not just by pattern-
+/// matching on `..` in the text.
+fn resolve_multipart_file_path(
+    project_root: &Path,
+    field_name: &str,
+    file_path: &str,
+) -> NovaResult<PathBuf> {
+    let requested = Path::new(file_path);
+    let not_found = |path: PathBuf| NovaError::MultipartFileNotFound {
+        field: field_name.to_string(),
+        path,
+    };
+
+    if requested.is_absolute() {
+        return Err(not_found(requested.to_path_buf()));
+    }
+
+    let joined = project_root.join(requested);
+
+    let canonical_root = project_root
+        .canonicalize()
+        .map_err(|_| not_found(joined.clone()))?;
+    let canonical_target = joined
+        .canonicalize()
+        .map_err(|_| not_found(joined.clone()))?;
+
+    if !canonical_target.starts_with(&canonical_root) {
+        return Err(not_found(joined));
+    }
+
+    Ok(canonical_target)
 }
 
 fn build_response(response: ureq::Response, elapsed: Duration) -> NovaResult<Response> {

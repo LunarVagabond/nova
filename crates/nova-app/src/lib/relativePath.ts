@@ -13,12 +13,18 @@ function splitSegments(path: string): string[] {
 }
 
 /**
- * Returns `filePath` relative to `root`, joined with `/`. Falls back to
- * `filePath` unchanged (segments as-is) if it doesn't actually live under
- * `root` — the caller is expected to warn rather than silently write a
- * path that won't resolve for anyone else who opens the project.
+ * Returns `filePath` relative to `root`, joined with `/` — or `null` if
+ * `filePath` doesn't actually live under `root` at all.
+ *
+ * A `MultipartField.file_path` is only ever meant to be a project-relative
+ * reference (the engine rejects anything else at send time — see
+ * `nova_engine::execute::resolve_multipart_file_path`), so a picked file
+ * outside the project has nothing sensible to write here; returning `null`
+ * lets the caller refuse the attachment instead of silently saving a path
+ * that won't resolve for anyone else who opens the project, or resolves to
+ * something else entirely.
  */
-export function relativeToRoot(root: string, filePath: string): string {
+export function relativeToRoot(root: string, filePath: string): string | null {
   const rootSegments = splitSegments(root);
   const fileSegments = splitSegments(filePath);
 
@@ -32,9 +38,7 @@ export function relativeToRoot(root: string, filePath: string): string {
   }
 
   if (i !== rootSegments.length) {
-    // `filePath` isn't under `root` at all — nothing sensible to make
-    // relative to, so hand back the original segments joined portably.
-    return fileSegments.join("/");
+    return null;
   }
 
   return fileSegments.slice(i).join("/");
