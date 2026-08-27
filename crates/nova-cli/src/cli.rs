@@ -82,6 +82,29 @@ pub enum Command {
         environment: Option<String>,
     },
 
+    /// Open a WebSocket connection declared by a `.nova` file (`protocol:
+    /// websocket` under `[request]`), send its declared `[messages]` (plus
+    /// any given with `--message`), and print what comes back.
+    Ws {
+        /// Path to a `.nova` file declaring a WebSocket connection.
+        request: PathBuf,
+
+        #[arg(long)]
+        environment: Option<String>,
+
+        /// An additional message to send, after any declared in the
+        /// request's `[messages]` section. Repeatable; sent in the order
+        /// given.
+        #[arg(long = "message")]
+        messages: Vec<String>,
+
+        /// How long to keep waiting for another message after the last one
+        /// (or after connecting, if there's nothing to send) before giving
+        /// up and closing the connection.
+        #[arg(long, default_value_t = 5)]
+        timeout_secs: u64,
+    },
+
     /// Run requests as assertions/tests.
     Test {
         #[arg(default_value = ".")]

@@ -151,6 +151,28 @@ custom content type with a differently-shaped body:
 sync_content_type: false
 ```
 
+A request can declare itself as a WebSocket connection instead of an HTTP one by
+setting `protocol: websocket` in `[request]`, with a `ws://`/`wss://` `url:`. There
+is no method, query params, body, auth, or example response — just the connection's
+URL, any handshake `[headers]`, and the text messages to send once it is open,
+declared under `[messages]` (one per line, sent in order):
+
+```text
+[request]
+protocol: websocket
+url: {{ws_base_url}}/socket
+
+[headers]
+Authorization: Bearer {{token}}
+
+[messages]
+{"type": "subscribe", "channel": "prices"}
+ping
+```
+
+`nova ws <path>` opens the connection, sends its declared messages (plus any given
+with `--message`), and prints what comes back.
+
 Environment configuration could remain equally straightforward:
 
 ```yaml
@@ -178,10 +200,10 @@ Initial focus:
 * environment variables
 * cookies
 * file uploads
+* WebSockets (text messages)
 
 Future protocol support:
 
-* WebSockets
 * GraphQL
 * gRPC
 * Server-Sent Events
