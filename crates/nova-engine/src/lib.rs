@@ -12,6 +12,7 @@ mod curl;
 mod environment;
 mod error;
 mod execute;
+mod git_diagnostics;
 mod git_status;
 mod init;
 mod manifest;
