@@ -8,11 +8,13 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use serde::Serialize;
+
 use nova_engine::{
-    multipart_fields_to_body_text, parse_curl, parse_multipart_fields, AuthScheme, Collection,
-    Environment, GitFileStatus, GitStatusCache, Header, InitOptions, InitOutcome, Manifest,
-    MultipartField, NovaProject, OpenProjectOutcome, ParsedCurlRequest, RequestDraft, RequestFile,
-    Response, Session,
+    evaluate, multipart_fields_to_body_text, parse_curl, parse_multipart_fields, AssertionOutcome,
+    AuthScheme, Collection, Environment, GitFileStatus, GitStatusCache, Header, InitOptions,
+    InitOutcome, Manifest, MultipartField, NovaProject, OpenProjectOutcome, ParsedCurlRequest,
+    RequestDraft, RequestFile, Response, Session,
 };
 
 /// Forces the next [`git_status`] call for whichever project `path` belongs
@@ -382,4 +384,209 @@ pub fn delete_environment(
     nova_engine::delete_environment(path).map_err(|e| e.to_string())?;
     invalidate_git_status_cache(path, &cache);
     Ok(())
+}
+
+/// One request's outcome from a [`run_tests`] pass: either it ran (with a
+/// response and zero or more assertion outcomes) or it failed outright —
+/// couldn't be parsed, resolved, or sent — in which case `error` is set and
+/// `response`/`outcomes` are empty. Mirrors the shape `nova test --json`
+/// already produces (`nova-cli`'s `commands/test.rs`), so the desktop app's
+/// "Run Tests" view and the CLI's `--json` output agree on what a test
+/// result looks like.
+#[derive(Debug, Clone, Serialize)]
+pub struct TestRequestResult {
+    pub path: PathBuf,
+    pub method: String,
+    pub url: String,
+    pub response: Option<Response>,
+    pub outcomes: Vec<AssertionOutcome>,
+    pub error: Option<String>,
+}
+
+/// The result of running every request under a project (or a single
+/// collection/request within it) as a test — see [`run_tests`].
+#[derive(Debug, Clone, Serialize)]
+pub struct TestRunResult {
+    pub passed: usize,
+    pub failed: usize,
+    pub requests: Vec<TestRequestResult>,
+}
+
+/// Every request in `collection` and its descendants, in the same
+/// deterministic (alphabetical, depth-first) order the collection tree was
+/// discovered in — the Tauri-side equivalent of `nova-cli`'s
+/// `discovery::requests_at`, which lives in `nova-cli` and isn't reachable
+/// from here.
+fn collect_requests(collection: &Collection) -> Vec<&RequestFile> {
+    let mut requests: Vec<&RequestFile> = collection.requests.iter().collect();
+    for child in &collection.children {
+        requests.extend(collect_requests(child));
+    }
+    requests
+}
+
+/// Finds the single request at `target` anywhere under `collection`, or
+/// `None` if `target` isn't a request path in this tree at all.
+fn find_request<'a>(
+    collection: &'a Collection,
+    target: &std::path::Path,
+) -> Option<&'a RequestFile> {
+    collection
+        .requests
+        .iter()
+        .find(|r| r.path == target)
+        .or_else(|| {
+            collection
+                .children
+                .iter()
+                .find_map(|child| find_request(child, target))
+        })
+}
+
+/// Finds the collection (this one, or a descendant) whose directory is
+/// `target`, or `None` if `target` isn't a collection directory in this
+/// tree at all.
+fn find_collection<'a>(
+    collection: &'a Collection,
+    target: &std::path::Path,
+) -> Option<&'a Collection> {
+    if collection.path == target {
+        return Some(collection);
+    }
+    collection
+        .children
+        .iter()
+        .find_map(|child| find_collection(child, target))
+}
+
+/// Every request under `target`: a single request if it points directly at
+/// a `.nova` file, every request in its subtree if it points at a
+/// collection directory, or every request in the whole project if it
+/// points at the project root itself.
+fn requests_at<'a>(
+    root: &'a Collection,
+    target: &std::path::Path,
+) -> Result<Vec<&'a RequestFile>, String> {
+    if let Some(request_file) = find_request(root, target) {
+        return Ok(vec![request_file]);
+    }
+    if let Some(collection) = find_collection(root, target) {
+        return Ok(collect_requests(collection));
+    }
+    Err(format!(
+        "no request or collection found at {}",
+        target.display()
+    ))
+}
+
+/// Run every request under `path` (a whole project, a collection
+/// subdirectory, or a single request file) as a test: parse, resolve,
+/// execute, and evaluate its assertions, the same way `nova test` does —
+/// see `nova-cli`'s `commands/test.rs`. All requests share one [`Session`],
+/// so request chaining (`extract`/`{{var}}` from an earlier response) works
+/// the same as it does on the CLI.
+#[tauri::command]
+pub fn run_tests(path: String, environment: Option<String>) -> Result<TestRunResult, String> {
+    let target = std::path::Path::new(&path);
+    let project = NovaProject::discover(target).map_err(|e| e.to_string())?;
+
+    let resolved_environment = match environment {
+        Some(name) => project
+            .environment(&name)
+            .cloned()
+            .ok_or_else(|| format!("unknown environment '{name}'"))?,
+        None => project
+            .default_environment()
+            .cloned()
+            .ok_or_else(|| "project has no default environment".to_string())?,
+    };
+
+    // `path` may point at the project root itself (whole-project run), a
+    // collection subdirectory, or a single request — `requests_at` treats
+    // the project root as "not a request, not a collection I can find" and
+    // errors, so fall back to every request in the project in that case.
+    let requests = if target == project.root {
+        collect_requests(&project.collections)
+    } else {
+        requests_at(&project.collections, target)?
+    };
+
+    let mut session = Session::new();
+    let mut total_passed = 0;
+    let mut total_failed = 0;
+    let mut results = Vec::with_capacity(requests.len());
+
+    for request_file in requests {
+        match run_one_test(
+            &project.root,
+            request_file,
+            &resolved_environment,
+            &project.collections,
+            &mut session,
+        ) {
+            Ok((passed, failed, result)) => {
+                total_passed += passed;
+                total_failed += failed;
+                results.push(result);
+            }
+            Err(message) => {
+                results.push(TestRequestResult {
+                    path: request_file.path.clone(),
+                    method: request_file.method.clone(),
+                    url: String::new(),
+                    response: None,
+                    outcomes: Vec::new(),
+                    error: Some(message),
+                });
+            }
+        }
+    }
+
+    Ok(TestRunResult {
+        passed: total_passed,
+        failed: total_failed,
+        requests: results,
+    })
+}
+
+/// Runs a single request and evaluates its assertions — the per-request
+/// body of [`run_tests`], split out so the loop above stays readable.
+/// Mirrors `nova-cli`'s `test_one` helper.
+fn run_one_test(
+    project_root: &std::path::Path,
+    request_file: &RequestFile,
+    environment: &Environment,
+    collections: &Collection,
+    session: &mut Session,
+) -> Result<(usize, usize, TestRequestResult), String> {
+    let parsed = request_file.parse().map_err(|e| e.to_string())?;
+    let collection_variables = collections
+        .containing(&request_file.path)
+        .map(|collection| collection.variables.clone())
+        .unwrap_or_default();
+    let (resolved, response) = session
+        .resolve_and_execute_in_collection(
+            project_root,
+            &parsed,
+            environment,
+            &collection_variables,
+        )
+        .map_err(|e| e.to_string())?;
+
+    let outcomes = evaluate(&resolved.assertions, &response, &resolved);
+    let passed = outcomes.iter().filter(|o| o.passed).count();
+    let failed = outcomes.len() - passed;
+
+    Ok((
+        passed,
+        failed,
+        TestRequestResult {
+            path: request_file.path.clone(),
+            method: resolved.method.clone(),
+            url: resolved.full_url(),
+            response: Some(response),
+            outcomes,
+            error: None,
+        },
+    ))
 }

@@ -18,7 +18,8 @@ const props = defineProps<{
     | "check"
     | "swap"
     | "wand"
-    | "copy";
+    | "copy"
+    | "play";
 }>();
 </script>
 
@@ -93,5 +94,7 @@ const props = defineProps<{
       <path d="M9 9V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-4" />
       <path d="M5 9h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z" />
     </template>
+
+    <path v-else-if="name === 'play'" d="M7 4.5v15l13-7.5z" />
   </svg>
 </template>

@@ -215,3 +215,40 @@ export interface ParsedCurlRequest {
   headers: RequestHeader[];
   body: string | null;
 }
+
+/**
+ * Mirrors `nova_engine::AssertionOutcome` — one `[assert]` line's result.
+ * `failure` is set only when `passed` is false: what was expected vs. what
+ * was actually found, specific enough to act on.
+ */
+export interface AssertionOutcome {
+  raw: string;
+  passed: boolean;
+  failure: string | null;
+}
+
+/**
+ * Mirrors `nova-app`'s `commands::TestRequestResult` — one request's
+ * outcome from a "Run Tests" pass. Either it ran (`response`/`outcomes`
+ * populated, `error` null) or it failed outright — couldn't be parsed,
+ * resolved, or sent (`error` set, `response` null, `outcomes` empty).
+ */
+export interface TestRequestResult {
+  path: string;
+  method: string;
+  url: string;
+  response: RequestResponse | null;
+  outcomes: AssertionOutcome[];
+  error: string | null;
+}
+
+/**
+ * Mirrors `nova-app`'s `commands::TestRunResult` — the result of running
+ * every request under a project (or a single collection/request within it)
+ * as a test via the `run_tests` Tauri command.
+ */
+export interface TestRunResult {
+  passed: number;
+  failed: number;
+  requests: TestRequestResult[];
+}
