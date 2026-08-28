@@ -102,6 +102,34 @@ The desktop app's structured multipart editor (`MultipartEditor.vue`) reads
 and writes this same format; there's no separate "attachment" concept at the
 file level.
 
+A GraphQL body (`Content-Type: application/graphql+json`) uses its own tiny
+nested format inside `[body]`: a raw query/mutation/subscription document,
+optionally followed by a `[variables]` marker introducing its JSON
+variables, and/or an `[operationName]` marker introducing its operation
+name:
+
+```text
+[headers]
+Content-Type: application/graphql+json
+
+[body]
+mutation CreateUser($name: String!) {
+  createUser(name: $name) {
+    id
+  }
+}
+
+[variables]
+{ "name": "John" }
+
+[operationName]
+CreateUser
+```
+
+Both markers are optional. On the wire this is assembled into the standard
+`{"query", "variables", "operationName"}` JSON envelope GraphQL servers
+expect; `variables` defaults to an empty object when omitted.
+
 ### `[auth]`
 
 Structured auth, as an alternative to a literal `Authorization` header.
@@ -187,6 +215,36 @@ access_token = response.access_token
 Valid terms include `status`, `response.time` (with a unit, e.g. `500ms`),
 `response.<json.path>`, and `input.<field>` (a value from the request's own
 body).
+
+**Request chaining.** An extraction's value is only held for the rest of
+that run (one `nova run`/`nova test` invocation, or one Send in the desktop
+app's `Session`) — it isn't written back to disk. This lets a whole
+workflow reference values from earlier steps without manual copy-pasting:
+
+```text
+Login  →  extract access_token  →  Create User  →  extract user_id  →  Get User
+```
+
+```text
+[request]
+method: POST
+url: {{base_url}}/auth/login
+
+[body]
+{ "username": "{{username}}", "password": "{{password}}" }
+
+[assert]
+access_token = response.access_token
+```
+
+```text
+[request]
+method: POST
+url: {{base_url}}/users
+
+[headers]
+Authorization: Bearer {{access_token}}
+```
 
 ### `[response <status>]`
 

@@ -84,9 +84,9 @@ auth:
 `nova init` gitignores a new project's `envs/` directory by default, since
 environment files commonly hold local secrets. Where a secret should live
 long-term beyond a gitignored environment file is still open — see
-`nova check-secrets` / `nova install-hook` below for what exists today, and
-the README's "Longer-Term Opportunities" for what's still just an idea
-(external secret-provider integration).
+`nova check-secrets` / `nova install-hook` below for what exists today.
+External secret-provider integration is a still-open idea, tracked as a
+GitHub issue rather than documented here.
 
 ## Validation
 
