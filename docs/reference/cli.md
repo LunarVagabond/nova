@@ -20,6 +20,7 @@ nova validate [path]             # validate manifest/environments/requests
 nova run <request>               # execute a single .nova file, or a directory of them
 nova test [path]                 # run requests as assertions/tests
 nova ws <request>                # open a WebSocket connection declared by a .nova file
+nova sse <request>                # open an SSE connection declared by a .nova file
 
 nova generate <input> <output>   # OpenAPI spec or Postman export -> new Nova project
 nova export [path]               # collections -> OpenAPI 3.x spec (YAML)
@@ -95,6 +96,22 @@ failure.
   `[messages]`. Repeatable; sent in the order given.
 - `--timeout-secs <n>` — how long to keep waiting for another message after
   the last one (or after connecting, if there's nothing to send) before
+  giving up and closing the connection. Default `5`.
+
+## `nova sse <request>`
+
+Open the Server-Sent Events connection a `.nova` file declares (`protocol:
+sse` under `[request]` — see
+[nova-file-format.md](./nova-file-format.md#server-sent-events-requests)),
+and print each event as it arrives rather than waiting for the connection
+to close. Like `nova ws`, successfully connecting and streaming counts as
+success regardless of what events actually arrived — only a failure to
+parse the request, resolve its `{{variable}}`s, or open the connection at
+all is a CLI failure.
+
+- `--environment <name>`
+- `--timeout-secs <n>` — how long to keep waiting for another event after
+  the last one (or after connecting, if none have arrived yet) before
   giving up and closing the connection. Default `5`.
 
 ## `nova generate <input> <output>`

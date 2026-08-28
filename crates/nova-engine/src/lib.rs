@@ -22,6 +22,7 @@ mod postman;
 mod project;
 mod request;
 mod session;
+mod sse;
 mod validate;
 mod websocket;
 mod xml;
@@ -53,9 +54,12 @@ pub use project::{discover_or_not_found, NovaProject, OpenProjectOutcome, MANIFE
 pub use request::{
     delete_request, duplicate_request, multipart_fields_to_body_text, parse_multipart_fields,
     rename_request, ExampleResponse, GraphQlBody, Header, MultipartField, ParsedRequest,
-    ParsedWebSocketRequest, QueryParam, RequestBody, RequestDraft, RequestFile,
+    ParsedSseRequest, ParsedWebSocketRequest, QueryParam, RequestBody, RequestDraft, RequestFile,
 };
 pub use session::Session;
+pub use sse::{
+    connect_and_stream, SseEvent, SseExchange, DEFAULT_READ_TIMEOUT as SSE_DEFAULT_READ_TIMEOUT,
+};
 pub use validate::{validate, ValidationIssue};
 pub use websocket::{connect_and_exchange, WebSocketExchange, DEFAULT_READ_TIMEOUT};
 pub use xml::{XmlElement, XmlNode};
