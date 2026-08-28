@@ -9,21 +9,22 @@ use cli::{Cli, Command, NewKind};
 fn main() {
     let cli = Cli::parse();
 
+    let json = cli.json;
     let result = match cli.command {
-        None => commands::inspect::run(&cli.path),
+        None => commands::inspect::run(&cli.path, json),
         Some(Command::Init {
             path,
             name,
             with_hook,
             no_hook,
         }) => commands::init::run(&path, name.as_deref(), with_hook, no_hook),
-        Some(Command::Open { path }) => commands::inspect::run(&path),
-        Some(Command::Inspect { path }) => commands::inspect::run(&path),
-        Some(Command::Validate { path }) => commands::validate::run(&path),
+        Some(Command::Open { path }) => commands::inspect::run(&path, json),
+        Some(Command::Inspect { path }) => commands::inspect::run(&path, json),
+        Some(Command::Validate { path }) => commands::validate::run(&path, json),
         Some(Command::Run {
             request,
             environment,
-        }) => commands::run::run(&request, environment.as_deref()),
+        }) => commands::run::run(&request, environment.as_deref(), json),
         Some(Command::Ws {
             request,
             environment,
@@ -31,7 +32,7 @@ fn main() {
             timeout_secs,
         }) => commands::websocket::run(&request, environment.as_deref(), &messages, timeout_secs),
         Some(Command::Test { path, environment }) => {
-            commands::test::run(&path, environment.as_deref())
+            commands::test::run(&path, environment.as_deref(), json)
         }
         Some(Command::Generate { input, output }) => commands::generate::run(&input, &output),
         Some(Command::Export { path, output }) => commands::export::run(&path, output.as_deref()),
@@ -53,7 +54,15 @@ fn main() {
     };
 
     if let Err(message) = result {
-        eprintln!("error: {message}");
+        if json {
+            // Machine-readable failure path for `--json`: a JSON error
+            // object on stderr instead of the human `error: ...` line, so
+            // a caller never has to regex text on failure either. Exit
+            // code behavior is unchanged.
+            eprintln!("{}", serde_json::json!({ "error": message }));
+        } else {
+            eprintln!("error: {message}");
+        }
         std::process::exit(1);
     }
 }
