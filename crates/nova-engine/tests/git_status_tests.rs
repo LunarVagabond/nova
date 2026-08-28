@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use nova_engine::{git_status, GitFileStatus};
+use nova_engine::{git_status, GitFileStatus, GitStatusCache, GIT_STATUS_CACHE_TTL};
 
 fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -191,6 +191,73 @@ fn reports_a_staged_rename_with_its_origin_path() {
     assert_eq!(
         statuses.get(&new_path.canonicalize().unwrap()),
         Some(&GitFileStatus::Renamed { from: old_path })
+    );
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn cache_serves_a_stale_result_within_the_ttl() {
+    let dir = temp_dir("cache-within-ttl");
+    init_git_repo(&dir);
+
+    let cache = GitStatusCache::new();
+    let before = cache.get(&dir).unwrap().unwrap_or_default();
+    assert!(before.is_empty());
+
+    fs::write(dir.join("new.nova"), "[request]\nmethod: GET\n").unwrap();
+
+    let after = cache.get(&dir).unwrap().unwrap_or_default();
+    assert!(
+        after.is_empty(),
+        "a call within the TTL should serve the cached (pre-change) result, got {after:?}"
+    );
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn cache_reflects_changes_immediately_after_invalidate() {
+    let dir = temp_dir("cache-invalidate");
+    init_git_repo(&dir);
+
+    let cache = GitStatusCache::new();
+    let before = cache.get(&dir).unwrap().unwrap_or_default();
+    assert!(before.is_empty());
+
+    let new_path = dir.join("new.nova");
+    fs::write(&new_path, "[request]\nmethod: GET\n").unwrap();
+    cache.invalidate(&dir);
+
+    let after = cache.get(&dir).unwrap().unwrap_or_default();
+    assert_eq!(
+        after.get(&new_path.canonicalize().unwrap()),
+        Some(&GitFileStatus::Untracked),
+        "invalidate should force the next get() to recompute"
+    );
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn cache_recomputes_once_the_ttl_expires() {
+    let dir = temp_dir("cache-ttl-expiry");
+    init_git_repo(&dir);
+
+    let cache = GitStatusCache::new();
+    let before = cache.get(&dir).unwrap().unwrap_or_default();
+    assert!(before.is_empty());
+
+    let new_path = dir.join("new.nova");
+    fs::write(&new_path, "[request]\nmethod: GET\n").unwrap();
+
+    std::thread::sleep(GIT_STATUS_CACHE_TTL + std::time::Duration::from_millis(100));
+
+    let after = cache.get(&dir).unwrap().unwrap_or_default();
+    assert_eq!(
+        after.get(&new_path.canonicalize().unwrap()),
+        Some(&GitFileStatus::Untracked),
+        "a call after the TTL elapses should recompute rather than serve the stale result"
     );
 
     fs::remove_dir_all(&dir).unwrap();
