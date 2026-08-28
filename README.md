@@ -27,6 +27,19 @@ invitation. No exporting/importing collections between team members.
 
 **Git is the collaboration system.**
 
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="docs/images/request-editor.png" width="400" alt="Request editor with a collection sidebar and a request's JSON body loaded"></td>
+    <td><img src="docs/images/response-view.png" width="400" alt="A sent request's response, showing status, timing, and a JSON body"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/diff-view.png" width="400" alt="Response diff view comparing a request's latest send against its previous run"></td>
+    <td><img src="docs/images/history-panel.png" width="400" alt="Request history panel listing recent sends with a selected entry's detail"></td>
+  </tr>
+</table>
+
 ## Why Nova
 
 - **Files, not a workspace.** Requests, environments, and auth are plain
