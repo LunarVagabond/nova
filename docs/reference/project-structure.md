@@ -1,0 +1,111 @@
+# Project structure and `nova.yaml`
+
+A Nova project is any directory containing a `nova/` directory with a
+`nova.yaml` manifest inside it. `NovaProject::discover`
+(`crates/nova-engine/src/project.rs`) walks upward from a given path looking
+for it, the same way `git` looks for `.git` — so any command can be run from
+a subdirectory of the project, not just its root.
+
+## Layout
+
+```text
+my-project/
+├── src/
+└── nova/
+    ├── nova.yaml
+    ├── collections/
+    │   ├── auth/
+    │   │   └── login.nova
+    │   └── users/
+    │       ├── create.nova
+    │       └── get.nova
+    └── envs/
+        ├── local.yaml
+        └── staging.yaml
+```
+
+- **`collections/`** (path configurable, see below) is walked recursively;
+  any subdirectory is a collection, any `.nova` file inside one is a
+  request. See `crates/nova-engine/src/collection.rs`.
+- **`envs/`** (path configurable) is *not* walked recursively — every
+  `*.yaml`/`*.yml` file directly inside it is one environment. See
+  `crates/nova-engine/src/environment.rs`.
+- Individual requests are never listed in the manifest; they're always
+  discovered from disk.
+
+## `nova.yaml`
+
+```yaml
+version: 1
+
+project:
+  name: My API
+
+defaults:
+  environment: local
+
+collections:
+  path: collections
+
+environments:
+  path: envs
+```
+
+- `version` — manifest schema version. Currently always `1`; the engine
+  refuses to load a manifest with any other value rather than guessing at
+  compatibility.
+- `project.name` — display name.
+- `defaults.environment` — which environment `nova run`/`nova test` use when
+  `--environment` isn't given. `nova validate` flags a `defaults.environment`
+  that doesn't match any discovered environment file.
+- `defaults.timeout` — optional, currently unused for wire-level enforcement
+  beyond what the field carries.
+- `collections.path` / `environments.path` — relative to `nova/`, default to
+  `collections` and `envs` respectively. Changing them just changes where
+  the engine looks; nothing else about the format changes.
+
+## Environments
+
+An environment file is a flat `name` + `variables:` map, plus an optional
+default `auth:` scheme:
+
+```yaml
+name: local
+
+variables:
+  base_url: http://localhost:8080
+  token: dev-token-123
+
+auth:
+  type: bearer
+  token: "{{token}}"
+```
+
+`nova init` gitignores a new project's `envs/` directory by default, since
+environment files commonly hold local secrets. Where a secret should live
+long-term beyond a gitignored environment file is still open — see
+`nova check-secrets` / `nova install-hook` below for what exists today, and
+the README's "Longer-Term Opportunities" for what's still just an idea
+(external secret-provider integration).
+
+## Validation
+
+`nova validate` (CLI and desktop app, same engine call — `validate.rs`)
+checks:
+
+- `defaults.environment` names a real environment
+- no two environments share a name
+- the project isn't empty (no environments and no requests)
+- every request's `[auth]` field or `Authorization` header actually
+  references a `{{variable}}` — a literal value there is flagged as a
+  possible hardcoded credential, since request files are always committed
+  while environment files usually aren't
+
+`nova check-secrets [--staged]` runs just the hardcoded-credential half of
+that scan on its own, and is what `nova install-hook`'s pre-commit hook
+invokes against staged files before every commit.
+
+## Related
+
+- [The `.nova` request file format](./nova-file-format.md)
+- [CLI reference](./cli.md)

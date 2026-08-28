@@ -75,9 +75,9 @@ pub fn git_status(project_root: &Path) -> NovaResult<Option<HashMap<PathBuf, Git
         if let Some((old_raw, new_raw)) = rest.split_once(" -> ") {
             // git only reports a single "R old -> new" line for a rename it
             // detected itself, which only happens for staged changes.
-            let old_joined = toplevel.join(old_raw);
+            let old_joined = toplevel.join(unquote_git_path(old_raw));
             let old_canonical = old_joined.canonicalize().unwrap_or(old_joined);
-            let new_joined = toplevel.join(new_raw);
+            let new_joined = toplevel.join(unquote_git_path(new_raw));
             let new_canonical = new_joined.canonicalize().unwrap_or(new_joined);
             statuses.insert(
                 new_canonical,
@@ -88,7 +88,7 @@ pub fn git_status(project_root: &Path) -> NovaResult<Option<HashMap<PathBuf, Git
             continue;
         }
 
-        let joined = toplevel.join(rest);
+        let joined = toplevel.join(unquote_git_path(rest));
         let canonical = joined.canonicalize().unwrap_or(joined);
 
         if index_status == '?' && worktree_status == '?' {
@@ -201,6 +201,95 @@ fn working_tree_hashes(toplevel: &Path, paths: &[PathBuf]) -> Vec<(PathBuf, Stri
         .zip(paths)
         .map(|(hash, path)| (path.clone(), hash.to_string()))
         .collect()
+}
+
+/// Undoes the C-string-literal quoting `git status --porcelain` applies to
+/// any path containing whitespace or other special characters (this happens
+/// regardless of `core.quotePath`, unlike the fuller quoting of non-ASCII
+/// bytes that setting otherwise controls) — such a path arrives wrapped in
+/// `"…"` with `\`, `"`, and non-printable/non-ASCII bytes backslash-escaped,
+/// each raw byte >= 0x80 written as a 3-digit octal escape (so a multi-byte
+/// UTF-8 character shows up as several consecutive octal escapes). A path
+/// with no such characters is returned unquoted, as-is.
+fn unquote_git_path(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    if bytes.len() < 2 || bytes[0] != b'"' || bytes[bytes.len() - 1] != b'"' {
+        return raw.to_string();
+    }
+    let inner = &bytes[1..bytes.len() - 1];
+
+    let mut out: Vec<u8> = Vec::with_capacity(inner.len());
+    let mut i = 0;
+    while i < inner.len() {
+        if inner[i] != b'\\' || i + 1 >= inner.len() {
+            out.push(inner[i]);
+            i += 1;
+            continue;
+        }
+
+        match inner[i + 1] {
+            b'"' => {
+                out.push(b'"');
+                i += 2;
+            }
+            b'\\' => {
+                out.push(b'\\');
+                i += 2;
+            }
+            b'a' => {
+                out.push(0x07);
+                i += 2;
+            }
+            b'b' => {
+                out.push(0x08);
+                i += 2;
+            }
+            b'f' => {
+                out.push(0x0C);
+                i += 2;
+            }
+            b'n' => {
+                out.push(b'\n');
+                i += 2;
+            }
+            b'r' => {
+                out.push(b'\r');
+                i += 2;
+            }
+            b't' => {
+                out.push(b'\t');
+                i += 2;
+            }
+            b'v' => {
+                out.push(0x0B);
+                i += 2;
+            }
+            octal_start @ b'0'..=b'7' => {
+                // Up to 3 octal digits encode one raw byte.
+                let mut value: u32 = (octal_start - b'0') as u32;
+                let mut consumed = 2;
+                while consumed < 4 && i + consumed < inner.len() {
+                    let digit = inner[i + consumed];
+                    if !(b'0'..=b'7').contains(&digit) {
+                        break;
+                    }
+                    value = value * 8 + (digit - b'0') as u32;
+                    consumed += 1;
+                }
+                out.push(value as u8);
+                i += consumed;
+            }
+            other => {
+                // Not a quoting escape git actually emits — keep it as-is
+                // rather than silently dropping the backslash.
+                out.push(b'\\');
+                out.push(other);
+                i += 2;
+            }
+        }
+    }
+
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn git_toplevel(path: &Path) -> Option<PathBuf> {
