@@ -169,7 +169,8 @@ const effectiveExpanded = computed(() => (isFiltering.value ? subtreeMatches.val
           @click="emit('select', request)"
         >
           <span class="collection-tree__request-main">
-            <span v-if="request.method" class="method-badge" :class="methodClass(request.method)">
+            <span v-if="request.protocol === 'websocket'" class="method-badge method-badge--ws">WS</span>
+            <span v-else-if="request.method" class="method-badge" :class="methodClass(request.method)">
               {{ methodLabel(request.method) }}
             </span>
             <span class="collection-tree__request-name">{{ request.name }}</span>

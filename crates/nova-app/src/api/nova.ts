@@ -26,6 +26,8 @@ import type {
   RequestResponse,
   ResponseDiff,
   TestRunResult,
+  WebSocketDraft,
+  WebSocketExchange,
 } from "../types/nova";
 
 /**
@@ -130,6 +132,40 @@ export function readRequest(requestPath: string): Promise<RequestDraft> {
  */
 export function saveRequest(requestPath: string, draft: RequestDraft): Promise<void> {
   return invoke<void>("save_request", { requestPath, draft });
+}
+
+/** Parses the `.nova` file at `requestPath` as a WebSocket connection declaration into an editable draft. */
+export function readWebSocketRequest(requestPath: string): Promise<WebSocketDraft> {
+  return invoke<WebSocketDraft>("read_websocket_request", { requestPath });
+}
+
+/** Writes an edited WebSocket draft — URL/headers/messages — back to the `.nova` file at `requestPath`. */
+export function saveWebSocketRequest(requestPath: string, draft: WebSocketDraft): Promise<void> {
+  return invoke<void>("save_websocket_request", { requestPath, draft });
+}
+
+/**
+ * Parses, resolves, connects to, and exchanges messages with the WebSocket
+ * connection the `.nova` file at `requestPath` declares, against
+ * `environment` if named (else the project's default). Resolves once the
+ * connection closes or the read timeout elapses with nothing further
+ * coming in.
+ */
+export function connectWebSocket(
+  requestPath: string,
+  environment: string | null,
+): Promise<WebSocketExchange> {
+  return invoke<WebSocketExchange>("connect_websocket", { requestPath, environment });
+}
+
+/**
+ * Creates a new `.nova` file named `name` (a `.nova` suffix is added if
+ * missing) directly inside the collection directory at `collectionPath`,
+ * declaring a WebSocket connection rather than an HTTP request, and
+ * returns its `RequestFile` handle.
+ */
+export function createWebSocketRequest(collectionPath: string, name: string): Promise<RequestFile> {
+  return invoke<RequestFile>("create_websocket_request", { collectionPath, name });
 }
 
 /**

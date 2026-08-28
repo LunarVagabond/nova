@@ -84,6 +84,7 @@ fn writes_edited_fields_back_to_disk_and_preserves_the_example_response() {
         name: "create".to_string(),
         path: create.path.clone(),
         method: String::new(),
+        protocol: "http".to_string(),
     };
     let after = request_file.parse().unwrap();
 
@@ -111,6 +112,7 @@ fn write_preserves_assertions_and_extractions_on_an_unrelated_edit() {
         name: "request".to_string(),
         path: request_path.clone(),
         method: String::new(),
+        protocol: "http".to_string(),
     };
     let before = request_file.parse().unwrap();
 
@@ -150,6 +152,7 @@ fn write_round_trips_an_auth_scheme_added_through_a_draft() {
         name: "request".to_string(),
         path: request_path,
         method: String::new(),
+        protocol: "http".to_string(),
     };
 
     let mut draft = request_file.parse().unwrap().to_draft().unwrap();
@@ -185,6 +188,7 @@ fn write_removes_an_auth_section_cleared_on_the_draft() {
         name: "request".to_string(),
         path: request_path,
         method: String::new(),
+        protocol: "http".to_string(),
     };
 
     let mut draft = request_file.parse().unwrap().to_draft().unwrap();
@@ -213,6 +217,7 @@ fn write_round_trips_the_sync_content_type_setting() {
         name: "request".to_string(),
         path: request_path,
         method: String::new(),
+        protocol: "http".to_string(),
     };
 
     let mut draft = request_file.parse().unwrap().to_draft().unwrap();

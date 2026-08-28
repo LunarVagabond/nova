@@ -5,6 +5,7 @@ import {
   createCollection,
   createEnvironment,
   createRequest,
+  createWebSocketRequest,
   deleteCollection,
   deleteEnvironment,
   deleteRequest,
@@ -40,6 +41,7 @@ import TopBar from "./components/TopBar.vue";
 import Sidebar from "./components/Sidebar.vue";
 import ProjectPanel from "./components/ProjectPanel.vue";
 import RequestPanel from "./components/RequestPanel.vue";
+import WebSocketPanel from "./components/WebSocketPanel.vue";
 import EnvironmentPanel from "./components/EnvironmentPanel.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
 import EmptyState from "./components/EmptyState.vue";
@@ -425,10 +427,12 @@ async function refreshProjectTree() {
 // dialog plugin at all (only message/confirm/file pickers).
 const newRequestCollectionPath = ref<string | null>(null);
 const newRequestName = ref("");
+const newRequestProtocol = ref<"http" | "websocket">("http");
 
 function handleCreateRequest(collectionPath: string) {
   createError.value = null;
   newRequestName.value = "";
+  newRequestProtocol.value = "http";
   newRequestCollectionPath.value = collectionPath;
 }
 
@@ -443,7 +447,10 @@ async function submitCreateRequest() {
 
   createError.value = null;
   try {
-    const created = await createRequest(collectionPath, name);
+    const created =
+      newRequestProtocol.value === "websocket"
+        ? await createWebSocketRequest(collectionPath, name)
+        : await createRequest(collectionPath, name);
     await refreshProjectTree();
     managedEnvironment.value = null;
     if (!openTabs.value.some((t) => t.path === created.path)) {
@@ -989,7 +996,17 @@ async function handleToggleMockServer() {
         :class="{ 'app-shell__content--flush': mainView === 'request' || mainView === 'history' }"
       >
         <template v-for="tab in openTabs" :key="tab.path">
+          <WebSocketPanel
+            v-if="tab.protocol === 'websocket'"
+            v-show="project && mainView === 'request' && tab.path === activeRequestPath"
+            :active="project !== null && mainView === 'request' && tab.path === activeRequestPath"
+            :request="tab"
+            :selected-environment="selectedEnvironment"
+            @dirty-change="tabDirty[tab.path] = $event"
+            @saved="refreshGitStatus"
+          />
           <RequestPanel
+            v-else
             v-show="project && mainView === 'request' && tab.path === activeRequestPath"
             :active="project !== null && mainView === 'request' && tab.path === activeRequestPath"
             :request="tab"
@@ -1098,6 +1115,17 @@ async function handleToggleMockServer() {
         autofocus
         @keydown.enter="submitCreateRequest"
       />
+      <label class="modal__label">Protocol</label>
+      <div class="modal__radio-group">
+        <label class="modal__radio">
+          <input v-model="newRequestProtocol" type="radio" name="new-request-protocol" value="http" />
+          HTTP
+        </label>
+        <label class="modal__radio">
+          <input v-model="newRequestProtocol" type="radio" name="new-request-protocol" value="websocket" />
+          WebSocket
+        </label>
+      </div>
       <p v-if="createError" class="modal__error">{{ createError }}</p>
       <template #actions>
         <button type="button" class="button button--secondary" @click="cancelCreateRequest">

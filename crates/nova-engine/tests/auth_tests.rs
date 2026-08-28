@@ -138,6 +138,7 @@ impl TempRequest {
             name: name.to_string(),
             path,
             method: String::new(),
+            protocol: "http".to_string(),
         })
     }
 }

@@ -92,6 +92,21 @@
   cursor: pointer;
 }
 
+.modal__radio-group {
+  display: flex;
+  gap: $spacing-lg;
+  margin-bottom: $spacing-sm;
+}
+
+.modal__radio {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  font-size: $font-size-sm;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
 .modal__error {
   margin: $spacing-sm 0 0;
   color: var(--color-danger);

@@ -385,3 +385,11 @@
   color: var(--color-text-muted);
   background-color: var(--color-bg-raised);
 }
+
+// A WebSocket request has no HTTP method, so it gets its own badge text
+// ("WS") rather than an empty/misleading one — reuses the accent color
+// from the app's fixed 4-color palette rather than introducing a fifth.
+.method-badge--ws {
+  color: var(--color-accent);
+  background-color: rgba(124, 92, 255, 0.14);
+}

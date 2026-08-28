@@ -16,6 +16,7 @@ use nova_engine::{
     Collection, ComparableResponse, Environment, GitFileStatus, GitStatusCache, Header,
     InitOptions, InitOutcome, Manifest, MultipartField, NovaProject, OpenProjectOutcome,
     ParsedCurlRequest, ParsedRequest, RequestDraft, RequestFile, Response, ResponseDiff, Session,
+    WebSocketDraft, WebSocketExchange,
 };
 
 use crate::mock_server::{MockServerState, MockServerStatus, DEFAULT_HOST, DEFAULT_PORT};
@@ -162,6 +163,7 @@ pub fn send_request(
         name: String::new(),
         path: path.to_path_buf(),
         method: String::new(),
+        protocol: String::new(),
     };
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
 
@@ -292,6 +294,7 @@ fn resolved_identity(
         name: String::new(),
         path: path.to_path_buf(),
         method: String::new(),
+        protocol: String::new(),
     };
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
 
@@ -399,6 +402,7 @@ pub fn read_request(request_path: String) -> Result<RequestDraft, String> {
         name: String::new(),
         path: path.to_path_buf(),
         method: String::new(),
+        protocol: String::new(),
     };
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
     parsed.to_draft().map_err(|e| e.to_string())
@@ -419,10 +423,134 @@ pub fn save_request(
         name: String::new(),
         path: std::path::PathBuf::from(&request_path),
         method: String::new(),
+        protocol: String::new(),
     };
     request_file.write(&draft).map_err(|e| e.to_string())?;
     invalidate_git_status_cache(&request_file.path, &cache);
     Ok(())
+}
+
+/// Parse the `.nova` file at `request_path` as a WebSocket connection
+/// declaration into a [`WebSocketDraft`] for the GUI's editable WebSocket
+/// panel — the WebSocket counterpart to [`read_request`].
+#[tauri::command]
+pub fn read_websocket_request(request_path: String) -> Result<WebSocketDraft, String> {
+    let path = std::path::Path::new(&request_path);
+    let request_file = RequestFile {
+        name: String::new(),
+        path: path.to_path_buf(),
+        method: String::new(),
+        protocol: "websocket".to_string(),
+    };
+    let parsed = request_file.parse_websocket().map_err(|e| e.to_string())?;
+    Ok(parsed.to_draft())
+}
+
+/// Write an edited [`WebSocketDraft`] — URL/headers/messages — back to the
+/// `.nova` file at `request_path` — the WebSocket counterpart to
+/// [`save_request`].
+#[tauri::command]
+pub fn save_websocket_request(
+    request_path: String,
+    draft: WebSocketDraft,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<(), String> {
+    let request_file = RequestFile {
+        name: String::new(),
+        path: std::path::PathBuf::from(&request_path),
+        method: String::new(),
+        protocol: "websocket".to_string(),
+    };
+    request_file
+        .write_websocket(&draft)
+        .map_err(|e| e.to_string())?;
+    invalidate_git_status_cache(&request_file.path, &cache);
+    Ok(())
+}
+
+/// Parse, resolve, connect to, and exchange messages with the WebSocket
+/// connection the `.nova` file at `request_path` declares — the WebSocket
+/// counterpart to [`send_request`].
+///
+/// Resolves `{{variable}}`s the same way [`send_request`] does (the named
+/// environment, or the project's default, folded together with the
+/// request's owning collection's variables — environment wins on a name
+/// collision) before connecting. Unlike `send_request`, this doesn't go
+/// through the project's persistent [`Session`]: a WebSocket connection
+/// here is a one-shot connect/send/collect with nothing to chain from or
+/// into (no cookies, no history, no request-chained variables) — see
+/// [`nova_engine::connect_and_exchange`].
+///
+/// Uses [`nova_engine::DEFAULT_READ_TIMEOUT`] (5 seconds) to decide when to
+/// stop waiting for further messages and close the connection.
+#[tauri::command]
+pub fn connect_websocket(
+    request_path: String,
+    environment: Option<String>,
+) -> Result<WebSocketExchange, String> {
+    let path = std::path::Path::new(&request_path);
+    let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
+
+    let resolved_environment = match environment {
+        Some(name) => project
+            .environment(&name)
+            .cloned()
+            .ok_or_else(|| format!("unknown environment '{name}'"))?,
+        None => project
+            .default_environment()
+            .cloned()
+            .ok_or_else(|| "project has no default environment".to_string())?,
+    };
+
+    let request_file = RequestFile {
+        name: String::new(),
+        path: path.to_path_buf(),
+        method: String::new(),
+        protocol: "websocket".to_string(),
+    };
+    let parsed = request_file.parse_websocket().map_err(|e| e.to_string())?;
+
+    let collection_variables = project
+        .collections
+        .containing(path)
+        .map(|collection| collection.variables.clone())
+        .unwrap_or_default();
+
+    // Mirrors `resolved_identity`'s environment/collection-variable merge
+    // (an environment-declared variable always wins over a same-named
+    // collection one) — there's no session-chained variable here to fold
+    // in on top, since this doesn't run through a `Session`.
+    let mut variables = collection_variables;
+    variables.extend(resolved_environment.variables.clone());
+    let effective_environment = Environment {
+        name: resolved_environment.name.clone(),
+        variables,
+        auth: resolved_environment.auth.clone(),
+        path: resolved_environment.path.clone(),
+    };
+
+    let resolved = parsed
+        .resolve(&effective_environment)
+        .map_err(|e| e.to_string())?;
+
+    nova_engine::connect_and_exchange(&resolved, nova_engine::DEFAULT_READ_TIMEOUT)
+        .map_err(|e| e.to_string())
+}
+
+/// Create a new `.nova` file named `name` (a `.nova` suffix is added if
+/// missing) directly inside the collection directory at `collection_path`,
+/// declaring a WebSocket connection (`protocol: websocket`) rather than an
+/// HTTP request — the WebSocket counterpart to [`create_request`].
+#[tauri::command]
+pub fn create_websocket_request(
+    collection_path: String,
+    name: String,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<RequestFile, String> {
+    let path = validated_request_path(&collection_path, &name)?;
+    let request_file = RequestFile::create_websocket(path).map_err(|e| e.to_string())?;
+    invalidate_git_status_cache(&request_file.path, &cache);
+    Ok(request_file)
 }
 
 /// Parse a multipart body's raw wire text — the same text
@@ -467,16 +595,11 @@ pub fn save_manifest(
     Ok(())
 }
 
-/// Create a new `.nova` file named `name` (a `.nova` suffix is added if
-/// missing) directly inside the collection directory at `collection_path`,
-/// with a minimal default request body. Returns the new [`RequestFile`] so
-/// the GUI can open it for editing immediately.
-#[tauri::command]
-pub fn create_request(
-    collection_path: String,
-    name: String,
-    cache: tauri::State<GitStatusCache>,
-) -> Result<RequestFile, String> {
+/// Validate a user-supplied request (file) name and join it onto
+/// `collection_path` as a `.nova` path — the name-checking half of
+/// [`create_request`]/[`create_websocket_request`], factored out so both
+/// share exactly the same rules rather than drifting apart.
+fn validated_request_path(collection_path: &str, name: &str) -> Result<PathBuf, String> {
     let file_name = name.trim();
     if file_name.is_empty() {
         return Err("request name cannot be empty".to_string());
@@ -494,7 +617,20 @@ pub fn create_request(
         format!("{file_name}.nova")
     };
 
-    let path = std::path::Path::new(&collection_path).join(file_name);
+    Ok(std::path::Path::new(collection_path).join(file_name))
+}
+
+/// Create a new `.nova` file named `name` (a `.nova` suffix is added if
+/// missing) directly inside the collection directory at `collection_path`,
+/// with a minimal default request body. Returns the new [`RequestFile`] so
+/// the GUI can open it for editing immediately.
+#[tauri::command]
+pub fn create_request(
+    collection_path: String,
+    name: String,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<RequestFile, String> {
+    let path = validated_request_path(&collection_path, &name)?;
     let request_file = RequestFile::create(path).map_err(|e| e.to_string())?;
     invalidate_git_status_cache(&request_file.path, &cache);
     Ok(request_file)

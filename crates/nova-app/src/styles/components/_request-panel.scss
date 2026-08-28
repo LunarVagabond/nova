@@ -537,3 +537,107 @@
   border-radius: $radius-sm;
   background-color: #fff;
 }
+
+// WebSocketPanel — the URL bar's protocol badge (a fixed "WS" label, unlike
+// the HTTP method row's `<select>`), the messages-to-send list (built on
+// `.kv-editor`'s row/input/remove/add chrome, plus a position index and
+// reorder buttons `.kv-editor` itself has no equivalent for), and the
+// sent/received transcript.
+.ws-panel__protocol-badge {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 $spacing-md;
+  border-right: 1px solid var(--color-border);
+  color: var(--color-accent);
+  font-weight: 700;
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+}
+
+.ws-panel__section-title {
+  margin: 0 0 $spacing-sm;
+  color: var(--color-text-muted);
+  font-size: $font-size-sm;
+  font-weight: 600;
+}
+
+.ws-panel__message-row {
+  align-items: center;
+}
+
+.ws-panel__message-index {
+  flex-shrink: 0;
+  width: 2rem;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-family: $font-family-mono;
+  font-size: $font-size-xs;
+}
+
+.ws-panel__reorder-btn {
+  flex-shrink: 0;
+  width: $control-height;
+  height: $control-height;
+  border: none;
+  border-right: 1px solid var(--color-border);
+  background: none;
+  color: var(--color-text-muted);
+  font-size: $font-size-xs;
+  line-height: 1;
+
+  &:hover:not(:disabled) {
+    color: var(--color-text);
+    background-color: var(--color-bg-hover);
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+}
+
+.ws-panel__transcript-heading {
+  margin: $spacing-md 0 $spacing-xs;
+  color: var(--color-text-muted);
+  font-size: $font-size-sm;
+  font-weight: 600;
+
+  &:first-of-type {
+    margin-top: 0;
+  }
+}
+
+.ws-panel__transcript {
+  margin: 0 0 $spacing-sm;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-sm;
+  overflow: hidden;
+}
+
+.ws-panel__transcript-line {
+  padding: $spacing-xs $spacing-sm;
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+  word-break: break-all;
+
+  &:not(:last-child) {
+    border-bottom: 1px solid var(--color-border);
+  }
+}
+
+.ws-panel__transcript-line--sent {
+  color: var(--color-text);
+}
+
+.ws-panel__transcript-line--received {
+  color: var(--color-success);
+}
+
+.ws-panel__transcript-arrow {
+  display: inline-block;
+  width: 1rem;
+  color: var(--color-text-muted);
+}

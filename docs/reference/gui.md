@@ -29,9 +29,13 @@ release bundle with `make build-app`.
 - **`src/types/nova.ts`** — hand-mirrors the engine's `Serialize` shapes.
 - **`src/api/nova.ts`** — wraps `invoke()` and the dialog plugin.
 - **`src/components/`** — `Sidebar.vue`/`ProjectPanel.vue`/`CollectionNode.vue`
-  for the collection tree; `RequestPanel.vue` for the request editor, split
-  into Params/Auth/Headers/Body tabs (`AuthEditor.vue`, `KeyValueEditor.vue`,
-  `MultipartEditor.vue`, `CodeEditor.vue`); `EnvironmentPanel.vue` for
+  for the collection tree; `RequestPanel.vue` for the HTTP request editor,
+  split into Params/Auth/Headers/Body tabs (`AuthEditor.vue`,
+  `KeyValueEditor.vue`, `MultipartEditor.vue`, `CodeEditor.vue`);
+  `WebSocketPanel.vue` for a WebSocket request (`protocol: websocket`) — a
+  separate component from `RequestPanel.vue` rather than another tab on it,
+  since a WebSocket request has no method/params/body/auth/assertions/
+  example response to begin with (see below); `EnvironmentPanel.vue` for
   environment editing; `HistoryPanel.vue` for the current project's recent
   sends (method/status/timing/timestamp), reachable from the top bar's
   clock-icon action, with a click on an entry reopening its full stored
@@ -40,6 +44,46 @@ release bundle with `make build-app`.
   below) for the response pane's Diff tab; `Modal.vue` is the shared
   in-app dialog component — used instead of `window.prompt`/
   `window.confirm`, which are unreliable inside Tauri's webview.
+
+### WebSocket requests
+
+A request file whose `[request]` section declares `protocol: websocket`
+(see [the `.nova` file format](./nova-file-format.md)) opens in
+`WebSocketPanel.vue` instead of `RequestPanel.vue`. `App.vue`'s tab system
+picks between the two per open tab, keyed off `RequestFile.protocol` — a
+field populated at collection-discovery time the same cheap, best-effort
+way `RequestFile.method` always has been (see
+`nova_engine::request::detect_method_and_protocol`), so the sidebar can
+show a "WS" badge (the `.method-badge--ws` modifier in
+`_sidebar.scss`, alongside the existing per-HTTP-method ones) without a
+round trip per request.
+
+The panel edits a `WebSocketDraft` (URL, headers, and the ordered list of
+plain-text messages to send once connected) via the
+`read_websocket_request`/`save_websocket_request` Tauri commands —
+the `nova-engine` counterparts to `read_request`/`save_request`/
+`RequestDraft`, going through `ParsedWebSocketRequest::to_nova_string`/
+`RequestFile::write_websocket` on the Rust side rather than the GUI
+hand-rolling `.nova` syntax. The messages list has no natural fit in
+`KeyValueEditor.vue` (a name/value table) and isn't a general-purpose
+component of its own — it's a small, purpose-built add/remove/reorder list
+inline in `WebSocketPanel.vue`.
+
+Clicking Connect (saving first if the request has unsaved edits, mirroring
+`RequestPanel.vue`'s save-before-send behavior) calls the
+`connect_websocket` Tauri command, which resolves `{{variable}}`s against
+the selected environment (and the request's owning collection's variables)
+the same way `send_request` does, then calls
+`nova_engine::connect_and_exchange` with `nova_engine::DEFAULT_READ_TIMEOUT`
+(5 seconds) and returns a `WebSocketExchange`. Unlike sending an HTTP
+request, this doesn't go through the project's persistent `Session` — a
+WebSocket connection here is a one-shot connect/send/collect with no
+cookies, history, or request-chained variables to participate in. The
+panel's transcript shows every sent message followed by everything
+received, in two ordered groups rather than a single interleaved timeline:
+the engine sends all of a request's declared messages first and only then
+reads back whatever comes in, so there's no real interleaving order to
+preserve.
 
 ### Response diffing
 

@@ -63,6 +63,7 @@ pub use request::{
     delete_request, duplicate_request, multipart_fields_to_body_text, parse_multipart_fields,
     rename_request, ExampleResponse, GraphQlBody, Header, MultipartField, ParsedRequest,
     ParsedSseRequest, ParsedWebSocketRequest, QueryParam, RequestBody, RequestDraft, RequestFile,
+    WebSocketDraft,
 };
 pub use script::{
     resolve_script_path, run_post_response, run_pre_request, PreRequestOverrides, ScriptSection,
