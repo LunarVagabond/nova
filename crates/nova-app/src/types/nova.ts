@@ -247,6 +247,26 @@ export interface WebSocketExchange {
 }
 
 /**
+ * Mirrors `nova_app_lib::websocket_session::WebSocketSessionStatus` —
+ * whether the desktop app's interactive WebSocket panel currently has an
+ * open session, for a tab to reflect connection state on reopen/reload
+ * without needing to reconnect to find out.
+ */
+export interface WebSocketSessionStatus {
+  connected: boolean;
+}
+
+/**
+ * Mirrors `nova_app_lib::websocket_session::WsMessageEvent` — the payload
+ * of a `"ws-session:message"` event, emitted once per text message the
+ * currently-open interactive WebSocket session receives, in arrival order.
+ */
+export interface WsSessionMessageEvent {
+  text: string;
+  atMs: number;
+}
+
+/**
  * Mirrors `nova_engine::ParsedCurlRequest` — the pieces recovered from a
  * pasted `curl`/`wget` command. No `query`: a raw curl URL isn't split
  * into base/query the way `RequestDraft` is, so the caller runs it through

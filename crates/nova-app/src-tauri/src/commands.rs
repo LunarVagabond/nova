@@ -16,11 +16,13 @@ use nova_engine::{
     write_generated_project, AssertionOutcome, AuthScheme, Collection, ComparableResponse,
     Environment, GitFileStatus, GitStatusCache, GraphQlBody, Header, InitOptions, InitOutcome,
     Manifest, MultipartField, NovaProject, OpenProjectOutcome, ParsedCurlRequest, ParsedRequest,
-    RequestDraft, RequestFile, Response, ResponseDiff, Session, WebSocketDraft, WebSocketExchange,
+    ParsedWebSocketRequest, RequestDraft, RequestFile, Response, ResponseDiff, Session,
+    WebSocketDraft, WebSocketExchange,
 };
 
 use crate::mock_server::{MockServerState, MockServerStatus, DEFAULT_HOST, DEFAULT_PORT};
 use crate::session_store::SessionStore;
+use crate::websocket_session::{WebSocketSessionState, WebSocketSessionStatus};
 
 /// Forces the next [`git_status`] call for whichever project `path` belongs
 /// to to recompute rather than potentially serving a cached result — call
@@ -488,7 +490,23 @@ pub fn connect_websocket(
     request_path: String,
     environment: Option<String>,
 ) -> Result<WebSocketExchange, String> {
-    let path = std::path::Path::new(&request_path);
+    let resolved = resolve_websocket_request(&request_path, environment)?;
+
+    nova_engine::connect_and_exchange(&resolved, nova_engine::DEFAULT_READ_TIMEOUT)
+        .map_err(|e| e.to_string())
+}
+
+/// Parse, discover the owning project for, and resolve `{{variable}}`s in
+/// the WebSocket connection declared at `request_path` — shared by
+/// [`connect_websocket`] (the one-shot batch flow) and
+/// [`connect_websocket_session`] (the interactive session), so the
+/// environment/collection-variable merge rule lives in exactly one place.
+/// See [`connect_websocket`]'s own doc comment for what that merge rule is.
+fn resolve_websocket_request(
+    request_path: &str,
+    environment: Option<String>,
+) -> Result<ParsedWebSocketRequest, String> {
+    let path = std::path::Path::new(request_path);
     let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
 
     let resolved_environment = match environment {
@@ -529,12 +547,56 @@ pub fn connect_websocket(
         path: resolved_environment.path.clone(),
     };
 
-    let resolved = parsed
+    parsed
         .resolve(&effective_environment)
-        .map_err(|e| e.to_string())?;
-
-    nova_engine::connect_and_exchange(&resolved, nova_engine::DEFAULT_READ_TIMEOUT)
         .map_err(|e| e.to_string())
+}
+
+/// Open an interactive WebSocket session against the `.nova` file at
+/// `request_path` — the GUI-only counterpart to [`connect_websocket`]'s
+/// one-shot batch flow. The session is held in [`WebSocketSessionState`]
+/// (only one open at a time); each received text message is emitted to the
+/// frontend as a `"ws-session:message"` event, and an unexpected close (the
+/// server hung up) as `"ws-session:closed"` — see `websocket_session.rs`.
+#[tauri::command]
+pub fn connect_websocket_session(
+    request_path: String,
+    environment: Option<String>,
+    app: tauri::AppHandle,
+    state: tauri::State<WebSocketSessionState>,
+) -> Result<(), String> {
+    let resolved = resolve_websocket_request(&request_path, environment)?;
+    state.connect(&resolved, app)
+}
+
+/// Send `text` on the currently-open interactive WebSocket session. Errors
+/// if no session is open.
+#[tauri::command]
+pub fn send_websocket_session_message(
+    text: String,
+    state: tauri::State<WebSocketSessionState>,
+) -> Result<(), String> {
+    state.send(&text)
+}
+
+/// Close the currently-open interactive WebSocket session, if any — a
+/// harmless no-op when nothing is open.
+#[tauri::command]
+pub fn disconnect_websocket_session(
+    state: tauri::State<WebSocketSessionState>,
+) -> Result<(), String> {
+    state.disconnect();
+    Ok(())
+}
+
+/// Whether an interactive WebSocket session is currently open — lets the
+/// frontend reflect connection state if a tab is reopened/reloaded, without
+/// needing to reconnect to find out.
+#[tauri::command]
+pub fn websocket_session_status(
+    state: tauri::State<WebSocketSessionState>,
+) -> WebSocketSessionStatus {
+    state.status()
 }
 
 /// Create a new `.nova` file named `name` (a `.nova` suffix is added if

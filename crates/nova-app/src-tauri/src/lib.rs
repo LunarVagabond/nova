@@ -1,6 +1,7 @@
 mod commands;
 mod mock_server;
 mod session_store;
+mod websocket_session;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -10,6 +11,7 @@ pub fn run() {
         .manage(nova_engine::GitStatusCache::new())
         .manage(session_store::SessionStore::new())
         .manage(mock_server::MockServerState::new())
+        .manage(websocket_session::WebSocketSessionState::new())
         .invoke_handler(tauri::generate_handler![
             commands::open_project,
             commands::init_project,
@@ -26,6 +28,10 @@ pub fn run() {
             commands::save_websocket_request,
             commands::connect_websocket,
             commands::create_websocket_request,
+            commands::connect_websocket_session,
+            commands::send_websocket_session_message,
+            commands::disconnect_websocket_session,
+            commands::websocket_session_status,
             commands::parse_multipart_body,
             commands::serialize_multipart_body,
             commands::parse_graphql_body_text,

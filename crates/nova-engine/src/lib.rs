@@ -74,5 +74,7 @@ pub use sse::{
     connect_and_stream, SseEvent, SseExchange, DEFAULT_READ_TIMEOUT as SSE_DEFAULT_READ_TIMEOUT,
 };
 pub use validate::{validate, ValidationIssue};
-pub use websocket::{connect_and_exchange, WebSocketExchange, DEFAULT_READ_TIMEOUT};
+pub use websocket::{
+    connect_and_exchange, WebSocketExchange, WebSocketSession, DEFAULT_READ_TIMEOUT,
+};
 pub use xml::{XmlElement, XmlNode};

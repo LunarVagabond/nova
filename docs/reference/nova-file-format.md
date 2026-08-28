@@ -335,7 +335,12 @@ world
 connection opens. `nova ws` (see the [CLI reference](./cli.md)) sends them,
 then collects whatever text messages come back until the connection closes
 or a read timeout elapses. Binary/ping/pong frames are out of scope for now
-— only text messages are sent or collected.
+— only text messages are sent or collected. The desktop app's WebSocket
+panel treats this same list as a saved-messages picker for its interactive
+composer (see [the GUI reference](./gui.md)) rather than something it sends
+in one batch — saving or updating a message from the composer just
+appends-or-replaces an entry here, so the on-disk shape stays exactly this
+plain one-message-per-line list either way.
 
 ## Server-Sent Events requests
 

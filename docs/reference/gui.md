@@ -58,32 +58,60 @@ show a "WS" badge (the `.method-badge--ws` modifier in
 `_sidebar.scss`, alongside the existing per-HTTP-method ones) without a
 round trip per request.
 
-The panel edits a `WebSocketDraft` (URL, headers, and the ordered list of
-plain-text messages to send once connected) via the
-`read_websocket_request`/`save_websocket_request` Tauri commands —
-the `nova-engine` counterparts to `read_request`/`save_request`/
-`RequestDraft`, going through `ParsedWebSocketRequest::to_nova_string`/
-`RequestFile::write_websocket` on the Rust side rather than the GUI
-hand-rolling `.nova` syntax. The messages list has no natural fit in
-`KeyValueEditor.vue` (a name/value table) and isn't a general-purpose
-component of its own — it's a small, purpose-built add/remove/reorder list
-inline in `WebSocketPanel.vue`.
+The panel edits a `WebSocketDraft` (URL, headers, and the request's saved
+messages — see below) via the `read_websocket_request`/
+`save_websocket_request` Tauri commands — the `nova-engine` counterparts to
+`read_request`/`save_request`/`RequestDraft`, going through
+`ParsedWebSocketRequest::to_nova_string`/`RequestFile::write_websocket` on
+the Rust side rather than the GUI hand-rolling `.nova` syntax.
 
-Clicking Connect (saving first if the request has unsaved edits, mirroring
-`RequestPanel.vue`'s save-before-send behavior) calls the
-`connect_websocket` Tauri command, which resolves `{{variable}}`s against
-the selected environment (and the request's owning collection's variables)
-the same way `send_request` does, then calls
-`nova_engine::connect_and_exchange` with `nova_engine::DEFAULT_READ_TIMEOUT`
-(5 seconds) and returns a `WebSocketExchange`. Unlike sending an HTTP
-request, this doesn't go through the project's persistent `Session` — a
-WebSocket connection here is a one-shot connect/send/collect with no
-cookies, history, or request-chained variables to participate in. The
-panel's transcript shows every sent message followed by everything
-received, in two ordered groups rather than a single interleaved timeline:
-the engine sends all of a request's declared messages first and only then
-reads back whatever comes in, so there's no real interleaving order to
-preserve.
+**Composer and saved messages.** The top half of the panel is a message
+composer: a `CodeEditor` for the message about to be sent, a format
+selector (JSON/Text/Binary/XML/HTML — "Binary" is edited as plain text with
+beautify disabled, since the engine only ever sends text frames; see
+`crates/nova-engine/src/websocket.rs`'s module doc comment) with a beautify
+button next to it (reusing the same `beautifyJson`/`formatXml` helpers
+`RequestPanel.vue`'s raw body editor uses), and a Send button enabled only
+while a session is open. Alongside it, a saved-messages list is just a
+picker over the request's `[messages]` list — the on-disk format is
+unchanged from the original batch design; there's no new section and no
+per-message name field. `nova ws` (the CLI) still sends every message in
+`[messages]` in order on connect, exactly as before. Since a saved message
+has no name field to show, the side panel labels each entry with a
+truncated preview of its own text (mirroring how Postman itself falls back
+to a content-derived name) rather than inventing an on-disk naming syntax —
+adding a `name:` prefix line was considered and rejected: distinguishing it
+unambiguously from a JSON/text message that happens to start the same way
+isn't clean, and a fallback preview needs no format or parser change at
+all. Clicking a saved entry loads it into the composer for editing/resend;
+saving updates that same entry in place, or appends a new one if the
+composer wasn't loaded from an existing entry.
+
+**Live session.** Connect (saving first if the request has unsaved edits,
+mirroring `RequestPanel.vue`'s save-before-send behavior) calls the
+`connect_websocket_session` Tauri command, which resolves `{{variable}}`s
+against the selected environment (and the request's owning collection's
+variables) the same way `send_request`/the older `connect_websocket` do,
+then opens an `nova_engine::WebSocketSession` and keeps it open — unlike
+the one-shot `connect_websocket`/`connect_and_exchange` batch flow `nova
+ws` (the CLI) still uses, this stays connected so messages can be sent one
+at a time via `send_websocket_session_message` and watched as they arrive.
+Only one interactive session is open at a time app-wide (managed by
+`WebSocketSessionState` in `nova-app/src-tauri`, mirroring
+`MockServerState`'s shape); opening Connect on a second WebSocket tab while
+one is already live surfaces the rejection as a connect error rather than
+silently stealing the connection. Each received message arrives as a
+`"ws-session:message"` Tauri event (`listen()`'d from the frontend, not
+polled) and an unexpected close (the server hung up) as
+`"ws-session:closed"`. The transcript is a single interleaved,
+chronologically-ordered list — a sent row is appended synchronously the
+moment `send_websocket_session_message` resolves (it doesn't wait on any
+reply to know the send happened), a received row is appended whenever the
+message event fires — each row showing a direction arrow (↑ sent, ↓
+received), the message text, and a timestamp. Disconnect closes the
+session and stops listening for its events; closing the tab that opened a
+still-live session disconnects it too, so a stray connection doesn't
+outlive the tab that owns it.
 
 ### Response diffing
 

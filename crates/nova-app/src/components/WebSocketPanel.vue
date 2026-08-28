@@ -1,8 +1,20 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 
-import { connectWebSocket, readWebSocketRequest, saveWebSocketRequest } from "../api/nova";
-import type { RequestFile, RequestHeader, WebSocketExchange } from "../types/nova";
+import {
+  connectWebSocketSession,
+  disconnectWebSocketSession,
+  listenForWebSocketSessionClosed,
+  listenForWebSocketSessionMessages,
+  readWebSocketRequest,
+  saveWebSocketRequest,
+  sendWebSocketSessionMessage,
+} from "../api/nova";
+import type { RequestFile, RequestHeader } from "../types/nova";
+import { beautifyJson } from "../lib/jsonFormat";
+import { formatXml } from "../lib/xmlFormat";
+import CodeEditor, { type EditorLanguage } from "./CodeEditor.vue";
 import Icon from "./Icon.vue";
 import KeyValueEditor from "./KeyValueEditor.vue";
 
@@ -22,7 +34,10 @@ const loadError = ref<string | null>(null);
 
 // Mirrors `RequestPanel`'s `original`/editable-working-copy split: `original`
 // is the last loaded/saved snapshot, the refs below are what the form edits,
-// and `dirty` is a plain comparison between the two.
+// and `dirty` is a plain comparison between the two. `messages` here is the
+// request's *saved-messages list* (still exactly `[messages]` on disk) —
+// the composer's currently-being-typed text is a separate `composedText`
+// ref below, not part of this list until explicitly saved into it.
 const original = ref<{ url: string; headers: RequestHeader[]; messages: string[] } | null>(null);
 
 const url = ref("");
@@ -54,14 +69,45 @@ function applyDraft(draft: { url: string; headers: RequestHeader[]; messages: st
 // tab opens.
 const saving = ref(false);
 const saveError = ref<string | null>(null);
+
+// --- Interactive session state -------------------------------------------
+//
+// One session is open (backend-side) at a time across the whole app — see
+// `websocket_session.rs`'s doc comment. Switching tabs doesn't disconnect
+// it (the panel just stops being visible), but closing the tab that opened
+// it does (see `onBeforeUnmount` below); opening a second WebSocket tab's
+// Connect while another is already live surfaces the backend's "already
+// open" rejection as `connectError` rather than silently stealing the
+// connection.
 const connecting = ref(false);
 const connectError = ref<string | null>(null);
-const exchange = ref<WebSocketExchange | null>(null);
+const sessionConnected = ref(false);
+
+interface TranscriptEntry {
+  direction: "sent" | "received";
+  text: string;
+  atMs: number;
+}
+
+const transcript = ref<TranscriptEntry[]>([]);
+
+let unlistenMessage: UnlistenFn | null = null;
+let unlistenClosed: UnlistenFn | null = null;
+
+async function teardownListeners() {
+  if (unlistenMessage) {
+    unlistenMessage();
+    unlistenMessage = null;
+  }
+  if (unlistenClosed) {
+    unlistenClosed();
+    unlistenClosed = null;
+  }
+}
 
 async function load() {
   loading.value = true;
   loadError.value = null;
-  exchange.value = null;
   connectError.value = null;
   saveError.value = null;
   try {
@@ -111,8 +157,8 @@ async function handleSave(): Promise<boolean> {
 
 async function handleConnect() {
   // Same "save before send" rule as `RequestPanel`'s Send button: connecting
-  // against stale on-disk content while the form shows edited fields would
-  // be confusing, so save first if there are unsaved edits.
+  // against a stale on-disk URL/headers while the form shows edited fields
+  // would be confusing, so save first if there are unsaved edits.
   if (dirty.value) {
     const saved = await handleSave();
     if (!saved) return;
@@ -120,38 +166,161 @@ async function handleConnect() {
 
   connecting.value = true;
   connectError.value = null;
-  exchange.value = null;
+  transcript.value = [];
+
   try {
-    exchange.value = await connectWebSocket(props.request.path, props.selectedEnvironment);
+    unlistenMessage = await listenForWebSocketSessionMessages((message) => {
+      transcript.value = [...transcript.value, { direction: "received", text: message.text, atMs: message.atMs }];
+    });
+    unlistenClosed = await listenForWebSocketSessionClosed(() => {
+      sessionConnected.value = false;
+      teardownListeners();
+    });
+
+    await connectWebSocketSession(props.request.path, props.selectedEnvironment);
+    sessionConnected.value = true;
   } catch (e) {
-    exchange.value = null;
     connectError.value = String(e);
+    sessionConnected.value = false;
+    await teardownListeners();
   } finally {
     connecting.value = false;
   }
 }
 
-// Message list editing — a flat ordered list of plain-text lines, not a
-// name/value table, so `KeyValueEditor` doesn't fit; this is intentionally
-// a minimal add/remove/reorder editor rather than a general-purpose one.
-function addMessage() {
-  messages.value = [...messages.value, ""];
+async function handleDisconnect() {
+  try {
+    await disconnectWebSocketSession();
+  } catch (e) {
+    connectError.value = String(e);
+  } finally {
+    sessionConnected.value = false;
+    await teardownListeners();
+  }
 }
 
-function updateMessage(index: number, value: string) {
-  messages.value = messages.value.map((m, i) => (i === index ? value : m));
+onBeforeUnmount(() => {
+  teardownListeners();
+  if (sessionConnected.value) {
+    disconnectWebSocketSession().catch(() => {
+      // Nothing more useful to do with a failed best-effort cleanup on
+      // unmount — the panel (and its error display) is already gone.
+    });
+  }
+});
+
+// --- Composer --------------------------------------------------------------
+//
+// The five formats Postman's own WebSocket composer offers. "Binary" has no
+// real binary framing behind it — see `websocket.rs`'s module doc comment,
+// text-frames-only is this pass's whole engine-side scope — so it's edited
+// as plain text with beautify/lint disabled, and a hint below the selector
+// says so plainly rather than pretending otherwise.
+type WsMessageFormat = "json" | "text" | "binary" | "xml" | "html";
+
+const WS_FORMAT_OPTIONS: WsMessageFormat[] = ["json", "text", "binary", "xml", "html"];
+const WS_FORMAT_LABELS: Record<WsMessageFormat, string> = {
+  json: "JSON",
+  text: "Text",
+  binary: "Binary",
+  xml: "XML",
+  html: "HTML",
+};
+const WS_FORMAT_EDITOR_LANGUAGE: Record<WsMessageFormat, EditorLanguage> = {
+  json: "json",
+  text: "text",
+  binary: "text",
+  xml: "xml",
+  html: "html",
+};
+
+const composedText = ref("");
+const composedFormat = ref<WsMessageFormat>("json");
+// Index into `messages` this composer's text was loaded from, if any — lets
+// Save update that entry in place instead of always appending a new one.
+// Cleared whenever the text is edited away from what was loaded, or a
+// different saved message is picked, so an unrelated edit can't silently
+// clobber a saved entry the user didn't mean to touch.
+const loadedMessageIndex = ref<number | null>(null);
+
+const editorLanguage = computed(() => WS_FORMAT_EDITOR_LANGUAGE[composedFormat.value]);
+const canBeautify = computed(() => composedFormat.value === "json" || composedFormat.value === "xml");
+
+function beautifyComposedText() {
+  if (composedFormat.value === "json") {
+    try {
+      composedText.value = beautifyJson(composedText.value);
+    } catch {
+      // Leave it as-is — genuinely invalid JSON has nothing useful for
+      // beautify to do with it, same rule `RequestPanel`'s body editor uses.
+    }
+  } else if (composedFormat.value === "xml") {
+    composedText.value = formatXml(composedText.value);
+  }
 }
 
-function removeMessage(index: number) {
+/** A short label for a saved message with no name of its own — this pass
+ * doesn't add a `name:` field to `[messages]` (see the design note in
+ * `docs/reference/gui.md`'s WebSocket section for why), so the side panel
+ * names each entry by a truncated preview of its own content instead,
+ * mirroring how Postman itself falls back to content-derived names. */
+function messagePreview(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed === "") return "(empty message)";
+  const firstLine = trimmed.split("\n", 1)[0];
+  return firstLine.length > 48 ? `${firstLine.slice(0, 48)}…` : firstLine;
+}
+
+function loadSavedMessage(index: number) {
+  composedText.value = messages.value[index] ?? "";
+  loadedMessageIndex.value = index;
+}
+
+function saveComposedMessage() {
+  const text = composedText.value;
+  if (loadedMessageIndex.value !== null) {
+    messages.value = messages.value.map((m, i) => (i === loadedMessageIndex.value ? text : m));
+  } else {
+    messages.value = [...messages.value, text];
+    loadedMessageIndex.value = messages.value.length - 1;
+  }
+}
+
+function newComposedMessage() {
+  composedText.value = "";
+  composedFormat.value = "json";
+  loadedMessageIndex.value = null;
+}
+
+function removeSavedMessage(index: number) {
   messages.value = messages.value.filter((_, i) => i !== index);
+  if (loadedMessageIndex.value === index) {
+    loadedMessageIndex.value = null;
+  } else if (loadedMessageIndex.value !== null && loadedMessageIndex.value > index) {
+    loadedMessageIndex.value -= 1;
+  }
 }
 
-function moveMessage(index: number, direction: -1 | 1) {
-  const target = index + direction;
-  if (target < 0 || target >= messages.value.length) return;
-  const next = [...messages.value];
-  [next[index], next[target]] = [next[target], next[index]];
-  messages.value = next;
+const sending = ref(false);
+
+async function handleSend() {
+  if (!sessionConnected.value || composedText.value === "") return;
+  sending.value = true;
+  try {
+    await sendWebSocketSessionMessage(composedText.value);
+    // Appended immediately rather than waiting on any round-trip — sending
+    // doesn't need a reply to know it happened, and the live transcript
+    // should reflect that right away.
+    transcript.value = [...transcript.value, { direction: "sent", text: composedText.value, atMs: Date.now() }];
+  } catch (e) {
+    connectError.value = String(e);
+  } finally {
+    sending.value = false;
+  }
+}
+
+function formatTimestamp(atMs: number): string {
+  return new Date(atMs).toLocaleTimeString([], { hour12: false });
 }
 
 defineExpose({ dirty, save: handleSave });
@@ -199,7 +368,11 @@ defineExpose({ dirty, save: handleSave });
             class="request-panel__url-input"
             placeholder="{{ws_base_url}}/socket"
           />
+          <span class="ws-panel__status" :class="{ 'ws-panel__status--connected': sessionConnected }">
+            {{ sessionConnected ? "Connected" : "Disconnected" }}
+          </span>
           <button
+            v-if="!sessionConnected"
             type="button"
             class="button request-panel__send"
             :disabled="connecting || loading"
@@ -207,11 +380,14 @@ defineExpose({ dirty, save: handleSave });
           >
             {{ connecting ? "Connecting…" : "Connect" }}
           </button>
+          <button v-else type="button" class="button button--secondary" @click="handleDisconnect">
+            Disconnect
+          </button>
         </div>
 
         <p class="request-panel__hint-text">
-          Only a URL, headers, and a list of text messages to send once connected apply to a
-          WebSocket request — no method, params, body, auth, or example response.
+          Only a URL and headers apply to a WebSocket request's connection settings — no method,
+          params, body, auth, or example response. Compose and send messages once connected below.
         </p>
 
         <div class="request-panel__tab-panel">
@@ -219,44 +395,69 @@ defineExpose({ dirty, save: handleSave });
           <KeyValueEditor v-model="headers" name-placeholder="Header" value-placeholder="Value" mode="headers" />
         </div>
 
-        <div class="request-panel__tab-panel">
-          <h4 class="ws-panel__section-title">Messages to send, in order</h4>
-          <div class="kv-editor">
-            <div v-for="(message, index) in messages" :key="index" class="kv-editor__row ws-panel__message-row">
-              <span class="ws-panel__message-index">{{ index + 1 }}</span>
-              <input
-                class="kv-editor__input"
-                type="text"
-                placeholder="Message text"
-                :value="message"
-                @input="updateMessage(index, ($event.target as HTMLInputElement).value)"
-              />
-              <button
-                type="button"
-                class="ws-panel__reorder-btn"
-                title="Move up"
-                :disabled="index === 0"
-                @click="moveMessage(index, -1)"
-              >
-                ▲
-              </button>
-              <button
-                type="button"
-                class="ws-panel__reorder-btn"
-                title="Move down"
-                :disabled="index === messages.length - 1"
-                @click="moveMessage(index, 1)"
-              >
-                ▼
-              </button>
-              <button type="button" class="kv-editor__remove" title="Remove" @click="removeMessage(index)">
-                <Icon name="x" />
-              </button>
+        <div class="request-panel__tab-panel ws-panel__composer">
+          <h4 class="ws-panel__section-title">Compose message</h4>
+          <div class="ws-panel__composer-layout">
+            <div class="ws-panel__composer-main">
+              <div class="ws-panel__composer-toolbar">
+                <select v-model="composedFormat" class="request-panel__body-type-select">
+                  <option v-for="format in WS_FORMAT_OPTIONS" :key="format" :value="format">
+                    {{ WS_FORMAT_LABELS[format] }}
+                  </option>
+                </select>
+                <button
+                  type="button"
+                  class="icon-button icon-button--outline"
+                  title="Beautify"
+                  :disabled="!canBeautify"
+                  @click="beautifyComposedText"
+                >
+                  <Icon name="wand" />
+                </button>
+                <button
+                  type="button"
+                  class="button request-panel__send"
+                  :disabled="!sessionConnected || sending || composedText === ''"
+                  @click="handleSend"
+                >
+                  {{ sending ? "Sending…" : "Send" }}
+                </button>
+              </div>
+              <p v-if="composedFormat === 'binary'" class="request-panel__hint-text">
+                Sent as a text frame, not true binary — real binary framing isn't supported yet.
+              </p>
+              <CodeEditor v-model="composedText" :language="editorLanguage" />
+              <div class="ws-panel__composer-save">
+                <button type="button" class="button button--ghost" @click="newComposedMessage">New</button>
+                <button type="button" class="button button--secondary" @click="saveComposedMessage">
+                  {{ loadedMessageIndex !== null ? "Update saved message" : "Save message" }}
+                </button>
+              </div>
             </div>
-            <button type="button" class="kv-editor__add" @click="addMessage">
-              <Icon name="plus" />
-              Add message
-            </button>
+            <div class="ws-panel__saved-messages">
+              <h5 class="ws-panel__section-title">Saved messages</h5>
+              <ul v-if="messages.length > 0" class="ws-panel__saved-list">
+                <li
+                  v-for="(message, index) in messages"
+                  :key="index"
+                  class="ws-panel__saved-item"
+                  :class="{ 'ws-panel__saved-item--active': loadedMessageIndex === index }"
+                >
+                  <button type="button" class="ws-panel__saved-item-label" @click="loadSavedMessage(index)">
+                    {{ messagePreview(message) }}
+                  </button>
+                  <button
+                    type="button"
+                    class="kv-editor__remove"
+                    title="Remove this saved message"
+                    @click="removeSavedMessage(index)"
+                  >
+                    <Icon name="x" />
+                  </button>
+                </li>
+              </ul>
+              <p v-else class="response-pane__hint">No saved messages yet.</p>
+            </div>
           </div>
         </div>
       </template>
@@ -268,48 +469,23 @@ defineExpose({ dirty, save: handleSave });
       <span class="response-pane__header-label">Transcript</span>
     </div>
     <div class="response-pane">
-      <p v-if="connecting" class="response-pane__hint">Connecting…</p>
-      <p v-else-if="connectError" class="response-pane__error">{{ connectError }}</p>
+      <p v-if="connectError" class="response-pane__error">{{ connectError }}</p>
 
-      <template v-else-if="exchange">
-        <div class="response-summary">
-          <span class="response-summary__meta"
-            >Sent <strong>{{ exchange.sent.length }}</strong></span
-          >
-          <span class="response-summary__meta"
-            >Received <strong>{{ exchange.received.length }}</strong></span
-          >
-          <span class="response-summary__meta">Time <strong>{{ exchange.elapsed_ms }} ms</strong></span>
-        </div>
-
-        <!-- Messages are all sent up front, then whatever comes back is
-             collected after — the engine doesn't interleave the two, so the
-             transcript is shown as two ordered groups rather than a single
-             merged timeline that would misrepresent when things happened. -->
-        <p class="ws-panel__transcript-heading">Sent</p>
-        <ul v-if="exchange.sent.length > 0" class="ws-panel__transcript">
-          <li v-for="(message, index) in exchange.sent" :key="`sent-${index}`" class="ws-panel__transcript-line ws-panel__transcript-line--sent">
-            <span class="ws-panel__transcript-arrow">&gt;</span> {{ message }}
-          </li>
-        </ul>
-        <p v-else class="response-pane__hint">No messages were sent.</p>
-
-        <p class="ws-panel__transcript-heading">Received</p>
-        <ul v-if="exchange.received.length > 0" class="ws-panel__transcript">
-          <li
-            v-for="(message, index) in exchange.received"
-            :key="`received-${index}`"
-            class="ws-panel__transcript-line ws-panel__transcript-line--received"
-          >
-            <span class="ws-panel__transcript-arrow">&lt;</span> {{ message }}
-          </li>
-        </ul>
-        <p v-else class="response-pane__hint">
-          Nothing came back before the connection closed or the read timeout elapsed.
-        </p>
-      </template>
-
-      <p v-else class="response-pane__hint">Click Connect to open this WebSocket connection.</p>
+      <ul v-if="transcript.length > 0" class="ws-panel__transcript">
+        <li
+          v-for="(entry, index) in transcript"
+          :key="index"
+          class="ws-panel__transcript-line"
+          :class="`ws-panel__transcript-line--${entry.direction}`"
+        >
+          <span class="ws-panel__transcript-arrow">{{ entry.direction === "sent" ? "↑" : "↓" }}</span>
+          <span class="ws-panel__transcript-text">{{ entry.text }}</span>
+          <span class="ws-panel__transcript-time">{{ formatTimestamp(entry.atMs) }}</span>
+        </li>
+      </ul>
+      <p v-else-if="!connectError" class="response-pane__hint">
+        {{ sessionConnected ? "No messages yet — send one above." : "Click Connect to open this WebSocket connection." }}
+      </p>
     </div>
     </div>
   </div>

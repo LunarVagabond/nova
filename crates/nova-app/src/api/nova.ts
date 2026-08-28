@@ -4,6 +4,7 @@
 // only calls `invoke` and types the result.
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 
 import type {
@@ -29,6 +30,8 @@ import type {
   TestRunResult,
   WebSocketDraft,
   WebSocketExchange,
+  WebSocketSessionStatus,
+  WsSessionMessageEvent,
 } from "../types/nova";
 
 /**
@@ -167,6 +170,56 @@ export function connectWebSocket(
  */
 export function createWebSocketRequest(collectionPath: string, name: string): Promise<RequestFile> {
   return invoke<RequestFile>("create_websocket_request", { collectionPath, name });
+}
+
+/**
+ * Opens an interactive WebSocket session against the `.nova` file at
+ * `requestPath` (resolving `{{variable}}`s against `environment` if named,
+ * else the project's default) and keeps it open — the GUI-only counterpart
+ * to `connectWebSocket`'s one-shot batch flow. Each received message
+ * arrives as a `"ws-session:message"` event (see `listenForWebSocketSessionMessages`
+ * below); an unexpected close arrives as `"ws-session:closed"`. Rejects if a
+ * session is already open.
+ */
+export function connectWebSocketSession(requestPath: string, environment: string | null): Promise<void> {
+  return invoke<void>("connect_websocket_session", { requestPath, environment });
+}
+
+/** Sends `text` on the currently-open interactive WebSocket session. */
+export function sendWebSocketSessionMessage(text: string): Promise<void> {
+  return invoke<void>("send_websocket_session_message", { text });
+}
+
+/** Closes the currently-open interactive WebSocket session, if any. */
+export function disconnectWebSocketSession(): Promise<void> {
+  return invoke<void>("disconnect_websocket_session");
+}
+
+/** Whether an interactive WebSocket session is currently open. */
+export function websocketSessionStatus(): Promise<WebSocketSessionStatus> {
+  return invoke<WebSocketSessionStatus>("websocket_session_status");
+}
+
+/**
+ * Subscribes to every text message the currently-open interactive
+ * WebSocket session receives, in arrival order, until the returned
+ * unlisten function is called. Thin wrapper around `@tauri-apps/api/event`'s
+ * `listen` so components don't import it (and the event name) directly.
+ */
+export function listenForWebSocketSessionMessages(
+  handler: (message: WsSessionMessageEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<WsSessionMessageEvent>("ws-session:message", (event) => handler(event.payload));
+}
+
+/**
+ * Subscribes to the currently-open interactive WebSocket session ending on
+ * its own (the server closed it, or a read failed) — not fired for an
+ * explicit `disconnectWebSocketSession()` call, since the caller already
+ * knows about that one.
+ */
+export function listenForWebSocketSessionClosed(handler: () => void): Promise<UnlistenFn> {
+  return listen("ws-session:closed", () => handler());
 }
 
 /**
