@@ -20,7 +20,11 @@ pub struct Response {
 /// the same name (case-insensitively) — mirrors what a browser or Postman's
 /// runtime adds automatically, so a `.nova` file doesn't need this
 /// boilerplate written into it just to look like a normal HTTP client.
-/// `nova-app`'s Headers tab shows this same pair as a read-only hint.
+/// `ureq` itself also adds a `Host` header (from the URL) and, with its
+/// default `gzip` feature enabled, `Accept-Encoding: gzip` — those aren't
+/// set here since `ureq` already handles them, but `nova-app`'s Headers tab
+/// mentions all four as a read-only hint so what actually goes over the
+/// wire isn't a surprise.
 const DEFAULT_USER_AGENT: &str = concat!("Nova/", env!("CARGO_PKG_VERSION"));
 const DEFAULT_ACCEPT: &str = "*/*";
 

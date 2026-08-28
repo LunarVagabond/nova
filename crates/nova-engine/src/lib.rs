@@ -60,9 +60,10 @@ pub use openapi::{export_to_spec, generate_from_spec, GeneratedProject, Generate
 pub use postman::generate_from_postman_collection;
 pub use project::{discover_or_not_found, NovaProject, OpenProjectOutcome, MANIFEST_FILE_NAME};
 pub use request::{
-    delete_request, duplicate_request, multipart_fields_to_body_text, parse_multipart_fields,
-    rename_request, ExampleResponse, GraphQlBody, Header, MultipartField, ParsedRequest,
-    ParsedSseRequest, ParsedWebSocketRequest, QueryParam, RequestBody, RequestDraft, RequestFile,
+    delete_request, duplicate_request, graphql_body_to_text, multipart_fields_to_body_text,
+    parse_graphql_body, parse_multipart_fields, rename_request, ExampleResponse, GraphQlBody,
+    Header, MultipartField, ParsedRequest, ParsedSseRequest, ParsedWebSocketRequest, QueryParam,
+    RequestBody, RequestDraft, RequestFile, WebSocketDraft,
 };
 pub use script::{
     resolve_script_path, run_post_response, run_pre_request, PreRequestOverrides, ScriptSection,
@@ -73,5 +74,7 @@ pub use sse::{
     connect_and_stream, SseEvent, SseExchange, DEFAULT_READ_TIMEOUT as SSE_DEFAULT_READ_TIMEOUT,
 };
 pub use validate::{validate, ValidationIssue};
-pub use websocket::{connect_and_exchange, WebSocketExchange, DEFAULT_READ_TIMEOUT};
+pub use websocket::{
+    connect_and_exchange, WebSocketExchange, WebSocketSession, DEFAULT_READ_TIMEOUT,
+};
 pub use xml::{XmlElement, XmlNode};

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, watch } from "vue";
 
 import type { Collection, GitStatusMap, NovaProject, RequestFile } from "../types/nova";
 import CollectionNode from "./CollectionNode.vue";
@@ -27,12 +27,41 @@ const emit = defineEmits<{
   (e: "manageEnvironment", name: string): void;
 }>();
 
-const collectionsExpanded = ref(true);
-const environmentsExpanded = ref(true);
+// Persisted so the sidebar's accordion sections don't reset to expanded
+// every time the app restarts.
+const COLLECTIONS_EXPANDED_KEY = "nova.sidebarCollectionsExpanded";
+const ENVIRONMENTS_EXPANDED_KEY = "nova.sidebarEnvironmentsExpanded";
+
+function loadExpanded(key: string): boolean {
+  const stored = localStorage.getItem(key);
+  return stored === null ? true : stored === "true";
+}
+
+const collectionsExpanded = ref(loadExpanded(COLLECTIONS_EXPANDED_KEY));
+const environmentsExpanded = ref(loadExpanded(ENVIRONMENTS_EXPANDED_KEY));
+
+watch(collectionsExpanded, (value) => localStorage.setItem(COLLECTIONS_EXPANDED_KEY, String(value)));
+watch(environmentsExpanded, (value) => localStorage.setItem(ENVIRONMENTS_EXPANDED_KEY, String(value)));
+
+const filterQuery = ref("");
+watch(filterQuery, (value) => {
+  // Otherwise typing into the filter while the Collections section happens
+  // to be collapsed would silently show nothing.
+  if (value) collectionsExpanded.value = true;
+});
 </script>
 
 <template>
   <div>
+    <div class="sidebar-search">
+      <input
+        v-model="filterQuery"
+        type="search"
+        class="sidebar-search__input"
+        placeholder="Filter requests…"
+      />
+    </div>
+
     <button
       type="button"
       class="sidebar-section-title sidebar-section-title--collapsible"
@@ -50,6 +79,7 @@ const environmentsExpanded = ref(true);
         is-root
         :selected-path="selectedRequestPath"
         :git-status="gitStatus"
+        :filter="filterQuery"
         @select="emit('selectRequest', $event)"
         @create-request="emit('createRequest', $event)"
         @create-collection="emit('createCollection', $event)"

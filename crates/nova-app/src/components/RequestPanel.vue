@@ -5,14 +5,17 @@ import {
   diffAgainstExampleResponse,
   diffAgainstPreviousRun,
   parseCurlCommand,
+  parseGraphqlBody,
   parseMultipartBody,
   readRequest,
   saveRequest,
   sendRequest,
+  serializeGraphqlBody,
   serializeMultipartBody,
 } from "../api/nova";
 import type {
   AuthScheme,
+  GraphQlBody,
   MultipartField,
   QueryParam,
   RequestDraft,
@@ -28,7 +31,11 @@ import {
   detectBodyType,
   languageForContentType,
   randomBoundary,
+  RAW_LANGUAGE_CONTENT_TYPES,
+  RAW_LANGUAGE_LABELS,
+  RAW_LANGUAGE_OPTIONS,
   type BodyType,
+  type RawLanguage,
 } from "../lib/bodyType";
 import { formatBytes, statusClass } from "../lib/format";
 import { parseQueryString, serializeQuery, splitUrlAndQuery } from "../lib/queryString";
@@ -40,6 +47,7 @@ import Icon from "./Icon.vue";
 import KeyValueEditor from "./KeyValueEditor.vue";
 import MultipartEditor from "./MultipartEditor.vue";
 import ResponseDiffView from "./ResponseDiffView.vue";
+import { useResizablePane } from "../composables/useResizablePane";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
@@ -85,6 +93,9 @@ const activeResponseTab = ref<ResponseTab>("preview");
 // whenever a request is (re)loaded so it reflects what the file actually
 // has, not just the last selection made in this session.
 const bodyType = ref<BodyType>("none");
+// Only meaningful while `bodyType` is "raw" — which sub-language's editor/
+// Content-Type applies (Text/JavaScript/JSON/HTML/XML).
+const rawLanguage = ref<RawLanguage>("text");
 
 function upsertContentTypeHeader(value: string | null) {
   const index = headers.value.findIndex((h) => h.name.toLowerCase() === "content-type");
@@ -119,6 +130,12 @@ function handleBodyTypeChange(next: BodyType) {
     // rather than trying to reinterpret it.
     multipartFields.value = [];
     multipartParseError.value = null;
+  } else if (next === "graphql") {
+    graphqlQuery.value = "";
+    graphqlVariablesText.value = "";
+    graphqlVariablesError.value = null;
+  } else if (next === "raw") {
+    rawLanguage.value = "text";
   }
 
   if (!syncContentType.value) return;
@@ -129,9 +146,21 @@ function handleBodyTypeChange(next: BodyType) {
     return;
   }
 
-  upsertContentTypeHeader(
-    next === "multipart" ? `multipart/form-data; boundary=${randomBoundary()}` : BODY_TYPE_CONTENT_TYPES[next],
-  );
+  const contentType =
+    next === "multipart"
+      ? `multipart/form-data; boundary=${randomBoundary()}`
+      : next === "raw"
+        ? RAW_LANGUAGE_CONTENT_TYPES[rawLanguage.value]
+        : BODY_TYPE_CONTENT_TYPES[next];
+  upsertContentTypeHeader(contentType);
+}
+
+/** The language sub-choice shown only while `bodyType` is "raw". */
+function handleRawLanguageChange(next: RawLanguage) {
+  rawLanguage.value = next;
+  if (syncContentType.value) {
+    upsertContentTypeHeader(RAW_LANGUAGE_CONTENT_TYPES[next]);
+  }
 }
 
 // Structured view of the Body tab's `multipart` body type — mirrors
@@ -183,6 +212,56 @@ watch(
   },
   { deep: true },
 );
+
+// Structured view of the Body tab's `graphql` body type — same
+// two-refs-plus-watcher shape as `multipartFields` above, since
+// `parseGraphqlBody`/`serializeGraphqlBody` are async Tauri calls too, not
+// a plain computed get/set.
+const graphqlQuery = ref("");
+const graphqlVariablesText = ref("");
+const graphqlVariablesError = ref<string | null>(null);
+let applyingParsedGraphql = false;
+
+async function refreshGraphqlFromText() {
+  graphqlVariablesError.value = null;
+  try {
+    const parsed = await parseGraphqlBody(bodyText.value);
+    applyingParsedGraphql = true;
+    graphqlQuery.value = parsed.query;
+    graphqlVariablesText.value = parsed.variables ? JSON.stringify(parsed.variables, null, 2) : "";
+    await nextTick();
+    applyingParsedGraphql = false;
+  } catch (e) {
+    graphqlQuery.value = "";
+    graphqlVariablesText.value = "";
+    graphqlVariablesError.value = String(e);
+  }
+}
+
+watch([graphqlQuery, graphqlVariablesText], async ([query, variablesText]) => {
+  if (applyingParsedGraphql) return;
+
+  let variables: unknown = null;
+  if (variablesText.trim() !== "") {
+    try {
+      variables = JSON.parse(variablesText);
+    } catch {
+      // Leave `bodyText` as it was — a half-typed JSON object is an
+      // expected, transient state while editing, not worth erroring loudly
+      // over on every keystroke; the field itself shows the message below.
+      graphqlVariablesError.value = "Variables must be valid JSON";
+      return;
+    }
+  }
+  graphqlVariablesError.value = null;
+
+  const draft: GraphQlBody = { query, variables, operation_name: null };
+  try {
+    bodyText.value = await serializeGraphqlBody(draft);
+  } catch {
+    // Mirrors the multipart watcher above — nothing sensible to show here.
+  }
+});
 
 const saving = ref(false);
 const saveError = ref<string | null>(null);
@@ -238,11 +317,7 @@ const dirty = computed(() => {
 
 watch(dirty, (value) => emit("dirtyChange", value));
 
-const editorLanguage = computed<EditorLanguage>(() => {
-  if (bodyType.value === "json") return "json";
-  if (bodyType.value === "xml") return "xml";
-  return "text";
-});
+const editorLanguage = computed<EditorLanguage>(() => (bodyType.value === "raw" ? rawLanguage.value : "text"));
 
 // Two-way sync between the URL field and the Params tab: `url` itself
 // always stays the bare base URL (what actually gets saved as
@@ -276,14 +351,14 @@ const formFields = computed<QueryParam[]>({
 });
 
 function beautifyBody() {
-  if (bodyType.value === "json") {
+  if (rawLanguage.value === "json") {
     try {
       bodyText.value = beautifyJson(bodyText.value);
     } catch {
       // Leave it as-is — the editor's own JSON linter already flags what's
       // wrong; beautify has nothing useful to do with genuinely invalid JSON.
     }
-  } else if (bodyType.value === "xml") {
+  } else if (rawLanguage.value === "xml") {
     bodyText.value = formatXml(bodyText.value);
   }
 }
@@ -308,13 +383,7 @@ async function handleUrlPaste(event: ClipboardEvent) {
     urlDisplay.value = parsed.url;
     headers.value = parsed.headers.map((h) => ({ ...h }));
     bodyText.value = parsed.body ?? "";
-    bodyType.value = detectBodyType(headers.value, bodyText.value);
-    if (bodyType.value === "multipart") {
-      await refreshMultipartFieldsFromText();
-    } else {
-      multipartFields.value = [];
-      multipartParseError.value = null;
-    }
+    await syncBodyTypeFromText();
   } catch (e) {
     urlDisplay.value = text;
     curlPasteError.value = String(e);
@@ -348,6 +417,36 @@ const responseBody = computed(() => {
   return body;
 });
 
+/** Re-derives `bodyType`/`rawLanguage` from the current headers/`bodyText`, and refreshes whichever structured editor (multipart/GraphQL) that body type needs. */
+async function syncBodyTypeFromText() {
+  const detected = detectBodyType(headers.value, bodyText.value);
+  bodyType.value = detected.type;
+  rawLanguage.value = detected.rawLanguage;
+  if (bodyType.value === "multipart") {
+    await refreshMultipartFieldsFromText();
+  } else if (bodyType.value === "graphql") {
+    await refreshGraphqlFromText();
+  } else {
+    multipartFields.value = [];
+    multipartParseError.value = null;
+  }
+}
+
+// Populates the editable working-copy refs from a snapshot — shared by
+// `load()` (a freshly-read draft) and `handleRevert()` (the same
+// `original` snapshot the user is discarding their edits back to), so the
+// two never drift out of sync with each other.
+async function applyDraft(draft: RequestDraft) {
+  method.value = draft.method;
+  url.value = draft.url;
+  query.value = draft.query.map((q) => ({ ...q }));
+  headers.value = draft.headers.map((h) => ({ ...h }));
+  bodyText.value = draft.body_text;
+  auth.value = draft.auth ? { ...draft.auth } : null;
+  syncContentType.value = draft.sync_content_type;
+  await syncBodyTypeFromText();
+}
+
 async function load() {
   loading.value = true;
   loadError.value = null;
@@ -366,26 +465,20 @@ async function load() {
     const { base, query: embeddedQuery } = splitUrlAndQuery(draft.url);
     const normalizedQuery = [...draft.query.map((q) => ({ ...q })), ...embeddedQuery];
     original.value = { ...draft, url: base, query: normalizedQuery };
-    method.value = draft.method;
-    url.value = base;
-    query.value = normalizedQuery.map((q) => ({ ...q }));
-    headers.value = draft.headers.map((h) => ({ ...h }));
-    bodyText.value = draft.body_text;
-    auth.value = draft.auth ? { ...draft.auth } : null;
-    syncContentType.value = draft.sync_content_type;
-    bodyType.value = detectBodyType(headers.value, bodyText.value);
-    if (bodyType.value === "multipart") {
-      await refreshMultipartFieldsFromText();
-    } else {
-      multipartFields.value = [];
-      multipartParseError.value = null;
-    }
+    await applyDraft(original.value);
   } catch (e) {
     loadError.value = String(e);
     original.value = null;
   } finally {
     loading.value = false;
   }
+}
+
+/** Discards unsaved edits, restoring every field back to the last loaded/saved snapshot. */
+async function handleRevert() {
+  if (!original.value || !dirty.value) return;
+  await applyDraft(original.value);
+  saveError.value = null;
 }
 
 watch(
@@ -451,77 +544,51 @@ const responseSize = computed(() =>
   response.value ? new TextEncoder().encode(response.value.body).length : 0,
 );
 
-// Height (px) of the response pane below the draggable divider — shared
-// across every open tab's `RequestPanel` instance (they read/write the same
-// key), matching how a single split-pane position feels regardless of which
-// tab set it rather than each tab remembering its own.
-const RESPONSE_HEIGHT_KEY = "nova.responsePaneHeight";
-// The height last dragged/toggled to above the collapsed floor — what the
-// collapse button restores to, also shared across tabs like the height
-// itself.
-const LAST_EXPANDED_HEIGHT_KEY = "nova.responsePaneLastExpandedHeight";
-
-// Never smaller than just its own header bar — a full 0 would make it
-// indistinguishable from "no response pane at all"; this is the floor both
-// dragging and the collapse toggle button respect, so it's always at least
-// this visible and reachable again.
-const MIN_RESPONSE_HEIGHT = 36;
-// Matches `.request-view__pane--top`'s own CSS min-height — the request
-// editor gets to keep at least this much even when the response is dragged
-// as far up as it'll go.
-const TOP_PANE_MIN_HEIGHT = 96;
-// Matches `.request-view__divider`'s CSS flex-basis.
+// Matches `.request-view__divider`'s CSS flex-basis, and the collapsed
+// floor for either pane (`$pane-header-height` in _variables.scss).
 const DIVIDER_HEIGHT = 7;
+const PANE_HEADER_HEIGHT = 36;
 
-const responseHeight = ref(Number(localStorage.getItem(RESPONSE_HEIGHT_KEY)) || 320);
-const isResponseCollapsed = computed(() => responseHeight.value <= MIN_RESPONSE_HEIGHT);
-let lastExpandedHeight = Number(localStorage.getItem(LAST_EXPANDED_HEIGHT_KEY)) || 320;
+// Shared across every open tab's `RequestPanel` instance (same localStorage
+// keys as before this was extracted into a composable), matching how a
+// single split-pane position feels regardless of which tab set it rather
+// than each tab remembering its own.
+const responsePane = useResizablePane({
+  storageKey: "nova.responsePaneHeight",
+  lastExpandedStorageKey: "nova.responsePaneLastExpandedHeight",
+  defaultSize: 320,
+  minSize: PANE_HEADER_HEIGHT,
+  // The request pane's own floor is 96px normally, but drops to just its
+  // header (36px) once it's explicitly collapsed — this is what lets the
+  // response pane approach nearly the full height rather than always being
+  // capped at "container - 96".
+  getMax: (container) => {
+    if (!container) return 320;
+    const topMin = requestPaneCollapsed.value ? PANE_HEADER_HEIGHT : 96;
+    return container.clientHeight - topMin - DIVIDER_HEIGHT;
+  },
+  axis: "vertical",
+  direction: -1, // dragging up (decreasing clientY) grows the response pane
+});
+const isResponseCollapsed = responsePane.isCollapsed;
 
-const requestViewEl = ref<HTMLElement | null>(null);
+const REQUEST_PANE_COLLAPSED_KEY = "nova.requestPaneCollapsed";
+const requestPaneCollapsed = ref(localStorage.getItem(REQUEST_PANE_COLLAPSED_KEY) === "true");
+watch(requestPaneCollapsed, (value) => localStorage.setItem(REQUEST_PANE_COLLAPSED_KEY, String(value)));
 
-/** Clamps to [`MIN_RESPONSE_HEIGHT`, as high as it can go while the request pane keeps its own minimum]. */
-function clampResponseHeight(value: number): number {
-  const available = requestViewEl.value
-    ? requestViewEl.value.clientHeight - TOP_PANE_MIN_HEIGHT - DIVIDER_HEIGHT
-    : value;
-  return Math.min(Math.max(value, MIN_RESPONSE_HEIGHT), Math.max(available, MIN_RESPONSE_HEIGHT));
-}
-
-function setResponseHeight(value: number) {
-  responseHeight.value = clampResponseHeight(value);
-  localStorage.setItem(RESPONSE_HEIGHT_KEY, String(responseHeight.value));
-  if (responseHeight.value > MIN_RESPONSE_HEIGHT) {
-    lastExpandedHeight = responseHeight.value;
-    localStorage.setItem(LAST_EXPANDED_HEIGHT_KEY, String(lastExpandedHeight));
-  }
+// Collapsing one pane always force-expands the other if it's already
+// collapsed — otherwise both could end up as two thin header bars with
+// nothing actually visible.
+function toggleRequestCollapsed() {
+  const willCollapse = !requestPaneCollapsed.value;
+  requestPaneCollapsed.value = willCollapse;
+  if (willCollapse && responsePane.isCollapsed.value) responsePane.toggleCollapsed();
 }
 
 function toggleResponseCollapsed() {
-  setResponseHeight(isResponseCollapsed.value ? lastExpandedHeight : MIN_RESPONSE_HEIGHT);
-}
-
-let dragging = false;
-
-function startDrag(event: MouseEvent) {
-  dragging = true;
-  const startY = event.clientY;
-  const startHeight = responseHeight.value;
-  document.body.style.cursor = "row-resize";
-
-  function onMove(moveEvent: MouseEvent) {
-    if (!dragging) return;
-    const delta = startY - moveEvent.clientY;
-    setResponseHeight(startHeight + delta);
-  }
-  function onUp() {
-    dragging = false;
-    document.body.style.cursor = "";
-    window.removeEventListener("mousemove", onMove);
-    window.removeEventListener("mouseup", onUp);
-  }
-  window.addEventListener("mousemove", onMove);
-  window.addEventListener("mouseup", onUp);
-  event.preventDefault();
+  const wasCollapsed = responsePane.isCollapsed.value;
+  responsePane.toggleCollapsed();
+  if (wasCollapsed && requestPaneCollapsed.value) requestPaneCollapsed.value = false;
 }
 
 // Every open tab keeps its own live RequestPanel instance (see the
@@ -538,7 +605,6 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  dragging = false;
   window.removeEventListener("keydown", onGlobalKeydown);
 });
 
@@ -546,16 +612,36 @@ defineExpose({ dirty, save: handleSave });
 </script>
 
 <template>
-  <div class="request-view" ref="requestViewEl">
-    <div class="request-view__pane request-view__pane--top">
+  <div class="request-view" :ref="(el) => (responsePane.containerEl.value = el as HTMLElement | null)">
+    <div
+      class="request-view__pane request-view__pane--top"
+      :class="{ 'request-view__pane--collapsed': requestPaneCollapsed }"
+    >
     <div class="request-panel__header">
-      <div>
+      <div class="request-panel__header-main">
+        <button
+          type="button"
+          class="icon-button"
+          :title="requestPaneCollapsed ? 'Expand request' : 'Collapse request'"
+          @click="toggleRequestCollapsed"
+        >
+          <Icon name="chevron-down" :class="{ 'response-pane__collapse-icon--collapsed': requestPaneCollapsed }" />
+        </button>
         <p class="request-panel__name">
           {{ request.name }}
           <span v-if="dirty" class="request-panel__dirty-dot" title="Unsaved changes"></span>
         </p>
       </div>
       <div class="request-panel__actions">
+        <button
+          type="button"
+          class="button button--ghost"
+          title="Discard unsaved edits, back to the last saved version"
+          :disabled="!dirty || saving"
+          @click="handleRevert"
+        >
+          Revert
+        </button>
         <button
           type="button"
           class="button button--secondary"
@@ -567,6 +653,7 @@ defineExpose({ dirty, save: handleSave });
       </div>
     </div>
 
+    <div v-show="!requestPaneCollapsed" class="request-panel__body">
     <p v-if="loading" class="response-pane__hint">Loading request…</p>
     <p v-else-if="loadError" class="response-pane__error">{{ loadError }}</p>
 
@@ -661,8 +748,10 @@ defineExpose({ dirty, save: handleSave });
       <div v-else-if="activeTab === 'headers'" class="request-panel__tab-panel">
         <KeyValueEditor v-model="headers" name-placeholder="Header" value-placeholder="Value" mode="headers" />
         <p class="request-panel__hint-text">
-          Sent automatically if not set above: <code>User-Agent: Nova/…</code>,
-          <code>Accept: */*</code>.
+          Sent on every request, in addition to whatever's set above (only overridden if you set
+          the same name yourself): <code>Host: &lt;from the URL&gt;</code>,
+          <code>User-Agent: Nova/…</code>, <code>Accept: */*</code>,
+          <code>Accept-Encoding: gzip</code>.
         </p>
       </div>
 
@@ -672,14 +761,26 @@ defineExpose({ dirty, save: handleSave });
 
       <div v-else class="request-panel__tab-panel">
         <div class="request-panel__body-type">
-          <span class="request-panel__body-type-label">Content-Type</span>
-          <select
-            class="request-panel__body-type-select"
-            :value="bodyType"
-            @change="handleBodyTypeChange(($event.target as HTMLSelectElement).value as BodyType)"
-          >
-            <option v-for="option in BODY_TYPE_OPTIONS" :key="option" :value="option">
+          <div class="request-panel__body-type-radios" role="radiogroup" aria-label="Body type">
+            <label v-for="option in BODY_TYPE_OPTIONS" :key="option" class="request-panel__radio">
+              <input
+                type="radio"
+                name="body-type"
+                :value="option"
+                :checked="bodyType === option"
+                @change="handleBodyTypeChange(option)"
+              />
               {{ BODY_TYPE_LABELS[option] }}
+            </label>
+          </div>
+          <select
+            v-if="bodyType === 'raw'"
+            class="request-panel__body-type-select"
+            :value="rawLanguage"
+            @change="handleRawLanguageChange(($event.target as HTMLSelectElement).value as RawLanguage)"
+          >
+            <option v-for="lang in RAW_LANGUAGE_OPTIONS" :key="lang" :value="lang">
+              {{ RAW_LANGUAGE_LABELS[lang] }}
             </option>
           </select>
           <label class="request-panel__body-setting">
@@ -705,10 +806,21 @@ defineExpose({ dirty, save: handleSave });
           </p>
           <MultipartEditor v-model="multipartFields" :project-root="projectRoot" />
         </template>
-        <div v-else class="request-panel__body-editor">
+        <div v-else-if="bodyType === 'graphql'" class="request-panel__graphql">
+          <div class="request-panel__graphql-pane">
+            <span class="request-panel__graphql-label">Query</span>
+            <CodeEditor v-model="graphqlQuery" language="text" />
+          </div>
+          <div class="request-panel__graphql-pane">
+            <span class="request-panel__graphql-label">Variables</span>
+            <CodeEditor v-model="graphqlVariablesText" language="json" />
+            <p v-if="graphqlVariablesError" class="request-panel__save-error">{{ graphqlVariablesError }}</p>
+          </div>
+        </div>
+        <div v-else-if="bodyType === 'raw'" class="request-panel__body-editor">
           <CodeEditor v-model="bodyText" :language="editorLanguage" />
           <button
-            v-if="bodyType === 'json' || bodyType === 'xml'"
+            v-if="rawLanguage === 'json' || rawLanguage === 'xml'"
             type="button"
             class="icon-button icon-button--outline request-panel__beautify"
             title="Beautify"
@@ -720,13 +832,14 @@ defineExpose({ dirty, save: handleSave });
       </div>
     </template>
     </div>
+    </div>
 
-    <div class="request-view__divider" title="Drag to resize" @mousedown="startDrag"></div>
+    <div class="request-view__divider" title="Drag to resize" @mousedown="responsePane.startDrag"></div>
 
     <div
       class="request-view__pane request-view__pane--bottom"
       :class="{ 'request-view__pane--collapsed': isResponseCollapsed }"
-      :style="{ flexBasis: `${responseHeight}px` }"
+      :style="{ flexBasis: `${responsePane.size.value}px` }"
     >
     <div class="response-pane__header">
       <span class="response-pane__header-label">Response</span>

@@ -1,5 +1,33 @@
 @use "variables" as *;
 
+// Dark palette, shared between the OS-preference media query below (System
+// theme) and the explicit `data-theme="dark"` override (a user picked Dark
+// from the theme toggle regardless of OS preference) — one source of truth
+// for the values, two places they apply from.
+@mixin dark-theme-vars {
+  color-scheme: dark;
+
+  --color-bg: #1c1c1c;
+  --color-bg-raised: #262626;
+  --color-bg-sidebar: #202020;
+  --color-bg-inset: #202020;
+  --color-bg-hover: rgba(255, 255, 255, 0.06);
+  --color-border: #383838;
+  --color-text: #f2f2f2;
+  --color-text-muted: #9a9a9a;
+  --shadow-popover: 0 8px 24px rgb(0 0 0 / 45%);
+
+  --color-accent: #9b85ff;
+  --color-warning: #f5b942;
+  --color-success: #2dd4bf;
+  --color-danger: #ff6b90;
+
+  --color-code-key: #c678dd;
+  --color-code-string: #98c379;
+  --color-code-number: #e5a56a;
+  --color-code-keyword: #61afef;
+}
+
 :root {
   // Tells the browser to render native form-control chrome (a <select>'s
   // dropdown popup, scrollbars, etc.) in a matching palette — those aren't
@@ -46,30 +74,29 @@
   --code-editor-font-family: #{$font-family-mono};
 }
 
+// System theme (default, no user override yet): follow the OS preference,
+// unless a `data-theme="light"` override is explicitly set — a media query
+// and an attribute selector are independent specificity axes, so without
+// this `:not()` guard an explicit Light pick would lose to a dark OS.
 @media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-
-    --color-bg: #1c1c1c;
-    --color-bg-raised: #262626;
-    --color-bg-sidebar: #202020;
-    --color-bg-inset: #202020;
-    --color-bg-hover: rgba(255, 255, 255, 0.06);
-    --color-border: #383838;
-    --color-text: #f2f2f2;
-    --color-text-muted: #9a9a9a;
-    --shadow-popover: 0 8px 24px rgb(0 0 0 / 45%);
-
-    --color-accent: #9b85ff;
-    --color-warning: #f5b942;
-    --color-success: #2dd4bf;
-    --color-danger: #ff6b90;
-
-    --color-code-key: #c678dd;
-    --color-code-string: #98c379;
-    --color-code-number: #e5a56a;
-    --color-code-keyword: #61afef;
+  :root:not([data-theme="light"]) {
+    @include dark-theme-vars;
   }
+}
+
+// Explicit overrides from the theme toggle — win regardless of OS
+// preference. Must come after the media query above in source order so
+// `data-theme="dark"` still applies on a light-OS machine (same
+// specificity, later source wins).
+:root[data-theme="dark"] {
+  @include dark-theme-vars;
+}
+
+:root[data-theme="light"] {
+  // Matches the base :root block above — restated explicitly so this
+  // block's presence is self-documenting and stays correct if the base
+  // block's values ever change for an unrelated reason.
+  color-scheme: light;
 }
 
 * {

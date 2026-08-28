@@ -4,12 +4,14 @@
 // only calls `invoke` and types the result.
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 
 import type {
   AuthScheme,
   Collection,
   GitStatusMap,
+  GraphQlBody,
   HistoryDetail,
   HistorySummary,
   ImportProjectOutcome,
@@ -26,6 +28,10 @@ import type {
   RequestResponse,
   ResponseDiff,
   TestRunResult,
+  WebSocketDraft,
+  WebSocketExchange,
+  WebSocketSessionStatus,
+  WsSessionMessageEvent,
 } from "../types/nova";
 
 /**
@@ -132,6 +138,90 @@ export function saveRequest(requestPath: string, draft: RequestDraft): Promise<v
   return invoke<void>("save_request", { requestPath, draft });
 }
 
+/** Parses the `.nova` file at `requestPath` as a WebSocket connection declaration into an editable draft. */
+export function readWebSocketRequest(requestPath: string): Promise<WebSocketDraft> {
+  return invoke<WebSocketDraft>("read_websocket_request", { requestPath });
+}
+
+/** Writes an edited WebSocket draft — URL/headers/messages — back to the `.nova` file at `requestPath`. */
+export function saveWebSocketRequest(requestPath: string, draft: WebSocketDraft): Promise<void> {
+  return invoke<void>("save_websocket_request", { requestPath, draft });
+}
+
+/**
+ * Parses, resolves, connects to, and exchanges messages with the WebSocket
+ * connection the `.nova` file at `requestPath` declares, against
+ * `environment` if named (else the project's default). Resolves once the
+ * connection closes or the read timeout elapses with nothing further
+ * coming in.
+ */
+export function connectWebSocket(
+  requestPath: string,
+  environment: string | null,
+): Promise<WebSocketExchange> {
+  return invoke<WebSocketExchange>("connect_websocket", { requestPath, environment });
+}
+
+/**
+ * Creates a new `.nova` file named `name` (a `.nova` suffix is added if
+ * missing) directly inside the collection directory at `collectionPath`,
+ * declaring a WebSocket connection rather than an HTTP request, and
+ * returns its `RequestFile` handle.
+ */
+export function createWebSocketRequest(collectionPath: string, name: string): Promise<RequestFile> {
+  return invoke<RequestFile>("create_websocket_request", { collectionPath, name });
+}
+
+/**
+ * Opens an interactive WebSocket session against the `.nova` file at
+ * `requestPath` (resolving `{{variable}}`s against `environment` if named,
+ * else the project's default) and keeps it open — the GUI-only counterpart
+ * to `connectWebSocket`'s one-shot batch flow. Each received message
+ * arrives as a `"ws-session:message"` event (see `listenForWebSocketSessionMessages`
+ * below); an unexpected close arrives as `"ws-session:closed"`. Rejects if a
+ * session is already open.
+ */
+export function connectWebSocketSession(requestPath: string, environment: string | null): Promise<void> {
+  return invoke<void>("connect_websocket_session", { requestPath, environment });
+}
+
+/** Sends `text` on the currently-open interactive WebSocket session. */
+export function sendWebSocketSessionMessage(text: string): Promise<void> {
+  return invoke<void>("send_websocket_session_message", { text });
+}
+
+/** Closes the currently-open interactive WebSocket session, if any. */
+export function disconnectWebSocketSession(): Promise<void> {
+  return invoke<void>("disconnect_websocket_session");
+}
+
+/** Whether an interactive WebSocket session is currently open. */
+export function websocketSessionStatus(): Promise<WebSocketSessionStatus> {
+  return invoke<WebSocketSessionStatus>("websocket_session_status");
+}
+
+/**
+ * Subscribes to every text message the currently-open interactive
+ * WebSocket session receives, in arrival order, until the returned
+ * unlisten function is called. Thin wrapper around `@tauri-apps/api/event`'s
+ * `listen` so components don't import it (and the event name) directly.
+ */
+export function listenForWebSocketSessionMessages(
+  handler: (message: WsSessionMessageEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<WsSessionMessageEvent>("ws-session:message", (event) => handler(event.payload));
+}
+
+/**
+ * Subscribes to the currently-open interactive WebSocket session ending on
+ * its own (the server closed it, or a read failed) — not fired for an
+ * explicit `disconnectWebSocketSession()` call, since the caller already
+ * knows about that one.
+ */
+export function listenForWebSocketSessionClosed(handler: () => void): Promise<UnlistenFn> {
+  return listen("ws-session:closed", () => handler());
+}
+
 /**
  * Parses a multipart body's raw wire text (the same text `RequestDraft.body_text`
  * carries) into structured fields, for the Body tab's multipart field table.
@@ -153,6 +243,24 @@ export function serializeMultipartBody(
   headers: RequestHeader[],
 ): Promise<string> {
   return invoke<string>("serialize_multipart_body", { fields, headers });
+}
+
+/**
+ * Parses a GraphQL body's raw wire text (the same text `RequestDraft.body_text`
+ * carries) into its query/variables/operation name, for the Body tab's
+ * GraphQL query+variables editor.
+ */
+export function parseGraphqlBody(bodyText: string): Promise<GraphQlBody> {
+  return invoke<GraphQlBody>("parse_graphql_body_text", { bodyText });
+}
+
+/**
+ * Serializes a GraphQL query/variables/operation name back to the raw wire
+ * text a `.nova` file's `[body]` marker would hold for it — the inverse of
+ * `parseGraphqlBody`.
+ */
+export function serializeGraphqlBody(graphql: GraphQlBody): Promise<string> {
+  return invoke<string>("serialize_graphql_body", { graphql });
 }
 
 /**

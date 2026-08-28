@@ -5,6 +5,7 @@ import {
   createCollection,
   createEnvironment,
   createRequest,
+  createWebSocketRequest,
   deleteCollection,
   deleteEnvironment,
   deleteRequest,
@@ -40,11 +41,39 @@ import TopBar from "./components/TopBar.vue";
 import Sidebar from "./components/Sidebar.vue";
 import ProjectPanel from "./components/ProjectPanel.vue";
 import RequestPanel from "./components/RequestPanel.vue";
+import WebSocketPanel from "./components/WebSocketPanel.vue";
 import EnvironmentPanel from "./components/EnvironmentPanel.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
 import EmptyState from "./components/EmptyState.vue";
 import Modal from "./components/Modal.vue";
 import Icon from "./components/Icon.vue";
+import { useTheme, type ThemePreference } from "./composables/useTheme";
+import { useResizablePane } from "./composables/useResizablePane";
+
+const { preference: themePreference, setPreference: setThemePreference } = useTheme();
+
+const MIN_MAIN_WIDTH = 360; // never let dragging squeeze the workspace below a usable width
+const sidebarPane = useResizablePane({
+  storageKey: "nova.sidebarWidth",
+  lastExpandedStorageKey: "nova.sidebarLastExpandedWidth",
+  defaultSize: 252,
+  minSize: 32,
+  getMax: (container) => (container ? container.clientWidth - MIN_MAIN_WIDTH - 7 : 600),
+  axis: "horizontal",
+  direction: 1, // dragging right grows the sidebar
+});
+const THEME_CYCLE: ThemePreference[] = ["system", "light", "dark"];
+function cycleTheme() {
+  const next = THEME_CYCLE[(THEME_CYCLE.indexOf(themePreference.value) + 1) % THEME_CYCLE.length];
+  setThemePreference(next);
+}
+
+const SIDEBAR_HIDDEN_KEY = "nova.sidebarHidden";
+const sidebarHidden = ref(localStorage.getItem(SIDEBAR_HIDDEN_KEY) === "true");
+function toggleSidebarHidden() {
+  sidebarHidden.value = !sidebarHidden.value;
+  localStorage.setItem(SIDEBAR_HIDDEN_KEY, String(sidebarHidden.value));
+}
 
 const project = ref<NovaProject | null>(null);
 const validationIssues = ref<string[]>([]);
@@ -398,10 +427,12 @@ async function refreshProjectTree() {
 // dialog plugin at all (only message/confirm/file pickers).
 const newRequestCollectionPath = ref<string | null>(null);
 const newRequestName = ref("");
+const newRequestProtocol = ref<"http" | "websocket">("http");
 
 function handleCreateRequest(collectionPath: string) {
   createError.value = null;
   newRequestName.value = "";
+  newRequestProtocol.value = "http";
   newRequestCollectionPath.value = collectionPath;
 }
 
@@ -416,7 +447,10 @@ async function submitCreateRequest() {
 
   createError.value = null;
   try {
-    const created = await createRequest(collectionPath, name);
+    const created =
+      newRequestProtocol.value === "websocket"
+        ? await createWebSocketRequest(collectionPath, name)
+        : await createRequest(collectionPath, name);
     await refreshProjectTree();
     managedEnvironment.value = null;
     if (!openTabs.value.some((t) => t.path === created.path)) {
@@ -866,7 +900,12 @@ async function handleToggleMockServer() {
 </script>
 
 <template>
-  <div class="app-shell">
+  <div
+    class="app-shell"
+    :class="{ 'app-shell--sidebar-hidden': sidebarHidden }"
+    :style="{ '--sidebar-width': sidebarPane.size.value + 'px' }"
+    :ref="(el) => (sidebarPane.containerEl.value = el as HTMLElement | null)"
+  >
     <TopBar
       :project-name="project?.manifest.project.name ?? null"
       :environments="project?.environments ?? []"
@@ -876,6 +915,8 @@ async function handleToggleMockServer() {
       :running-tests="runningTests"
       :mock-server-status="mockServer"
       :mock-server-busy="mockServerBusy"
+      :sidebar-hidden="sidebarHidden"
+      :theme-preference="themePreference"
       @update:selected-environment="selectedEnvironment = $event"
       @switch-project="handleOpen"
       @project-settings="showProjectSettings"
@@ -883,9 +924,11 @@ async function handleToggleMockServer() {
       @run-tests="handleRunTests"
       @import-export="openImportExport"
       @toggle-mock-server="handleToggleMockServer"
+      @toggle-sidebar="toggleSidebarHidden"
+      @cycle-theme="cycleTheme"
     />
 
-    <aside class="app-shell__sidebar">
+    <aside v-show="!sidebarHidden" class="app-shell__sidebar">
       <Sidebar
         v-if="project"
         :project="project"
@@ -904,6 +947,13 @@ async function handleToggleMockServer() {
         @manage-environment="handleManageEnvironment"
       />
     </aside>
+
+    <div
+      v-show="!sidebarHidden"
+      class="app-shell__sidebar-divider"
+      title="Drag to resize sidebar"
+      @mousedown="sidebarPane.startDrag"
+    ></div>
 
     <main class="app-shell__main">
       <div class="app-shell__chrome">
@@ -946,7 +996,17 @@ async function handleToggleMockServer() {
         :class="{ 'app-shell__content--flush': mainView === 'request' || mainView === 'history' }"
       >
         <template v-for="tab in openTabs" :key="tab.path">
+          <WebSocketPanel
+            v-if="tab.protocol === 'websocket'"
+            v-show="project && mainView === 'request' && tab.path === activeRequestPath"
+            :active="project !== null && mainView === 'request' && tab.path === activeRequestPath"
+            :request="tab"
+            :selected-environment="selectedEnvironment"
+            @dirty-change="tabDirty[tab.path] = $event"
+            @saved="refreshGitStatus"
+          />
           <RequestPanel
+            v-else
             v-show="project && mainView === 'request' && tab.path === activeRequestPath"
             :active="project !== null && mainView === 'request' && tab.path === activeRequestPath"
             :request="tab"
@@ -1055,6 +1115,17 @@ async function handleToggleMockServer() {
         autofocus
         @keydown.enter="submitCreateRequest"
       />
+      <label class="modal__label">Protocol</label>
+      <div class="modal__radio-group">
+        <label class="modal__radio">
+          <input v-model="newRequestProtocol" type="radio" name="new-request-protocol" value="http" />
+          HTTP
+        </label>
+        <label class="modal__radio">
+          <input v-model="newRequestProtocol" type="radio" name="new-request-protocol" value="websocket" />
+          WebSocket
+        </label>
+      </div>
       <p v-if="createError" class="modal__error">{{ createError }}</p>
       <template #actions>
         <button type="button" class="button button--secondary" @click="cancelCreateRequest">

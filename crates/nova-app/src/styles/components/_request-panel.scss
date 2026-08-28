@@ -182,7 +182,13 @@
 .request-view__pane--bottom {
   flex: 0 1 auto;
   min-height: 96px;
-  max-height: calc(100% - 96px);
+  // 36px, not the top pane's usual 96px floor — once the top pane is
+  // explicitly collapsed (see `requestPaneCollapsed` in RequestPanel.vue)
+  // its own CSS floor drops to just its header row via the shared
+  // `.request-view__pane--collapsed` class below, so this ceiling has to
+  // move too or it would silently keep capping the response pane even
+  // after the JS clamp's own max allows more.
+  max-height: calc(100% - #{$pane-header-height});
   display: flex;
   flex-direction: column;
   // The header row must stay put and only `.response-pane` (its sibling
@@ -269,17 +275,62 @@
 .request-panel__body-type {
   display: flex;
   align-items: center;
-  gap: $spacing-sm;
+  flex-wrap: wrap;
+  gap: $spacing-md;
   margin-bottom: $spacing-sm;
 }
 
-.request-panel__body-type-label {
+.request-panel__body-type-radios {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: $spacing-md;
+}
+
+.request-panel__radio {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-xs;
   font-size: $font-size-sm;
   color: var(--color-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:has(input:checked) {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  input[type="radio"] {
+    accent-color: var(--color-accent);
+    cursor: pointer;
+  }
 }
 
 .request-panel__body-editor {
   position: relative;
+}
+
+// GraphQL's query and variables are edited side by side rather than one
+// above the other — both are usually short enough that a horizontal split
+// makes better use of the panel's width than a tall stack would.
+.request-panel__graphql {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $spacing-md;
+}
+
+.request-panel__graphql-pane {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+  min-width: 0;
+}
+
+.request-panel__graphql-label {
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: var(--color-text-muted);
 }
 
 // Floats over the code editor's bottom-right corner rather than sitting in
@@ -393,10 +444,20 @@
   margin-bottom: $spacing-lg;
 }
 
+.request-panel__header-main {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  min-width: 0;
+}
+
 .request-panel__name {
   font-size: $font-size-md;
   font-weight: 600;
-  margin: 0 0 $spacing-xs;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .request-panel__path {
@@ -520,4 +581,165 @@
   border: 1px solid var(--color-border);
   border-radius: $radius-sm;
   background-color: #fff;
+}
+
+// WebSocketPanel — the URL bar's protocol badge (a fixed "WS" label, unlike
+// the HTTP method row's `<select>`) and connection-status pill, the message
+// composer (a `CodeEditor` plus format selector/beautify/Send, and a
+// saved-messages side list), and the live, interleaved sent/received
+// transcript.
+.ws-panel__protocol-badge {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 $spacing-md;
+  border-right: 1px solid var(--color-border);
+  color: var(--color-accent);
+  font-weight: 700;
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+}
+
+.ws-panel__status {
+  flex-shrink: 0;
+  padding: 0 $spacing-sm;
+  color: var(--color-text-muted);
+  font-size: $font-size-xs;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.ws-panel__status--connected {
+  color: var(--color-success);
+}
+
+.ws-panel__section-title {
+  margin: 0 0 $spacing-sm;
+  color: var(--color-text-muted);
+  font-size: $font-size-sm;
+  font-weight: 600;
+}
+
+// The composer's editor sits alongside a fixed-width saved-messages list,
+// mirroring `.request-panel__graphql`'s side-by-side layout.
+.ws-panel__composer-layout {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: $spacing-md;
+  align-items: start;
+}
+
+.ws-panel__composer-main {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+  min-width: 0;
+}
+
+.ws-panel__composer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
+.ws-panel__composer-save {
+  display: flex;
+  justify-content: flex-end;
+  gap: $spacing-sm;
+}
+
+.ws-panel__saved-messages {
+  min-width: 0;
+}
+
+.ws-panel__saved-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-sm;
+  overflow: hidden;
+}
+
+.ws-panel__saved-item {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--color-border);
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background-color: var(--color-bg-hover);
+  }
+}
+
+.ws-panel__saved-item--active {
+  background-color: var(--color-bg-hover);
+}
+
+.ws-panel__saved-item-label {
+  flex: 1;
+  min-width: 0;
+  padding: $spacing-xs $spacing-sm;
+  border: none;
+  background: none;
+  color: var(--color-text);
+  font-family: $font-family-mono;
+  font-size: $font-size-xs;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ws-panel__transcript {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-sm;
+  overflow: hidden;
+}
+
+.ws-panel__transcript-line {
+  display: flex;
+  align-items: baseline;
+  gap: $spacing-sm;
+  padding: $spacing-xs $spacing-sm;
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+
+  &:not(:last-child) {
+    border-bottom: 1px solid var(--color-border);
+  }
+}
+
+.ws-panel__transcript-line--sent {
+  color: var(--color-text);
+}
+
+.ws-panel__transcript-line--received {
+  color: var(--color-success);
+}
+
+.ws-panel__transcript-arrow {
+  flex-shrink: 0;
+  width: 1rem;
+  color: var(--color-text-muted);
+}
+
+.ws-panel__transcript-text {
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+}
+
+.ws-panel__transcript-time {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  font-size: $font-size-xs;
 }

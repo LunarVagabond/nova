@@ -58,11 +58,21 @@ export interface NovaEnvironment {
   path: string;
 }
 
+/** Every protocol a `.nova` request file can declare via `[request]`'s `protocol:` line. */
+export type RequestProtocol = "http" | "websocket" | "sse";
+
 export interface RequestFile {
   name: string;
   path: string;
-  /** This request's HTTP method (e.g. `"GET"`), for the sidebar's method badge. Empty if unparseable. */
+  /** This request's HTTP method (e.g. `"GET"`), for the sidebar's method badge. Empty if unparseable, or if `protocol` isn't `"http"`. */
   method: string;
+  /**
+   * This request's `[request]` `protocol:` line — `"http"` (the default,
+   * for a file with no explicit `protocol:` at all), `"websocket"`, or
+   * `"sse"`. Picks which panel component/badge the GUI shows for this
+   * request.
+   */
+  protocol: RequestProtocol;
 }
 
 export interface Collection {
@@ -167,6 +177,13 @@ export interface MultipartField {
   file_path: string | null;
 }
 
+/** Mirrors `nova_engine::GraphQlBody`. */
+export interface GraphQlBody {
+  query: string;
+  variables: unknown | null;
+  operation_name: string | null;
+}
+
 /**
  * Mirrors `nova_engine::RequestDraft` — a flattened, GUI-editable view of a
  * `.nova` file's method/URL/query/headers/body. The body always comes back
@@ -201,6 +218,52 @@ export interface RequestDraft {
   has_assertions: boolean;
   has_extractions: boolean;
   has_example_response: boolean;
+}
+
+/**
+ * Mirrors `nova_engine::WebSocketDraft` — a flattened, GUI-editable view of
+ * a `.nova` WebSocket connection declaration (`protocol: websocket`): the
+ * URL, headers, and the ordered list of plain-text messages sent once
+ * connected. There's no method/query/body/auth/assertions/example response
+ * for a WebSocket request — see `docs/reference/nova-file-format.md`'s
+ * "WebSocket requests" section for the full shape.
+ */
+export interface WebSocketDraft {
+  url: string;
+  headers: RequestHeader[];
+  messages: string[];
+}
+
+/**
+ * Mirrors `nova_engine::WebSocketExchange` — the result of connecting to a
+ * WebSocket request's URL, sending its declared messages in order, and
+ * collecting whatever text messages came back before the read timeout
+ * elapsed or the server closed the connection.
+ */
+export interface WebSocketExchange {
+  sent: string[];
+  received: string[];
+  elapsed_ms: number;
+}
+
+/**
+ * Mirrors `nova_app_lib::websocket_session::WebSocketSessionStatus` —
+ * whether the desktop app's interactive WebSocket panel currently has an
+ * open session, for a tab to reflect connection state on reopen/reload
+ * without needing to reconnect to find out.
+ */
+export interface WebSocketSessionStatus {
+  connected: boolean;
+}
+
+/**
+ * Mirrors `nova_app_lib::websocket_session::WsMessageEvent` — the payload
+ * of a `"ws-session:message"` event, emitted once per text message the
+ * currently-open interactive WebSocket session receives, in arrival order.
+ */
+export interface WsSessionMessageEvent {
+  text: string;
+  atMs: number;
 }
 
 /**

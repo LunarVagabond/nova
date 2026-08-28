@@ -3,8 +3,37 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
-use nova_engine::{connect_and_exchange, Collection, NovaError, NovaProject, RequestFile};
+use nova_engine::{
+    connect_and_exchange, Collection, Header, NovaError, NovaProject, RequestFile, WebSocketDraft,
+};
 use tungstenite::Message;
+
+/// A scratch directory under the OS temp dir, unique per call, cleaned up
+/// when dropped — mirrors `request_tests.rs`'s helper of the same name, for
+/// tests that write real files to disk without mutating checked-in
+/// fixtures.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(label: &str) -> TempDir {
+        let path = std::env::temp_dir().join(format!(
+            "nova-engine-test-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        TempDir(path)
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
 
 /// Recursively find a request by name anywhere under `collection` — the
 /// `basic-project` fixture's requests all live one directory down (e.g.
@@ -126,6 +155,30 @@ fn discovers_resolves_and_exchanges_messages_with_a_websocket_request() {
 }
 
 #[test]
+fn discovery_reports_the_websocket_protocol_with_no_method() {
+    let project = NovaProject::discover(&fixture("websocket-project")).unwrap();
+    let request_file = project
+        .collections
+        .requests
+        .iter()
+        .find(|r| r.name == "echo")
+        .expect("echo.nova fixture request");
+
+    assert_eq!(request_file.protocol, "websocket");
+    assert_eq!(request_file.method, "");
+}
+
+#[test]
+fn discovery_reports_the_http_protocol_for_an_ordinary_request() {
+    let project = NovaProject::discover(&fixture("basic-project")).unwrap();
+    let request_file =
+        find_request(&project.collections, "login").expect("login.nova fixture request");
+
+    assert_eq!(request_file.protocol, "http");
+    assert_eq!(request_file.method, "POST");
+}
+
+#[test]
 fn parse_websocket_rejects_an_ordinary_http_request_file() {
     let project = NovaProject::discover(&fixture("basic-project")).unwrap();
     let request_file =
@@ -137,6 +190,82 @@ fn parse_websocket_rejects_an_ordinary_http_request_file() {
         matches!(&err, NovaError::RequestParse { message, .. } if message.contains("protocol")),
         "unexpected error: {err:?}"
     );
+}
+
+#[test]
+fn create_websocket_writes_a_minimal_default_and_refuses_to_overwrite() {
+    let temp = TempDir::new("ws-create");
+    let path = temp.0.join("new-socket.nova");
+
+    let created = RequestFile::create_websocket(path.clone()).unwrap();
+    assert_eq!(created.protocol, "websocket");
+    assert_eq!(created.method, "");
+
+    let parsed = created.parse_websocket().unwrap();
+    assert_eq!(parsed.url, "{{base_url}}/");
+    assert!(parsed.headers.is_empty());
+    assert!(parsed.messages.is_empty());
+
+    let err = RequestFile::create_websocket(path).unwrap_err();
+    assert!(matches!(err, NovaError::Io { .. }));
+}
+
+#[test]
+fn write_websocket_round_trips_url_headers_and_messages() {
+    let temp = TempDir::new("ws-write");
+    let path = temp.0.join("socket.nova");
+    let created = RequestFile::create_websocket(path.clone()).unwrap();
+
+    let draft = WebSocketDraft {
+        url: "{{ws_base_url}}/updates".to_string(),
+        headers: vec![Header {
+            name: "Authorization".to_string(),
+            value: "Bearer {{auth_token}}".to_string(),
+        }],
+        messages: vec!["subscribe".to_string(), "ping".to_string()],
+    };
+    created.write_websocket(&draft).unwrap();
+
+    // Re-read straight from disk to prove the edit actually landed there.
+    let reloaded = RequestFile {
+        name: "socket".to_string(),
+        path,
+        method: String::new(),
+        protocol: "websocket".to_string(),
+    };
+    let parsed = reloaded.parse_websocket().unwrap();
+
+    assert_eq!(parsed.url, draft.url);
+    assert_eq!(parsed.headers, draft.headers);
+    assert_eq!(parsed.messages, draft.messages);
+}
+
+#[test]
+fn parsed_websocket_request_to_nova_string_round_trips_through_parsing() {
+    let project = NovaProject::discover(&fixture("websocket-project")).unwrap();
+    let request_file = project
+        .collections
+        .requests
+        .iter()
+        .find(|r| r.name == "echo")
+        .expect("echo.nova fixture request");
+    let original = request_file.parse_websocket().unwrap();
+
+    let text = original.to_nova_string();
+    let temp = TempDir::new("ws-roundtrip");
+    let path = temp.0.join("echo.nova");
+    std::fs::write(&path, &text).unwrap();
+
+    let reparsed = nova_engine::RequestFile {
+        name: "echo".to_string(),
+        path,
+        method: String::new(),
+        protocol: "websocket".to_string(),
+    }
+    .parse_websocket()
+    .unwrap();
+
+    assert_eq!(reparsed, original);
 }
 
 #[test]
