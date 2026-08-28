@@ -56,6 +56,7 @@ fn persists_cookies_across_requests_in_the_same_session() {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     };
     session.execute(&project_root(), &login_request).unwrap();
@@ -70,6 +71,7 @@ fn persists_cookies_across_requests_in_the_same_session() {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     };
     session.execute(&project_root(), &me_request).unwrap();
@@ -119,6 +121,7 @@ fn a_fresh_session_does_not_carry_cookies_from_another_session() {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     };
     first_session
@@ -136,6 +139,7 @@ fn a_fresh_session_does_not_carry_cookies_from_another_session() {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     };
     second_session

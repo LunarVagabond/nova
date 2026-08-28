@@ -19,9 +19,11 @@ my-project/
     │   └── users/
     │       ├── create.nova
     │       └── get.nova
-    └── envs/
-        ├── local.yaml
-        └── staging.yaml
+    ├── envs/
+    │   ├── local.yaml
+    │   └── staging.yaml
+    └── scripts/
+        └── sign-request.py
 ```
 
 - **`collections/`** (path configurable, see below) is walked recursively;
@@ -30,6 +32,9 @@ my-project/
 - **`envs/`** (path configurable) is *not* walked recursively — every
   `*.yaml`/`*.yml` file directly inside it is one environment. See
   `crates/nova-engine/src/environment.rs`.
+- **`scripts/`** (not configurable) holds pre-request/post-response
+  scripts that a request's `[script]` section names by bare filename. See
+  `crates/nova-engine/src/script.rs` and the `.nova` file format reference.
 - Individual requests are never listed in the manifest; they're always
   discovered from disk.
 

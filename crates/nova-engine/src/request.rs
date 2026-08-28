@@ -111,6 +111,7 @@ impl RequestFile {
                 .as_ref()
                 .map(|p| p.extractions.clone())
                 .unwrap_or_default(),
+            script: existing.as_ref().and_then(|p| p.script.clone()),
             example_response: existing.and_then(|p| p.example_response),
         };
 
@@ -634,6 +635,15 @@ pub struct ParsedRequest {
 
     pub assertions: Vec<crate::assertion::Assertion>,
     pub extractions: Vec<crate::assertion::Extraction>,
+
+    /// The request's `[script]` section, if any — names of a pre-request
+    /// and/or post-response script to run around this request's
+    /// execution. See [`crate::script`] for how a name/path is resolved
+    /// and run, and [`crate::Session::resolve_and_execute_in_collection`]
+    /// for where the two hooks actually run relative to resolution and
+    /// execution.
+    pub script: Option<crate::script::ScriptSection>,
+
     pub example_response: Option<ExampleResponse>,
 }
 
@@ -816,11 +826,12 @@ impl ParsedRequest {
             body: substitute_body(&self.body, environment)?,
             auth: deferred_auth,
             sync_content_type: self.sync_content_type,
-            // Assertions, extractions, and the example response don't
-            // reference environment variables, so they carry through
-            // resolution unchanged.
+            // Assertions, extractions, the script section, and the example
+            // response don't reference environment variables, so they
+            // carry through resolution unchanged.
             assertions: self.assertions.clone(),
             extractions: self.extractions.clone(),
+            script: self.script.clone(),
             example_response: self.example_response.clone(),
         })
     }
@@ -901,6 +912,20 @@ impl ParsedRequest {
             }
             for assertion in &self.assertions {
                 out.push_str(assertion.raw());
+                out.push('\n');
+            }
+        }
+
+        if let Some(script) = &self.script {
+            out.push_str("\n[script]\n");
+            if let Some(pre) = &script.pre {
+                out.push_str("pre: ");
+                out.push_str(pre);
+                out.push('\n');
+            }
+            if let Some(post) = &script.post {
+                out.push_str("post: ");
+                out.push_str(post);
                 out.push('\n');
             }
         }
@@ -1028,7 +1053,8 @@ fn parse_nova_websocket(contents: &str) -> Result<ParsedWebSocketRequest, String
                 | Section::Auth
                 | Section::Body
                 | Section::Assert
-                | Section::Response,
+                | Section::Response
+                | Section::Script,
             ) => {}
         }
     }
@@ -1185,7 +1211,8 @@ fn parse_nova_sse(contents: &str) -> Result<ParsedSseRequest, String> {
                 | Section::Body
                 | Section::Assert
                 | Section::Response
-                | Section::Messages,
+                | Section::Messages
+                | Section::Script,
             ) => {}
         }
     }
@@ -1397,6 +1424,9 @@ enum Section {
     /// `[request]` section declares `protocol: websocket` — see
     /// [`ParsedWebSocketRequest`].
     Messages,
+    /// `[script]` — names a pre-request and/or post-response script to run
+    /// around this request's execution. See [`crate::script`].
+    Script,
 }
 
 /// Recognize a line as a section marker, returning the section it starts
@@ -1420,6 +1450,7 @@ fn parse_section_marker(line: &str) -> Option<(Section, Option<String>)> {
         "assert" => Some((Section::Assert, None)),
         "response" => Some((Section::Response, None)),
         "messages" => Some((Section::Messages, None)),
+        "script" => Some((Section::Script, None)),
         _ => {
             let status = inner.strip_prefix("response ")?;
             if !status.is_empty() && status.chars().all(|c| c.is_ascii_digit()) {
@@ -1461,6 +1492,7 @@ fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
     let mut header_lines: Vec<&str> = Vec::new();
     let mut body_lines: Vec<&str> = Vec::new();
     let mut assert_lines: Vec<&str> = Vec::new();
+    let mut script_lines: Vec<&str> = Vec::new();
     let mut response_sections: Vec<(Option<String>, Vec<&str>)> = Vec::new();
 
     for line in contents.lines() {
@@ -1487,6 +1519,7 @@ fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
             Some(Section::Headers) => header_lines.push(line),
             Some(Section::Body) => body_lines.push(line),
             Some(Section::Assert) => assert_lines.push(line),
+            Some(Section::Script) => script_lines.push(line),
             Some(Section::Response) => {
                 if let Some((_, lines)) = response_sections.last_mut() {
                     lines.push(line);
@@ -1580,6 +1613,7 @@ fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
         sync_content_type: parse_settings_section(&settings_lines)?,
         assertions,
         extractions,
+        script: parse_script_section(&script_lines)?,
         example_response,
     })
 }
@@ -1616,6 +1650,38 @@ fn parse_settings_section(lines: &[&str]) -> Result<bool, String> {
     }
 
     Ok(sync_content_type)
+}
+
+/// Parse the lines under a `.nova` file's `[script]` marker into a
+/// [`crate::script::ScriptSection`]. Both `pre:` and `post:` are optional
+/// (a request may declare just one, or neither, in which case there's no
+/// `[script]` section at all and this is never called). An absent
+/// `[script]` section — the overwhelmingly common case — comes back as
+/// `None` from the caller, not this function, which only runs when the
+/// section was actually present.
+fn parse_script_section(lines: &[&str]) -> Result<Option<crate::script::ScriptSection>, String> {
+    let mut pre = None;
+    let mut post = None;
+
+    for line in lines {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let (key, value) = line.split_once(':').ok_or_else(|| {
+            format!("malformed [script] line (expected \"key: value\"): {line:?}")
+        })?;
+        match key.trim().to_ascii_lowercase().as_str() {
+            "pre" => pre = Some(value.trim().to_string()),
+            "post" => post = Some(value.trim().to_string()),
+            _ => {}
+        }
+    }
+
+    if pre.is_none() && post.is_none() {
+        return Ok(None);
+    }
+
+    Ok(Some(crate::script::ScriptSection { pre, post }))
 }
 
 /// Parse a `[response <status>]` section into an [`ExampleResponse`]:
@@ -2511,6 +2577,54 @@ mod tests {
         assert!(text.contains("sync_content_type: false"), "{text}");
         assert!(!reparsed.sync_content_type);
         assert_eq!(parsed, reparsed);
+    }
+
+    #[test]
+    fn a_request_with_no_script_section_has_no_script() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/users\n";
+        let parsed = parse_nova(contents).unwrap();
+        assert!(parsed.script.is_none());
+    }
+
+    #[test]
+    fn round_trips_a_script_section_with_both_pre_and_post() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/users\n\n[script]\npre: sign-request.py\npost: extract-token.js\n";
+
+        let parsed = parse_nova(contents).unwrap();
+        let script = parsed.script.as_ref().unwrap();
+        assert_eq!(script.pre.as_deref(), Some("sign-request.py"));
+        assert_eq!(script.post.as_deref(), Some("extract-token.js"));
+
+        let text = parsed.to_nova_string().unwrap();
+        let reparsed = parse_nova(&text).unwrap();
+        assert_eq!(parsed, reparsed);
+    }
+
+    #[test]
+    fn round_trips_a_script_section_with_only_pre() {
+        let contents =
+            "[request]\nmethod: GET\nurl: {{base_url}}/users\n\n[script]\npre: sign-request.py\n";
+
+        let parsed = parse_nova(contents).unwrap();
+        let script = parsed.script.as_ref().unwrap();
+        assert_eq!(script.pre.as_deref(), Some("sign-request.py"));
+        assert_eq!(script.post, None);
+
+        let text = parsed.to_nova_string().unwrap();
+        let reparsed = parse_nova(&text).unwrap();
+        assert_eq!(parsed, reparsed);
+    }
+
+    #[test]
+    fn script_carries_through_resolution_unchanged() {
+        let contents =
+            "[request]\nmethod: GET\nurl: {{base_url}}/users\n\n[script]\npre: sign-request.py\n";
+        let parsed = parse_nova(contents).unwrap();
+        let env = test_environment("local", &[("base_url", "http://localhost:8080")]);
+
+        let resolved = parsed.resolve(&env).unwrap();
+
+        assert_eq!(resolved.script, parsed.script);
     }
 
     #[test]

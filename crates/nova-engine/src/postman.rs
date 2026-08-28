@@ -131,6 +131,7 @@ fn generate_request(
         sync_content_type: true,
         assertions: Vec::new(),
         extractions: Vec::new(),
+        script: None,
         example_response: None,
     };
     let contents = parsed

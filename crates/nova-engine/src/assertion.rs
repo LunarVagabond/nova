@@ -452,6 +452,7 @@ mod tests {
             sync_content_type: true,
             assertions: vec![],
             extractions: vec![],
+            script: None,
             example_response: None,
         }
     }

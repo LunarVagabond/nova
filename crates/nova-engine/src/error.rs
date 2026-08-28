@@ -75,6 +75,22 @@ pub enum NovaError {
     #[error("extraction {name:?} = response.{path} did not match anything in the response")]
     ExtractionFailed { name: String, path: String },
 
+    #[error(
+        "[script] reference {script_ref:?} does not resolve to a file at {path} \
+         (looked for a bare name under the project's nova/scripts/ directory, \
+         or an explicit path relative to the project root)"
+    )]
+    ScriptNotFound { script_ref: String, path: PathBuf },
+
+    #[error(
+        "no interpreter is configured for {path}'s extension ({extension:?}), or the \
+         interpreter isn't installed/on PATH"
+    )]
+    ScriptInterpreterNotFound { path: PathBuf, extension: String },
+
+    #[error("script {path} failed: {message}")]
+    ScriptExecution { path: PathBuf, message: String },
+
     #[error("failed to parse OpenAPI spec: {message}")]
     OpenApiParse { message: String },
 

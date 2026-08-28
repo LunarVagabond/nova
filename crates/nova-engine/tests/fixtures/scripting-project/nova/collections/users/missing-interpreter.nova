@@ -1,0 +1,6 @@
+[request]
+method: GET
+url: {{base_url}}/users
+
+[script]
+pre: unsupported.rb

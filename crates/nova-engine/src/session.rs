@@ -358,6 +358,15 @@ impl Session {
     /// shared, rarely-changing values (a base path, a constant) so they
     /// don't need duplicating into every environment file; anything more
     /// specific still overrides them.
+    ///
+    /// If the request declares a `[script]` section (see
+    /// [`crate::script`]), its `pre:` script runs after resolution but
+    /// before the request is sent — its header/param/body overrides are
+    /// applied to the resolved request — and its `post:` script runs
+    /// after the response comes back, with whatever variables it extracts
+    /// folded into this session's chained variables alongside (and after,
+    /// so a script's extraction can shadow the same name if both declare
+    /// it) any `[assert]` extractions.
     pub fn resolve_and_execute_in_collection(
         &mut self,
         project_root: &Path,
@@ -367,9 +376,21 @@ impl Session {
     ) -> NovaResult<(ParsedRequest, Response)> {
         let effective_environment =
             self.environment_with_variables(environment, collection_variables);
-        let resolved = parsed.resolve(&effective_environment)?;
+        let mut resolved = parsed.resolve(&effective_environment)?;
+
+        if let Some(pre_script) = resolved.script.as_ref().and_then(|s| s.pre.as_deref()) {
+            let overrides = crate::script::run_pre_request(project_root, pre_script, &resolved)?;
+            overrides.apply(&mut resolved);
+        }
+
         let response = self.execute(project_root, &resolved)?;
         self.store_extractions(&resolved, &response)?;
+
+        if let Some(post_script) = resolved.script.as_ref().and_then(|s| s.post.as_deref()) {
+            let extracted = crate::script::run_post_response(project_root, post_script, &response)?;
+            self.chained_variables.extend(extracted);
+        }
+
         Ok((resolved, response))
     }
 
@@ -683,6 +704,7 @@ mod tests {
             sync_content_type: true,
             assertions: Vec::new(),
             extractions: Vec::new(),
+            script: None,
             example_response: None,
         }
     }

@@ -22,6 +22,7 @@ order:
 | `[auth]` | A structured authentication scheme |
 | `[settings]` | Per-request authoring preferences (not sent on the wire) |
 | `[assert]` | Test assertions and value extractions |
+| `[script]` | A pre-request and/or post-response script to run |
 | `[response <status>]` | A canned example response, used by `nova mock` |
 
 ### `[request]`
@@ -245,6 +246,53 @@ url: {{base_url}}/users
 [headers]
 Authorization: Bearer {{access_token}}
 ```
+
+### `[script]`
+
+Names a pre-request and/or post-response script to run around this
+request's execution (see `crates/nova-engine/src/script.rs`):
+
+```text
+[script]
+pre: sign-request
+post: log-response
+```
+
+- `pre:` runs after `{{variable}}` resolution but before the request is
+  sent. It can add or override headers/query params, or replace the
+  outgoing body.
+- `post:` runs after the response comes back. It can extract variables
+  that later requests in the same run can reference as `{{variable}}`s,
+  the same way an `[assert]` extraction does.
+
+A bare name (no path separator, e.g. `sign-request`) resolves against the
+project's `nova/scripts/` directory; an explicit path (e.g.
+`../shared/sign.py`) is resolved relative to the project root instead. The
+file extension picks the interpreter the engine shells out to — `.js`,
+`.mjs`, and `.ts` run under `node`, `.py` runs under `python3`, and the
+mapping is easy to extend. A script's extension having no configured
+interpreter (or the interpreter not being installed) is an error, not a
+silent no-op.
+
+The contract is the same regardless of language: the engine writes a JSON
+payload to the script's stdin and reads a JSON response from its stdout.
+A pre-request script receives the outgoing request's method, URL, query
+params, headers, and body, and may return:
+
+```json
+{ "headers": { "X-Signature": "..." }, "params": { "...": "..." }, "body": "..." }
+```
+
+A post-response script receives the response (status, headers, body,
+timing) and returns the variables it extracted, by name:
+
+```json
+{ "access_token": "..." }
+```
+
+There is no sandboxing beyond the OS process: running a script from a
+cloned project is the same trust decision as running that project's
+Makefile or pre-commit hooks.
 
 ### `[response <status>]`
 

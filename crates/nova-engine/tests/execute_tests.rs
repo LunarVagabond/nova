@@ -83,6 +83,7 @@ fn executes_a_request_and_captures_the_response() {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     };
 
@@ -115,6 +116,7 @@ fn non_2xx_status_is_still_a_successful_response() {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     };
 
@@ -172,6 +174,7 @@ fn sends_json_body_on_the_wire() {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     };
 
@@ -199,6 +202,7 @@ fn sends_xml_body_on_the_wire() {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     };
 
@@ -226,6 +230,7 @@ fn sends_graphql_body_as_a_json_envelope_on_the_wire() {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     };
 
@@ -261,6 +266,7 @@ fn sends_graphql_body_with_default_empty_variables_when_none_declared() {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     };
 
@@ -306,6 +312,7 @@ fn sends_multipart_body_with_boundary_on_the_wire() {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     };
 
@@ -362,6 +369,7 @@ fn a_missing_multipart_file_attachment_is_a_typed_error() {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     };
 
@@ -390,6 +398,7 @@ fn multipart_request(file_path: &str) -> ParsedRequest {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     }
 }
@@ -449,6 +458,7 @@ fn network_failure_is_a_typed_error() {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     };
 

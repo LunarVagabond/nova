@@ -34,6 +34,7 @@ fn get_request(url: String) -> ParsedRequest {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     }
 }
@@ -107,6 +108,7 @@ fn login_create_get_chain_carries_extracted_values_forward() {
         sync_content_type: true,
         assertions: vec![],
         extractions: vec![],
+        script: None,
         example_response: None,
     };
     create_request.extractions.push(nova_engine::Extraction {
