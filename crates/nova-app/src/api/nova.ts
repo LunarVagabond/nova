@@ -20,6 +20,7 @@ import type {
   RequestFile,
   RequestHeader,
   RequestResponse,
+  TestRunResult,
 } from "../types/nova";
 
 /**
@@ -207,6 +208,16 @@ export function saveEnvironment(
 /** Deletes the environment file at `environmentPath`. */
 export function deleteEnvironment(environmentPath: string): Promise<void> {
   return invoke<void>("delete_environment", { environmentPath });
+}
+
+/**
+ * Runs every request under `path` (a whole project, a collection
+ * subdirectory, or a single request) as a test — parsing, resolving,
+ * executing, and evaluating its assertions, the same way `nova test` does
+ * — against `environment` if named (else the project's default).
+ */
+export function runTests(path: string, environment: string | null): Promise<TestRunResult> {
+  return invoke<TestRunResult>("run_tests", { path, environment });
 }
 
 /** Opens the native folder picker and returns the chosen path, or null if cancelled. */

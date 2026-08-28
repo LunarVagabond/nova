@@ -19,6 +19,19 @@
   box-shadow: var(--shadow-popover);
 }
 
+/// Wider variant for content that doesn't fit the default 28rem width —
+/// e.g. the "Run Tests" results breakdown.
+.modal--wide {
+  width: min(42rem, calc(100vw - #{$spacing-xl}));
+  max-height: calc(100vh - #{$spacing-xl} * 2);
+  display: flex;
+  flex-direction: column;
+
+  .modal__body {
+    overflow-y: auto;
+  }
+}
+
 .modal__title {
   margin: 0 0 $spacing-md;
   font-size: $font-size-md;

@@ -11,12 +11,14 @@ defineProps<{
   environments: { name: string }[];
   selectedEnvironment: string | null;
   showingProjectSettings: boolean;
+  runningTests: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "update:selectedEnvironment", value: string): void;
   (e: "switchProject"): void;
   (e: "projectSettings"): void;
+  (e: "runTests"): void;
 }>();
 </script>
 
@@ -53,6 +55,17 @@ const emit = defineEmits<{
         {{ env.name }}
       </option>
     </select>
+
+    <button
+      v-if="projectName"
+      type="button"
+      class="icon-button icon-button--outline"
+      title="Run tests for the whole project"
+      :disabled="runningTests"
+      @click="emit('runTests')"
+    >
+      <Icon name="play" />
+    </button>
 
     <button
       v-if="projectName"

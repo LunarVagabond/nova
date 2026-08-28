@@ -15,6 +15,7 @@ import {
   pickProjectDirectory,
   renameCollection,
   renameRequest,
+  runTests,
   validateProject,
 } from "./api/nova";
 import type {
@@ -23,6 +24,7 @@ import type {
   NovaEnvironment,
   NovaProject,
   RequestFile,
+  TestRunResult,
 } from "./types/nova";
 import TopBar from "./components/TopBar.vue";
 import Sidebar from "./components/Sidebar.vue";
@@ -687,6 +689,35 @@ async function confirmDeleteEnvironment() {
     deleteEnvironmentError.value = String(e);
   }
 }
+
+// "Run Tests" — runs every request in the whole open project against the
+// currently selected environment and shows the results in a Modal.
+// Per-collection/per-request scoping (the `run_tests` command already
+// supports it) is left as a follow-up; this action always runs the whole
+// project.
+const runningTests = ref(false);
+const testRunResult = ref<TestRunResult | null>(null);
+const testRunError = ref<string | null>(null);
+
+async function handleRunTests() {
+  if (!project.value || runningTests.value) return;
+
+  runningTests.value = true;
+  testRunError.value = null;
+  testRunResult.value = null;
+  try {
+    testRunResult.value = await runTests(project.value.root, selectedEnvironment.value);
+  } catch (e) {
+    testRunError.value = String(e);
+  } finally {
+    runningTests.value = false;
+  }
+}
+
+function closeTestResults() {
+  testRunResult.value = null;
+  testRunError.value = null;
+}
 </script>
 
 <template>
@@ -696,9 +727,11 @@ async function confirmDeleteEnvironment() {
       :environments="project?.environments ?? []"
       :selected-environment="selectedEnvironment"
       :showing-project-settings="mainView === 'project'"
+      :running-tests="runningTests"
       @update:selected-environment="selectedEnvironment = $event"
       @switch-project="handleOpen"
       @project-settings="showProjectSettings"
+      @run-tests="handleRunTests"
     />
 
     <aside class="app-shell__sidebar">
@@ -1053,6 +1086,63 @@ async function confirmDeleteEnvironment() {
         <button type="button" class="button button--danger" @click="confirmDeleteEnvironment">
           Delete
         </button>
+      </template>
+    </Modal>
+
+    <Modal v-if="testRunError" title="Run Tests failed" @cancel="closeTestResults">
+      <p class="modal__error">{{ testRunError }}</p>
+      <template #actions>
+        <button type="button" class="button" @click="closeTestResults">Close</button>
+      </template>
+    </Modal>
+
+    <Modal v-if="testRunResult" title="Test results" wide @cancel="closeTestResults">
+      <p class="test-results__summary">
+        <span class="test-results__count test-results__count--passed">
+          {{ testRunResult.passed }} passed
+        </span>
+        <span class="test-results__count test-results__count--failed">
+          {{ testRunResult.failed }} failed
+        </span>
+      </p>
+
+      <div class="test-results__list">
+        <div v-for="result in testRunResult.requests" :key="result.path" class="test-results__request">
+          <div class="test-results__request-header">
+            <span
+              class="test-results__status"
+              :class="
+                result.error || result.outcomes.some((o) => !o.passed)
+                  ? 'test-results__status--fail'
+                  : 'test-results__status--pass'
+              "
+            >
+              {{ result.error || result.outcomes.some((o) => !o.passed) ? "Fail" : "Pass" }}
+            </span>
+            <span class="test-results__method">{{ result.method }}</span>
+            <span class="test-results__url" :title="result.url || result.path">
+              {{ result.url || result.path }}
+            </span>
+          </div>
+
+          <p v-if="result.error" class="test-results__error">{{ result.error }}</p>
+
+          <ul v-else-if="result.outcomes.length > 0" class="test-results__assertions">
+            <li
+              v-for="(outcome, index) in result.outcomes"
+              :key="index"
+              class="test-results__assertion"
+              :class="outcome.passed ? 'test-results__assertion--pass' : 'test-results__assertion--fail'"
+            >
+              {{ outcome.passed ? "PASS" : "FAIL" }} — {{ outcome.raw }}
+              <p v-if="outcome.failure" class="test-results__assertion-detail">{{ outcome.failure }}</p>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <template #actions>
+        <button type="button" class="button" @click="closeTestResults">Close</button>
       </template>
     </Modal>
   </div>
