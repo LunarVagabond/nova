@@ -26,7 +26,15 @@ $font-size-md: 1rem;
 $font-size-lg: 1.125rem;
 
 $sidebar-width: 252px;
+$sidebar-min-width: 32px;
 $topbar-height: 44px;
+
+// Shared by both draggable dividers (sidebar/main, request/response).
+$divider-size: 7px;
+
+// The collapsed-floor height for either half of the request/response split
+// — a pane collapsed to this shows just its header row, nothing else.
+$pane-header-height: 36px;
 
 // The common rendered height of a single-line control (button, input,
 // select) once its padding/border/line-height are accounted for — buttons

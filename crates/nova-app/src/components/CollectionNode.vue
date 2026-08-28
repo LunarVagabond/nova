@@ -13,6 +13,8 @@ const props = defineProps<{
   selectedPath?: string | null;
   /** Per-file git status, keyed by absolute path — `null`/absent means clean or no git repo. */
   gitStatus?: GitStatusMap | null;
+  /** A sidebar-wide filter query, case-insensitive substring match against collection/request names. */
+  filter?: string;
 }>();
 
 const emit = defineEmits<{
@@ -65,15 +67,39 @@ function subtreeHasChanges(collection: Collection, statuses: GitStatusMap): bool
   return collection.children.some((child) => subtreeHasChanges(child, statuses));
 }
 
+const normalizedFilter = computed(() => (props.filter ?? "").trim().toLowerCase());
+const isFiltering = computed(() => normalizedFilter.value.length > 0);
+
+function requestMatches(request: RequestFile): boolean {
+  return request.name.toLowerCase().includes(normalizedFilter.value);
+}
+
+function subtreeMatchesFilter(collection: Collection, query: string): boolean {
+  if (collection.name.toLowerCase().includes(query)) return true;
+  if (collection.requests.some((r) => r.name.toLowerCase().includes(query))) return true;
+  return collection.children.some((child) => subtreeMatchesFilter(child, query));
+}
+
+// Whether this node's own subtree has anything matching the active filter —
+// drives both whether this node renders at all (from its parent) and
+// whether it force-expands while filtering.
+const subtreeMatches = computed(() => subtreeMatchesFilter(props.collection, normalizedFilter.value));
+
+// While filtering, a branch with a match auto-expands regardless of its own
+// `expanded` state; `expanded` itself is never written to by filtering, so
+// clearing the filter restores whatever expand/collapse state existed
+// before, with no snapshot/restore bookkeeping needed.
+const effectiveExpanded = computed(() => (isFiltering.value ? subtreeMatches.value : expanded.value));
+
 </script>
 
 <template>
-  <div class="collection-tree__node">
+  <div v-if="isRoot || !isFiltering || subtreeMatches" class="collection-tree__node">
     <button
       v-if="!isRoot"
       type="button"
       class="collection-tree__label"
-      :class="{ 'collection-tree__label--collapsed': !expanded }"
+      :class="{ 'collection-tree__label--collapsed': !effectiveExpanded }"
       @click="expanded = !expanded"
     >
       <span class="collection-tree__label-main">
@@ -135,8 +161,8 @@ function subtreeHasChanges(collection: Collection, statuses: GitStatusMap): bool
       </button>
     </div>
 
-    <ul v-show="isRoot || expanded" class="collection-tree">
-      <li v-for="request in collection.requests" :key="request.path">
+    <ul v-show="isRoot || effectiveExpanded" class="collection-tree">
+      <li v-for="request in collection.requests" :key="request.path" v-show="!isFiltering || requestMatches(request)">
         <span
           class="collection-tree__request"
           :class="{ 'collection-tree__request--selected': request.path === selectedPath }"
@@ -187,6 +213,7 @@ function subtreeHasChanges(collection: Collection, statuses: GitStatusMap): bool
           :collection="child"
           :selected-path="selectedPath"
           :git-status="gitStatus"
+          :filter="filter"
           @select="emit('select', $event)"
           @create-request="emit('createRequest', $event)"
           @create-collection="emit('createCollection', $event)"

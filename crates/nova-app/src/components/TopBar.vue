@@ -6,6 +6,7 @@
 // so the sidebar underneath it can stay a pure navigation tree.
 import Icon from "./Icon.vue";
 import type { MockServerStatus } from "../types/nova";
+import type { ThemePreference } from "../composables/useTheme";
 
 defineProps<{
   projectName: string | null;
@@ -16,6 +17,8 @@ defineProps<{
   runningTests: boolean;
   mockServerStatus: MockServerStatus;
   mockServerBusy: boolean;
+  sidebarHidden: boolean;
+  themePreference: ThemePreference;
 }>();
 
 const emit = defineEmits<{
@@ -26,11 +29,35 @@ const emit = defineEmits<{
   (e: "runTests"): void;
   (e: "importExport"): void;
   (e: "toggleMockServer"): void;
+  (e: "toggleSidebar"): void;
+  (e: "cycleTheme"): void;
 }>();
+
+const THEME_ICON: Record<ThemePreference, "monitor" | "sun" | "moon"> = {
+  system: "monitor",
+  light: "sun",
+  dark: "moon",
+};
+
+const THEME_LABEL: Record<ThemePreference, string> = {
+  system: "Theme: System (following OS) — click to switch to Light",
+  light: "Theme: Light — click to switch to Dark",
+  dark: "Theme: Dark — click to switch to System",
+};
 </script>
 
 <template>
   <header class="topbar">
+    <button
+      type="button"
+      class="icon-button"
+      :class="{ 'icon-button--active': !sidebarHidden }"
+      :title="sidebarHidden ? 'Show sidebar' : 'Hide sidebar'"
+      @click="emit('toggleSidebar')"
+    >
+      <Icon name="sidebar" />
+    </button>
+
     <div class="topbar__brand">
       <span class="topbar__mark">N</span>
       <span class="topbar__wordmark">Nova</span>
@@ -50,6 +77,15 @@ const emit = defineEmits<{
     </template>
 
     <div class="topbar__spacer"></div>
+
+    <button
+      type="button"
+      class="icon-button icon-button--outline"
+      :title="THEME_LABEL[themePreference]"
+      @click="emit('cycleTheme')"
+    >
+      <Icon :name="THEME_ICON[themePreference]" />
+    </button>
 
     <select
       v-if="environments.length > 0"

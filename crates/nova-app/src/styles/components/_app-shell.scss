@@ -2,21 +2,55 @@
 
 .app-shell {
   display: grid;
-  grid-template-columns: $sidebar-width 1fr;
+  grid-template-columns: var(--sidebar-width, #{$sidebar-width}) $divider-size 1fr;
   grid-template-rows: $topbar-height 1fr;
   height: 100vh;
   width: 100vw;
 }
 
+// Sidebar hidden entirely (TopBar toggle) rather than dragged down to its
+// draggable floor — Nova's sidebar is a text tree with no useful icon-only
+// collapsed state, so "hidden" and "narrow" are deliberately two different
+// things (see the sidebarHidden ref in App.vue) rather than one boundary
+// the way the response pane's single collapse threshold works.
+.app-shell--sidebar-hidden {
+  grid-template-columns: 0 0 1fr;
+}
+
 .app-shell__sidebar {
   grid-row: 2;
+  grid-column: 1;
   border-right: 1px solid var(--color-border);
   background-color: var(--color-bg-sidebar);
   overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.app-shell__sidebar-divider {
+  grid-row: 2;
+  grid-column: 2;
+  position: relative;
+  cursor: col-resize;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 3px;
+    width: 1px;
+    background-color: var(--color-border);
+  }
+
+  &:hover::after,
+  &:active::after {
+    inset: 0 auto 0 2px;
+    width: 2px;
+    background-color: var(--color-accent);
+  }
 }
 
 .app-shell__main {
   grid-row: 2;
+  grid-column: 3;
   display: flex;
   flex-direction: column;
   min-width: 0;

@@ -45,6 +45,33 @@ import HistoryPanel from "./components/HistoryPanel.vue";
 import EmptyState from "./components/EmptyState.vue";
 import Modal from "./components/Modal.vue";
 import Icon from "./components/Icon.vue";
+import { useTheme, type ThemePreference } from "./composables/useTheme";
+import { useResizablePane } from "./composables/useResizablePane";
+
+const { preference: themePreference, setPreference: setThemePreference } = useTheme();
+
+const MIN_MAIN_WIDTH = 360; // never let dragging squeeze the workspace below a usable width
+const sidebarPane = useResizablePane({
+  storageKey: "nova.sidebarWidth",
+  lastExpandedStorageKey: "nova.sidebarLastExpandedWidth",
+  defaultSize: 252,
+  minSize: 32,
+  getMax: (container) => (container ? container.clientWidth - MIN_MAIN_WIDTH - 7 : 600),
+  axis: "horizontal",
+  direction: 1, // dragging right grows the sidebar
+});
+const THEME_CYCLE: ThemePreference[] = ["system", "light", "dark"];
+function cycleTheme() {
+  const next = THEME_CYCLE[(THEME_CYCLE.indexOf(themePreference.value) + 1) % THEME_CYCLE.length];
+  setThemePreference(next);
+}
+
+const SIDEBAR_HIDDEN_KEY = "nova.sidebarHidden";
+const sidebarHidden = ref(localStorage.getItem(SIDEBAR_HIDDEN_KEY) === "true");
+function toggleSidebarHidden() {
+  sidebarHidden.value = !sidebarHidden.value;
+  localStorage.setItem(SIDEBAR_HIDDEN_KEY, String(sidebarHidden.value));
+}
 
 const project = ref<NovaProject | null>(null);
 const validationIssues = ref<string[]>([]);
@@ -866,7 +893,12 @@ async function handleToggleMockServer() {
 </script>
 
 <template>
-  <div class="app-shell">
+  <div
+    class="app-shell"
+    :class="{ 'app-shell--sidebar-hidden': sidebarHidden }"
+    :style="{ '--sidebar-width': sidebarPane.size.value + 'px' }"
+    :ref="(el) => (sidebarPane.containerEl.value = el as HTMLElement | null)"
+  >
     <TopBar
       :project-name="project?.manifest.project.name ?? null"
       :environments="project?.environments ?? []"
@@ -876,6 +908,8 @@ async function handleToggleMockServer() {
       :running-tests="runningTests"
       :mock-server-status="mockServer"
       :mock-server-busy="mockServerBusy"
+      :sidebar-hidden="sidebarHidden"
+      :theme-preference="themePreference"
       @update:selected-environment="selectedEnvironment = $event"
       @switch-project="handleOpen"
       @project-settings="showProjectSettings"
@@ -883,9 +917,11 @@ async function handleToggleMockServer() {
       @run-tests="handleRunTests"
       @import-export="openImportExport"
       @toggle-mock-server="handleToggleMockServer"
+      @toggle-sidebar="toggleSidebarHidden"
+      @cycle-theme="cycleTheme"
     />
 
-    <aside class="app-shell__sidebar">
+    <aside v-show="!sidebarHidden" class="app-shell__sidebar">
       <Sidebar
         v-if="project"
         :project="project"
@@ -904,6 +940,13 @@ async function handleToggleMockServer() {
         @manage-environment="handleManageEnvironment"
       />
     </aside>
+
+    <div
+      v-show="!sidebarHidden"
+      class="app-shell__sidebar-divider"
+      title="Drag to resize sidebar"
+      @mousedown="sidebarPane.startDrag"
+    ></div>
 
     <main class="app-shell__main">
       <div class="app-shell__chrome">

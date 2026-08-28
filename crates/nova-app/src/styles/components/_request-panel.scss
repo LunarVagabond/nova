@@ -182,7 +182,13 @@
 .request-view__pane--bottom {
   flex: 0 1 auto;
   min-height: 96px;
-  max-height: calc(100% - 96px);
+  // 36px, not the top pane's usual 96px floor — once the top pane is
+  // explicitly collapsed (see `requestPaneCollapsed` in RequestPanel.vue)
+  // its own CSS floor drops to just its header row via the shared
+  // `.request-view__pane--collapsed` class below, so this ceiling has to
+  // move too or it would silently keep capping the response pane even
+  // after the JS clamp's own max allows more.
+  max-height: calc(100% - #{$pane-header-height});
   display: flex;
   flex-direction: column;
   // The header row must stay put and only `.response-pane` (its sibling
@@ -393,10 +399,20 @@
   margin-bottom: $spacing-lg;
 }
 
+.request-panel__header-main {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  min-width: 0;
+}
+
 .request-panel__name {
   font-size: $font-size-md;
   font-weight: 600;
-  margin: 0 0 $spacing-xs;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .request-panel__path {

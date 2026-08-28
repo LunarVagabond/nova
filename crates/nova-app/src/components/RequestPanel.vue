@@ -40,6 +40,7 @@ import Icon from "./Icon.vue";
 import KeyValueEditor from "./KeyValueEditor.vue";
 import MultipartEditor from "./MultipartEditor.vue";
 import ResponseDiffView from "./ResponseDiffView.vue";
+import { useResizablePane } from "../composables/useResizablePane";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
@@ -348,6 +349,27 @@ const responseBody = computed(() => {
   return body;
 });
 
+// Populates the editable working-copy refs from a snapshot — shared by
+// `load()` (a freshly-read draft) and `handleRevert()` (the same
+// `original` snapshot the user is discarding their edits back to), so the
+// two never drift out of sync with each other.
+async function applyDraft(draft: RequestDraft) {
+  method.value = draft.method;
+  url.value = draft.url;
+  query.value = draft.query.map((q) => ({ ...q }));
+  headers.value = draft.headers.map((h) => ({ ...h }));
+  bodyText.value = draft.body_text;
+  auth.value = draft.auth ? { ...draft.auth } : null;
+  syncContentType.value = draft.sync_content_type;
+  bodyType.value = detectBodyType(headers.value, bodyText.value);
+  if (bodyType.value === "multipart") {
+    await refreshMultipartFieldsFromText();
+  } else {
+    multipartFields.value = [];
+    multipartParseError.value = null;
+  }
+}
+
 async function load() {
   loading.value = true;
   loadError.value = null;
@@ -366,26 +388,20 @@ async function load() {
     const { base, query: embeddedQuery } = splitUrlAndQuery(draft.url);
     const normalizedQuery = [...draft.query.map((q) => ({ ...q })), ...embeddedQuery];
     original.value = { ...draft, url: base, query: normalizedQuery };
-    method.value = draft.method;
-    url.value = base;
-    query.value = normalizedQuery.map((q) => ({ ...q }));
-    headers.value = draft.headers.map((h) => ({ ...h }));
-    bodyText.value = draft.body_text;
-    auth.value = draft.auth ? { ...draft.auth } : null;
-    syncContentType.value = draft.sync_content_type;
-    bodyType.value = detectBodyType(headers.value, bodyText.value);
-    if (bodyType.value === "multipart") {
-      await refreshMultipartFieldsFromText();
-    } else {
-      multipartFields.value = [];
-      multipartParseError.value = null;
-    }
+    await applyDraft(original.value);
   } catch (e) {
     loadError.value = String(e);
     original.value = null;
   } finally {
     loading.value = false;
   }
+}
+
+/** Discards unsaved edits, restoring every field back to the last loaded/saved snapshot. */
+async function handleRevert() {
+  if (!original.value || !dirty.value) return;
+  await applyDraft(original.value);
+  saveError.value = null;
 }
 
 watch(
@@ -451,77 +467,51 @@ const responseSize = computed(() =>
   response.value ? new TextEncoder().encode(response.value.body).length : 0,
 );
 
-// Height (px) of the response pane below the draggable divider — shared
-// across every open tab's `RequestPanel` instance (they read/write the same
-// key), matching how a single split-pane position feels regardless of which
-// tab set it rather than each tab remembering its own.
-const RESPONSE_HEIGHT_KEY = "nova.responsePaneHeight";
-// The height last dragged/toggled to above the collapsed floor — what the
-// collapse button restores to, also shared across tabs like the height
-// itself.
-const LAST_EXPANDED_HEIGHT_KEY = "nova.responsePaneLastExpandedHeight";
-
-// Never smaller than just its own header bar — a full 0 would make it
-// indistinguishable from "no response pane at all"; this is the floor both
-// dragging and the collapse toggle button respect, so it's always at least
-// this visible and reachable again.
-const MIN_RESPONSE_HEIGHT = 36;
-// Matches `.request-view__pane--top`'s own CSS min-height — the request
-// editor gets to keep at least this much even when the response is dragged
-// as far up as it'll go.
-const TOP_PANE_MIN_HEIGHT = 96;
-// Matches `.request-view__divider`'s CSS flex-basis.
+// Matches `.request-view__divider`'s CSS flex-basis, and the collapsed
+// floor for either pane (`$pane-header-height` in _variables.scss).
 const DIVIDER_HEIGHT = 7;
+const PANE_HEADER_HEIGHT = 36;
 
-const responseHeight = ref(Number(localStorage.getItem(RESPONSE_HEIGHT_KEY)) || 320);
-const isResponseCollapsed = computed(() => responseHeight.value <= MIN_RESPONSE_HEIGHT);
-let lastExpandedHeight = Number(localStorage.getItem(LAST_EXPANDED_HEIGHT_KEY)) || 320;
+// Shared across every open tab's `RequestPanel` instance (same localStorage
+// keys as before this was extracted into a composable), matching how a
+// single split-pane position feels regardless of which tab set it rather
+// than each tab remembering its own.
+const responsePane = useResizablePane({
+  storageKey: "nova.responsePaneHeight",
+  lastExpandedStorageKey: "nova.responsePaneLastExpandedHeight",
+  defaultSize: 320,
+  minSize: PANE_HEADER_HEIGHT,
+  // The request pane's own floor is 96px normally, but drops to just its
+  // header (36px) once it's explicitly collapsed — this is what lets the
+  // response pane approach nearly the full height rather than always being
+  // capped at "container - 96".
+  getMax: (container) => {
+    if (!container) return 320;
+    const topMin = requestPaneCollapsed.value ? PANE_HEADER_HEIGHT : 96;
+    return container.clientHeight - topMin - DIVIDER_HEIGHT;
+  },
+  axis: "vertical",
+  direction: -1, // dragging up (decreasing clientY) grows the response pane
+});
+const isResponseCollapsed = responsePane.isCollapsed;
 
-const requestViewEl = ref<HTMLElement | null>(null);
+const REQUEST_PANE_COLLAPSED_KEY = "nova.requestPaneCollapsed";
+const requestPaneCollapsed = ref(localStorage.getItem(REQUEST_PANE_COLLAPSED_KEY) === "true");
+watch(requestPaneCollapsed, (value) => localStorage.setItem(REQUEST_PANE_COLLAPSED_KEY, String(value)));
 
-/** Clamps to [`MIN_RESPONSE_HEIGHT`, as high as it can go while the request pane keeps its own minimum]. */
-function clampResponseHeight(value: number): number {
-  const available = requestViewEl.value
-    ? requestViewEl.value.clientHeight - TOP_PANE_MIN_HEIGHT - DIVIDER_HEIGHT
-    : value;
-  return Math.min(Math.max(value, MIN_RESPONSE_HEIGHT), Math.max(available, MIN_RESPONSE_HEIGHT));
-}
-
-function setResponseHeight(value: number) {
-  responseHeight.value = clampResponseHeight(value);
-  localStorage.setItem(RESPONSE_HEIGHT_KEY, String(responseHeight.value));
-  if (responseHeight.value > MIN_RESPONSE_HEIGHT) {
-    lastExpandedHeight = responseHeight.value;
-    localStorage.setItem(LAST_EXPANDED_HEIGHT_KEY, String(lastExpandedHeight));
-  }
+// Collapsing one pane always force-expands the other if it's already
+// collapsed — otherwise both could end up as two thin header bars with
+// nothing actually visible.
+function toggleRequestCollapsed() {
+  const willCollapse = !requestPaneCollapsed.value;
+  requestPaneCollapsed.value = willCollapse;
+  if (willCollapse && responsePane.isCollapsed.value) responsePane.toggleCollapsed();
 }
 
 function toggleResponseCollapsed() {
-  setResponseHeight(isResponseCollapsed.value ? lastExpandedHeight : MIN_RESPONSE_HEIGHT);
-}
-
-let dragging = false;
-
-function startDrag(event: MouseEvent) {
-  dragging = true;
-  const startY = event.clientY;
-  const startHeight = responseHeight.value;
-  document.body.style.cursor = "row-resize";
-
-  function onMove(moveEvent: MouseEvent) {
-    if (!dragging) return;
-    const delta = startY - moveEvent.clientY;
-    setResponseHeight(startHeight + delta);
-  }
-  function onUp() {
-    dragging = false;
-    document.body.style.cursor = "";
-    window.removeEventListener("mousemove", onMove);
-    window.removeEventListener("mouseup", onUp);
-  }
-  window.addEventListener("mousemove", onMove);
-  window.addEventListener("mouseup", onUp);
-  event.preventDefault();
+  const wasCollapsed = responsePane.isCollapsed.value;
+  responsePane.toggleCollapsed();
+  if (wasCollapsed && requestPaneCollapsed.value) requestPaneCollapsed.value = false;
 }
 
 // Every open tab keeps its own live RequestPanel instance (see the
@@ -538,7 +528,6 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  dragging = false;
   window.removeEventListener("keydown", onGlobalKeydown);
 });
 
@@ -546,16 +535,36 @@ defineExpose({ dirty, save: handleSave });
 </script>
 
 <template>
-  <div class="request-view" ref="requestViewEl">
-    <div class="request-view__pane request-view__pane--top">
+  <div class="request-view" :ref="(el) => (responsePane.containerEl.value = el as HTMLElement | null)">
+    <div
+      class="request-view__pane request-view__pane--top"
+      :class="{ 'request-view__pane--collapsed': requestPaneCollapsed }"
+    >
     <div class="request-panel__header">
-      <div>
+      <div class="request-panel__header-main">
+        <button
+          type="button"
+          class="icon-button"
+          :title="requestPaneCollapsed ? 'Expand request' : 'Collapse request'"
+          @click="toggleRequestCollapsed"
+        >
+          <Icon name="chevron-down" :class="{ 'response-pane__collapse-icon--collapsed': requestPaneCollapsed }" />
+        </button>
         <p class="request-panel__name">
           {{ request.name }}
           <span v-if="dirty" class="request-panel__dirty-dot" title="Unsaved changes"></span>
         </p>
       </div>
       <div class="request-panel__actions">
+        <button
+          type="button"
+          class="button button--ghost"
+          title="Discard unsaved edits, back to the last saved version"
+          :disabled="!dirty || saving"
+          @click="handleRevert"
+        >
+          Revert
+        </button>
         <button
           type="button"
           class="button button--secondary"
@@ -567,6 +576,7 @@ defineExpose({ dirty, save: handleSave });
       </div>
     </div>
 
+    <div v-show="!requestPaneCollapsed" class="request-panel__body">
     <p v-if="loading" class="response-pane__hint">Loading request…</p>
     <p v-else-if="loadError" class="response-pane__error">{{ loadError }}</p>
 
@@ -661,8 +671,10 @@ defineExpose({ dirty, save: handleSave });
       <div v-else-if="activeTab === 'headers'" class="request-panel__tab-panel">
         <KeyValueEditor v-model="headers" name-placeholder="Header" value-placeholder="Value" mode="headers" />
         <p class="request-panel__hint-text">
-          Sent automatically if not set above: <code>User-Agent: Nova/…</code>,
-          <code>Accept: */*</code>.
+          Sent on every request, in addition to whatever's set above (only overridden if you set
+          the same name yourself): <code>Host: &lt;from the URL&gt;</code>,
+          <code>User-Agent: Nova/…</code>, <code>Accept: */*</code>,
+          <code>Accept-Encoding: gzip</code>.
         </p>
       </div>
 
@@ -720,13 +732,14 @@ defineExpose({ dirty, save: handleSave });
       </div>
     </template>
     </div>
+    </div>
 
-    <div class="request-view__divider" title="Drag to resize" @mousedown="startDrag"></div>
+    <div class="request-view__divider" title="Drag to resize" @mousedown="responsePane.startDrag"></div>
 
     <div
       class="request-view__pane request-view__pane--bottom"
       :class="{ 'request-view__pane--collapsed': isResponseCollapsed }"
-      :style="{ flexBasis: `${responseHeight}px` }"
+      :style="{ flexBasis: `${responsePane.size.value}px` }"
     >
     <div class="response-pane__header">
       <span class="response-pane__header-label">Response</span>
