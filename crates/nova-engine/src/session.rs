@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::{Duration, SystemTime};
 
 use crate::assertion::resolve_extraction;
 use crate::auth::{fetch_client_credentials_token, AccessToken, AuthScheme};
@@ -15,6 +16,25 @@ struct StoredCookie {
     /// Defaults to `/` — a cookie with no explicit `Path` attribute is
     /// sent on every path for its host.
     path: String,
+    /// Set from a bare `Secure`/`secure` attribute — a `Secure` cookie is
+    /// never replayed over plain HTTP.
+    secure: bool,
+    /// Set from `Domain=`/`domain=` (leading `.` is normalized away). When
+    /// present, the cookie is sent to the exact domain and any subdomain of
+    /// it, rather than only the host it was originally set from.
+    domain: Option<String>,
+    /// Computed from `Max-Age=<seconds>` (priority per RFC 6265) or, failing
+    /// that, from a parseable `Expires=<HTTP-date>`. `None` means the cookie
+    /// has no expiry and lasts for the life of the process, matching the
+    /// previous behavior.
+    expires_at: Option<SystemTime>,
+}
+
+impl StoredCookie {
+    fn is_expired(&self) -> bool {
+        self.expires_at
+            .is_some_and(|expires_at| expires_at <= SystemTime::now())
+    }
 }
 
 /// Cookies collected from `Set-Cookie` responses, scoped by host.
@@ -26,12 +46,26 @@ struct CookieJar {
 impl CookieJar {
     fn header_for(&self, url: &url::Url) -> Option<String> {
         let host = url.host_str()?;
-        let cookies = self.by_host.get(host)?;
         let path = url.path();
+        let is_https = url.scheme() == "https";
 
-        let matching: Vec<String> = cookies
+        let matching: Vec<String> = self
+            .by_host
             .iter()
+            .flat_map(|(stored_host, cookies)| cookies.iter().map(move |c| (stored_host, c)))
+            .filter(|(stored_host, cookie)| match &cookie.domain {
+                // No Domain attribute: host-only, exact match against the
+                // host it was set from (today's behavior).
+                None => stored_host.as_str() == host,
+                // Domain attribute: matches the exact domain or any
+                // subdomain of it, regardless of which host bucket it's
+                // filed under.
+                Some(domain) => cookie_matches_host(domain, host),
+            })
+            .map(|(_, cookie)| cookie)
             .filter(|cookie| path.starts_with(&cookie.path))
+            .filter(|cookie| !cookie.secure || is_https)
+            .filter(|cookie| !cookie.is_expired())
             .map(|cookie| format!("{}={}", cookie.name, cookie.value))
             .collect();
 
@@ -51,6 +85,12 @@ impl CookieJar {
             let Some(cookie) = parse_set_cookie(raw) else {
                 continue;
             };
+            if cookie.is_expired() {
+                // Already expired at parse time (e.g. `Max-Age=0`, or an
+                // `Expires` date in the past) — this is how a server tells
+                // the client to delete the cookie, so don't store it.
+                continue;
+            }
             let entry = self.by_host.entry(host.to_string()).or_default();
             entry.retain(|existing| existing.name != cookie.name);
             entry.push(cookie);
@@ -58,11 +98,26 @@ impl CookieJar {
     }
 }
 
+/// Per cookie-spec suffix matching: `domain` (already stripped of any
+/// leading `.`) matches `request_host` exactly, or matches any subdomain of
+/// it (`example.com` matches `api.example.com` but not `notexample.com`).
+fn cookie_matches_host(domain: &str, request_host: &str) -> bool {
+    request_host == domain
+        || request_host
+            .strip_suffix(domain)
+            .is_some_and(|prefix| prefix.ends_with('.'))
+}
+
 fn parse_set_cookie(raw: &str) -> Option<StoredCookie> {
     let mut parts = raw.split(';');
     let (name, value) = parts.next()?.trim().split_once('=')?;
 
     let mut path = "/".to_string();
+    let mut secure = false;
+    let mut domain: Option<String> = None;
+    let mut max_age: Option<i64> = None;
+    let mut expires: Option<SystemTime> = None;
+
     for attribute in parts {
         let attribute = attribute.trim();
         if let Some(value) = attribute
@@ -70,13 +125,47 @@ fn parse_set_cookie(raw: &str) -> Option<StoredCookie> {
             .or_else(|| attribute.strip_prefix("path="))
         {
             path = value.to_string();
+        } else if let Some(value) = attribute
+            .strip_prefix("Domain=")
+            .or_else(|| attribute.strip_prefix("domain="))
+        {
+            let value = value.strip_prefix('.').unwrap_or(value);
+            domain = Some(value.to_string());
+        } else if let Some(value) = attribute
+            .strip_prefix("Max-Age=")
+            .or_else(|| attribute.strip_prefix("max-age="))
+        {
+            max_age = value.trim().parse::<i64>().ok();
+        } else if let Some(value) = attribute
+            .strip_prefix("Expires=")
+            .or_else(|| attribute.strip_prefix("expires="))
+        {
+            expires = httpdate::parse_http_date(value.trim()).ok();
+        } else if attribute.eq_ignore_ascii_case("Secure") {
+            secure = true;
         }
     }
+
+    // Max-Age takes priority over Expires per RFC 6265. A failed Expires
+    // parse is treated as no expiry rather than dropping the whole cookie.
+    let expires_at = if let Some(max_age) = max_age {
+        Some(if max_age <= 0 {
+            // Already-expired sentinel, safely in the past.
+            SystemTime::UNIX_EPOCH
+        } else {
+            SystemTime::now() + Duration::from_secs(max_age as u64)
+        })
+    } else {
+        expires
+    };
 
     Some(StoredCookie {
         name: name.trim().to_string(),
         value: value.trim().to_string(),
         path,
+        secure,
+        domain,
+        expires_at,
     })
 }
 
@@ -328,6 +417,109 @@ mod tests {
         assert_eq!(
             jar.header_for(&url::Url::parse("http://example.com/admin/dashboard").unwrap()),
             Some("admin_token=xyz".to_string())
+        );
+    }
+
+    #[test]
+    fn a_secure_cookie_is_not_sent_over_plain_http_but_is_sent_over_https() {
+        let mut jar = CookieJar::default();
+        let url = url::Url::parse("https://example.com/login").unwrap();
+        jar.store(&url, &["session_id=abc123; Secure"]);
+
+        assert_eq!(
+            jar.header_for(&url::Url::parse("http://example.com/anything").unwrap()),
+            None
+        );
+        assert_eq!(
+            jar.header_for(&url::Url::parse("https://example.com/anything").unwrap()),
+            Some("session_id=abc123".to_string())
+        );
+    }
+
+    #[test]
+    fn a_domain_scoped_cookie_reaches_subdomains_and_the_exact_domain_but_not_unrelated_hosts() {
+        let mut jar = CookieJar::default();
+        let url = url::Url::parse("http://example.com/login").unwrap();
+        jar.store(&url, &["session_id=abc123; Domain=example.com"]);
+
+        assert_eq!(
+            jar.header_for(&url::Url::parse("http://example.com/anything").unwrap()),
+            Some("session_id=abc123".to_string())
+        );
+        assert_eq!(
+            jar.header_for(&url::Url::parse("http://api.example.com/anything").unwrap()),
+            Some("session_id=abc123".to_string())
+        );
+        assert_eq!(
+            jar.header_for(&url::Url::parse("http://notexample.com/anything").unwrap()),
+            None
+        );
+    }
+
+    #[test]
+    fn a_leading_dot_on_domain_is_treated_the_same_as_no_leading_dot() {
+        let mut jar = CookieJar::default();
+        let url = url::Url::parse("http://example.com/login").unwrap();
+        jar.store(&url, &["session_id=abc123; Domain=.example.com"]);
+
+        assert_eq!(
+            jar.header_for(&url::Url::parse("http://api.example.com/anything").unwrap()),
+            Some("session_id=abc123".to_string())
+        );
+    }
+
+    #[test]
+    fn a_cookie_with_max_age_zero_is_not_stored() {
+        let mut jar = CookieJar::default();
+        let url = url::Url::parse("http://example.com/login").unwrap();
+        jar.store(&url, &["session_id=abc123; Max-Age=0"]);
+
+        assert_eq!(
+            jar.header_for(&url::Url::parse("http://example.com/anything").unwrap()),
+            None
+        );
+    }
+
+    #[test]
+    fn a_cookie_with_an_expires_date_in_the_past_is_not_replayed() {
+        let mut jar = CookieJar::default();
+        let url = url::Url::parse("http://example.com/login").unwrap();
+        let past = httpdate::fmt_http_date(SystemTime::now() - Duration::from_secs(3600));
+        jar.store(&url, &[&format!("session_id=abc123; Expires={past}")]);
+
+        assert_eq!(
+            jar.header_for(&url::Url::parse("http://example.com/anything").unwrap()),
+            None
+        );
+    }
+
+    #[test]
+    fn a_cookie_with_an_expires_date_in_the_future_is_replayed() {
+        let mut jar = CookieJar::default();
+        let url = url::Url::parse("http://example.com/login").unwrap();
+        let future = httpdate::fmt_http_date(SystemTime::now() + Duration::from_secs(3600));
+        jar.store(&url, &[&format!("session_id=abc123; Expires={future}")]);
+
+        assert_eq!(
+            jar.header_for(&url::Url::parse("http://example.com/anything").unwrap()),
+            Some("session_id=abc123".to_string())
+        );
+    }
+
+    #[test]
+    fn a_cookie_with_max_age_takes_priority_over_expires() {
+        let mut jar = CookieJar::default();
+        let url = url::Url::parse("http://example.com/login").unwrap();
+        // Expires says "in the past", but Max-Age (positive) should win.
+        let past = httpdate::fmt_http_date(SystemTime::now() - Duration::from_secs(3600));
+        jar.store(
+            &url,
+            &[&format!("session_id=abc123; Expires={past}; Max-Age=3600")],
+        );
+
+        assert_eq!(
+            jar.header_for(&url::Url::parse("http://example.com/anything").unwrap()),
+            Some("session_id=abc123".to_string())
         );
     }
 

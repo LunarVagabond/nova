@@ -262,3 +262,87 @@ fn cache_recomputes_once_the_ttl_expires() {
 
     fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn tracks_a_path_containing_spaces() {
+    let dir = temp_dir("path-with-spaces");
+    init_git_repo(&dir);
+
+    let staged_path = dir.join("my file.nova");
+    let untracked_path = dir.join("another new file.nova");
+
+    fs::write(&staged_path, "[request]\nmethod: GET\n").unwrap();
+    assert!(git(&dir, &["add", "my file.nova"]).status.success());
+
+    fs::write(&untracked_path, "[request]\nmethod: GET\n").unwrap();
+
+    let statuses = git_status(&dir).unwrap().expect("should be a git repo");
+
+    assert_eq!(
+        statuses.get(&staged_path.canonicalize().unwrap()),
+        Some(&GitFileStatus::Staged)
+    );
+    assert_eq!(
+        statuses.get(&untracked_path.canonicalize().unwrap()),
+        Some(&GitFileStatus::Untracked)
+    );
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn tracks_a_path_containing_non_ascii_unicode_characters() {
+    let dir = temp_dir("path-with-unicode");
+    init_git_repo(&dir);
+
+    let staged_path = dir.join("café.nova");
+    let untracked_path = dir.join("東京.nova");
+
+    fs::write(&staged_path, "[request]\nmethod: GET\n").unwrap();
+    assert!(git(&dir, &["add", "café.nova"]).status.success());
+
+    fs::write(&untracked_path, "[request]\nmethod: GET\n").unwrap();
+
+    let statuses = git_status(&dir).unwrap().expect("should be a git repo");
+
+    assert_eq!(
+        statuses.get(&staged_path.canonicalize().unwrap()),
+        Some(&GitFileStatus::Staged)
+    );
+    assert_eq!(
+        statuses.get(&untracked_path.canonicalize().unwrap()),
+        Some(&GitFileStatus::Untracked)
+    );
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn detects_a_staged_rename_of_a_path_with_spaces_and_unicode() {
+    let dir = temp_dir("rename-spaces-unicode");
+    init_git_repo(&dir);
+
+    let old_path = dir.join("old café.nova");
+    let new_path = dir.join("new café 東京.nova");
+
+    fs::write(
+        &old_path,
+        "[request]\nmethod: GET\nurl: https://example.com\n",
+    )
+    .unwrap();
+    assert!(git(&dir, &["add", "old café.nova"]).status.success());
+    assert!(git(&dir, &["commit", "-m", "initial"]).status.success());
+
+    assert!(git(&dir, &["mv", "old café.nova", "new café 東京.nova"])
+        .status
+        .success());
+
+    let statuses = git_status(&dir).unwrap().expect("should be a git repo");
+
+    assert_eq!(
+        statuses.get(&new_path.canonicalize().unwrap()),
+        Some(&GitFileStatus::Renamed { from: old_path })
+    );
+
+    fs::remove_dir_all(&dir).unwrap();
+}

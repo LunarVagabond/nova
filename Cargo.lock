@@ -2332,6 +2332,7 @@ name = "nova-engine"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "httpdate",
  "indexmap 2.14.0",
  "openapiv3",
  "roxmltree",
