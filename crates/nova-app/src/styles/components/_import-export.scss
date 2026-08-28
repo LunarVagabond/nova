@@ -1,0 +1,47 @@
+@use "../variables" as *;
+
+// Content of the "Import / export" dialog (see TopBar's transfer-icon
+// action and App.vue's `importExportOpen` modal) — two stacked sections,
+// each with its own hint, action button, and inline result/error.
+
+.import-export__section {
+  & + & {
+    margin-top: $spacing-lg;
+    padding-top: $spacing-lg;
+    border-top: 1px solid var(--color-border);
+  }
+}
+
+.import-export__heading {
+  margin: 0 0 $spacing-xs;
+  font-size: $font-size-base;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.import-export__hint {
+  margin: 0 0 $spacing-md;
+  font-size: $font-size-sm;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.import-export__result {
+  margin-top: $spacing-md;
+  font-size: $font-size-sm;
+  color: var(--color-text);
+
+  code {
+    word-break: break-all;
+  }
+
+  .button {
+    margin-top: $spacing-sm;
+  }
+}
+
+.import-export__warning {
+  margin: $spacing-xs 0 0;
+  color: var(--color-warning);
+  font-size: $font-size-xs;
+}

@@ -20,7 +20,8 @@ const props = defineProps<{
     | "wand"
     | "copy"
     | "play"
-    | "history";
+    | "history"
+    | "transfer";
 }>();
 </script>
 
@@ -102,6 +103,11 @@ const props = defineProps<{
       <path d="M3 12a9 9 0 1 0 3-6.7" />
       <path d="M3 4v4.5h4.5" />
       <path d="M12 8v4l3 2" />
+    </template>
+
+    <template v-else-if="name === 'transfer'">
+      <path d="M8 20V4M8 4L4.5 7.5M8 4l3.5 3.5" />
+      <path d="M16 4v16M16 20l3.5-3.5M16 20l-3.5-3.5" />
     </template>
   </svg>
 </template>

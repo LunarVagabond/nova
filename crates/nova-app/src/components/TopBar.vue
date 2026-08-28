@@ -21,6 +21,7 @@ const emit = defineEmits<{
   (e: "projectSettings"): void;
   (e: "showHistory"): void;
   (e: "runTests"): void;
+  (e: "importExport"): void;
 }>();
 </script>
 
@@ -78,6 +79,16 @@ const emit = defineEmits<{
       @click="emit('showHistory')"
     >
       <Icon name="history" />
+    </button>
+
+    <button
+      v-if="projectName"
+      type="button"
+      class="icon-button icon-button--outline"
+      title="Import / export"
+      @click="emit('importExport')"
+    >
+      <Icon name="transfer" />
     </button>
 
     <button

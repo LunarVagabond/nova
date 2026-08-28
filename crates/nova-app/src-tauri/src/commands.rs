@@ -11,10 +11,11 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use nova_engine::{
-    evaluate, multipart_fields_to_body_text, parse_curl, parse_multipart_fields, AssertionOutcome,
-    AuthScheme, Collection, Environment, GitFileStatus, GitStatusCache, Header, InitOptions,
-    InitOutcome, Manifest, MultipartField, NovaProject, OpenProjectOutcome, ParsedCurlRequest,
-    RequestDraft, RequestFile, Response, Session,
+    evaluate, export_to_spec, generate_project, multipart_fields_to_body_text, parse_curl,
+    parse_multipart_fields, write_generated_project, AssertionOutcome, AuthScheme, Collection,
+    Environment, GitFileStatus, GitStatusCache, Header, InitOptions, InitOutcome, Manifest,
+    MultipartField, NovaProject, OpenProjectOutcome, ParsedCurlRequest, RequestDraft, RequestFile,
+    Response, Session,
 };
 
 use crate::session_store::SessionStore;
@@ -56,6 +57,54 @@ pub fn init_project(
         InitOptions { name, install_hook },
     )
     .map_err(|e| e.to_string())
+}
+
+/// The result of a successful [`import_project`] call: where the generated
+/// project landed, how many requests it produced, and anything generation
+/// didn't fail on but the GUI should still surface (see
+/// [`nova_engine::GeneratedProject::warnings`]).
+#[derive(Debug, Clone, Serialize)]
+pub struct ImportProjectOutcome {
+    pub project_root: String,
+    pub request_count: usize,
+    pub warnings: Vec<String>,
+}
+
+/// Generate a new Nova project from an OpenAPI 3.x spec or a Postman
+/// Collection Format v2.1 export at `input_path`, and write it under
+/// `output_path/nova/` — the same thing `nova generate` does on the CLI, via
+/// the same shared engine entry points ([`generate_project`],
+/// [`write_generated_project`]).
+#[tauri::command]
+pub fn import_project(
+    input_path: String,
+    output_path: String,
+) -> Result<ImportProjectOutcome, String> {
+    let input_text = std::fs::read_to_string(&input_path)
+        .map_err(|source| format!("failed to read {input_path}: {source}"))?;
+
+    let generated = generate_project(&input_text).map_err(|e| e.to_string())?;
+    let project_root = write_generated_project(&generated, std::path::Path::new(&output_path))
+        .map_err(|e| e.to_string())?;
+
+    Ok(ImportProjectOutcome {
+        project_root: project_root.to_string_lossy().into_owned(),
+        request_count: generated.requests.len(),
+        warnings: generated.warnings,
+    })
+}
+
+/// Export the project at `project_root`'s collections as an OpenAPI 3.x
+/// spec (YAML), written to `output_path` — the same thing `nova export`
+/// does on the CLI, via the same engine entry point ([`export_to_spec`]).
+#[tauri::command]
+pub fn export_project(project_root: String, output_path: String) -> Result<(), String> {
+    let project =
+        NovaProject::load(std::path::PathBuf::from(&project_root)).map_err(|e| e.to_string())?;
+    let spec_yaml = export_to_spec(&project).map_err(|e| e.to_string())?;
+    std::fs::write(&output_path, spec_yaml)
+        .map_err(|source| format!("failed to write {output_path}: {source}"))?;
+    Ok(())
 }
 
 /// Per-file git status for the project at `path`, keyed by absolute path —

@@ -364,14 +364,14 @@ fn git_hooks_dir(path: &Path) -> NovaResult<PathBuf> {
     Ok(git_dir.join("hooks"))
 }
 
-fn create_dir(path: &Path) -> NovaResult<()> {
+pub(crate) fn create_dir(path: &Path) -> NovaResult<()> {
     fs::create_dir_all(path).map_err(|source| NovaError::Io {
         path: path.to_path_buf(),
         source,
     })
 }
 
-fn write_file(path: &Path, contents: &str) -> NovaResult<()> {
+pub(crate) fn write_file(path: &Path, contents: &str) -> NovaResult<()> {
     fs::write(path, contents).map_err(|source| NovaError::Io {
         path: path.to_path_buf(),
         source,
