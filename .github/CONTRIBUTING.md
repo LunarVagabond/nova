@@ -10,10 +10,10 @@ project's Git-native, local-first philosophy.
 Each feature proposal or implementation should answer:
 
 - Does this improve developing, testing, understanding, or sharing an API — per
-  Nova's [Project Philosophy](../README.md#project-philosophy)?
+  Nova's [Philosophy](../README.md#philosophy)?
 - Does it keep human-readable project files as the source of truth, with the engine
   (not the CLI or GUI) owning parsing/discovery/execution — per
-  [Core Architecture](../README.md#core-architecture)?
+  [Architecture](../docs/architecture.md)?
 
 If no, refine or drop the proposal.
 
@@ -39,8 +39,8 @@ quietly deviating from it.
 
 ## Contribution Principles
 
-Straight from Nova's [Goals](../README.md#goals) and
-[Project Philosophy](../README.md#project-philosophy):
+Straight from Nova's [Why Nova](../README.md#why-nova) and
+[Philosophy](../README.md#philosophy):
 
 - API requests are project artifacts — human-readable files that live with the
   code, not entries in a proprietary workspace database.
