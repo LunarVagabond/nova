@@ -1,0 +1,6 @@
+[request]
+protocol: sse
+url: {{base_url}}/events
+
+[headers]
+Authorization: Bearer {{auth_token}}

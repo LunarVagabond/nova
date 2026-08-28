@@ -31,6 +31,11 @@ fn main() {
             messages,
             timeout_secs,
         }) => commands::websocket::run(&request, environment.as_deref(), &messages, timeout_secs),
+        Some(Command::Sse {
+            request,
+            environment,
+            timeout_secs,
+        }) => commands::sse::run(&request, environment.as_deref(), timeout_secs),
         Some(Command::Test { path, environment }) => {
             commands::test::run(&path, environment.as_deref(), json)
         }

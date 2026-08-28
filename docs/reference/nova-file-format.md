@@ -231,6 +231,29 @@ then collects whatever text messages come back until the connection closes
 or a read timeout elapses. Binary/ping/pong frames are out of scope for now
 — only text messages are sent or collected.
 
+## Server-Sent Events requests
+
+A `.nova` file can declare a Server-Sent Events (SSE) connection instead of
+an HTTP request, by setting `protocol: sse` under `[request]`. SSE is
+always a GET per spec, so there's no method — only `url` and `[headers]`
+apply; there's no params, body, auth, assertions, or example response
+section for an SSE request:
+
+```text
+[request]
+protocol: sse
+url: {{base_url}}/events
+
+[headers]
+Authorization: Bearer {{auth_token}}
+```
+
+`nova sse` (see the [CLI reference](./cli.md)) connects and reads the
+response body incrementally, parsing the SSE event framing (`event:`/
+`data:`/`id:`/`retry:` lines terminated by a blank line) as events arrive
+rather than buffering the whole response, printing each event as it comes
+in until the connection closes or a read timeout elapses.
+
 ## Variable substitution
 
 Any `{{name}}` in any section — URL, params, headers, body, auth fields,

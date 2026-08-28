@@ -114,6 +114,23 @@ pub enum Command {
         timeout_secs: u64,
     },
 
+    /// Connect to a Server-Sent Events endpoint declared by a `.nova` file
+    /// (`protocol: sse` under `[request]`) and print events as they
+    /// arrive.
+    Sse {
+        /// Path to a `.nova` file declaring an SSE connection.
+        request: PathBuf,
+
+        #[arg(long)]
+        environment: Option<String>,
+
+        /// How long to keep waiting for another event after the last one
+        /// (or after connecting, if none have arrived yet) before giving
+        /// up and closing the connection.
+        #[arg(long, default_value_t = 5)]
+        timeout_secs: u64,
+    },
+
     /// Run requests as assertions/tests.
     Test {
         #[arg(default_value = ".")]

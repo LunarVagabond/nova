@@ -1,0 +1,5 @@
+name: local
+
+variables:
+  base_url: http://localhost:9999
+  auth_token: dev-token
