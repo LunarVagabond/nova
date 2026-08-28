@@ -1,0 +1,144 @@
+@use "../variables" as *;
+
+// Styling for `ResponseDiffView.vue` (#90) — the "diff against last run" /
+// "diff against saved example" tab in the response pane. Reuses the app's
+// fixed success/danger/warning palette rather than inventing new colors:
+// added -> success, removed -> danger, changed -> warning.
+
+.response-diff {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+  font-size: $font-size-sm;
+}
+
+.response-diff__hint {
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.response-diff__status {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
+.response-diff__label {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.response-diff__arrow {
+  color: var(--color-text-muted);
+}
+
+.response-diff__added,
+.response-diff__removed {
+  font-family: $font-family-mono;
+  padding: 0 $spacing-xs;
+  border-radius: $radius-sm;
+}
+
+.response-diff__added {
+  color: var(--color-success);
+  background-color: rgba(15, 157, 142, 0.12);
+}
+
+.response-diff__removed {
+  color: var(--color-danger);
+  background-color: rgba(232, 67, 122, 0.12);
+}
+
+.response-diff__marker {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+  font-weight: 700;
+  font-family: $font-family-mono;
+}
+
+.response-diff__marker--added {
+  color: var(--color-success);
+}
+
+.response-diff__marker--removed {
+  color: var(--color-danger);
+}
+
+.response-diff__marker--changed {
+  color: var(--color-warning);
+}
+
+.response-diff__section-title {
+  margin: 0 0 $spacing-sm;
+  font-size: $font-size-xs;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.response-diff__header-list,
+.response-diff__json-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: $font-family-mono;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+}
+
+.response-diff__header-row,
+.response-diff__json-row {
+  display: flex;
+  align-items: baseline;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+  padding: $spacing-xs 0;
+  border-bottom: 1px solid var(--color-border);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.response-diff__header-name,
+.response-diff__json-path {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.response-diff__text-diff {
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+  white-space: pre-wrap;
+  word-break: break-all;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-sm;
+  overflow: hidden;
+}
+
+.response-diff__text-line {
+  padding: 0 $spacing-sm;
+}
+
+.response-diff__text-line--added {
+  color: var(--color-success);
+  background-color: rgba(15, 157, 142, 0.1);
+}
+
+.response-diff__text-line--removed {
+  color: var(--color-danger);
+  background-color: rgba(232, 67, 122, 0.1);
+}
+
+.response-diff__text-line--unchanged {
+  color: var(--color-text-muted);
+}
+
+.response-diff__toggle {
+  display: flex;
+  gap: $spacing-xs;
+  margin-bottom: $spacing-sm;
+}

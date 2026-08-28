@@ -36,9 +36,26 @@ release bundle with `make build-app`.
   sends (method/status/timing/timestamp), reachable from the top bar's
   clock-icon action, with a click on an entry reopening its full stored
   request/response — in-memory and per-session, so it resets when the app
-  restarts; `Modal.vue` is the shared in-app dialog component — used
-  instead of `window.prompt`/`window.confirm`, which are unreliable inside
-  Tauri's webview.
+  restarts; `ResponseDiffView.vue` renders a structured response diff (see
+  below) for the response pane's Diff tab; `Modal.vue` is the shared
+  in-app dialog component — used instead of `window.prompt`/
+  `window.confirm`, which are unreliable inside Tauri's webview.
+
+### Response diffing
+
+The response pane's Diff tab compares a request's most recent send against
+either the send immediately before it in this project's session history
+("vs Previous Run") or the request's own hand-written `[response]` example
+("vs Saved Example", shown only when the request file has one). The
+comparison itself — status/header/body changes, with a structural,
+path-addressed diff for JSON bodies and a line-based diff otherwise — is
+computed in `nova-engine`'s `diff` module (`diff_responses`), reached via
+the `diff_against_previous_run`/`diff_against_example_response` Tauri
+commands; the GUI only renders the resulting `ResponseDiff`. Since a
+`HistoryEntry` doesn't carry the `.nova` path it came from, "the same
+request" is identified by matching method and fully-resolved URL rather
+than the source file — see `resolved_identity` in `commands.rs` for the
+documented edge cases this trades off.
 
 ## The enforced boundary
 

@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import {
+  diffAgainstExampleResponse,
+  diffAgainstPreviousRun,
   parseCurlCommand,
   parseMultipartBody,
   readRequest,
@@ -17,6 +19,7 @@ import type {
   RequestFile,
   RequestHeader,
   RequestResponse,
+  ResponseDiff,
 } from "../types/nova";
 import {
   BODY_TYPE_CONTENT_TYPES,
@@ -36,6 +39,7 @@ import CodeEditor, { type EditorLanguage } from "./CodeEditor.vue";
 import Icon from "./Icon.vue";
 import KeyValueEditor from "./KeyValueEditor.vue";
 import MultipartEditor from "./MultipartEditor.vue";
+import ResponseDiffView from "./ResponseDiffView.vue";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
@@ -73,7 +77,7 @@ const syncContentType = ref(true);
 type FieldTab = "auth" | "headers" | "params" | "body";
 const activeTab = ref<FieldTab>("auth");
 
-type ResponseTab = "headers" | "raw" | "preview";
+type ResponseTab = "headers" | "raw" | "preview" | "diff";
 const activeResponseTab = ref<ResponseTab>("preview");
 
 // Driven by the Content-Type header (and whether there's any body text at
@@ -186,6 +190,38 @@ const saveError = ref<string | null>(null);
 const sending = ref(false);
 const sendError = ref<string | null>(null);
 const response = ref<RequestResponse | null>(null);
+
+// Drives the response pane's Diff tab (#90) — "vs Previous Run" compares
+// the latest send against the one before it in this project's session
+// history; "vs Saved Example" compares it against the request file's own
+// hand-written `[response]` example, when it has one. Loaded on demand
+// (see the watcher below) rather than alongside every send, since most
+// sends never open this tab.
+const diffMode = ref<"previous" | "example">("previous");
+const diffResult = ref<ResponseDiff | null>(null);
+const diffLoading = ref(false);
+const diffError = ref<string | null>(null);
+const hasExampleResponse = computed(() => original.value?.has_example_response ?? false);
+
+async function loadDiff() {
+  diffLoading.value = true;
+  diffError.value = null;
+  diffResult.value = null;
+  try {
+    diffResult.value =
+      diffMode.value === "previous"
+        ? await diffAgainstPreviousRun(props.request.path, props.selectedEnvironment)
+        : await diffAgainstExampleResponse(props.request.path, props.selectedEnvironment);
+  } catch (e) {
+    diffError.value = String(e);
+  } finally {
+    diffLoading.value = false;
+  }
+}
+
+watch([activeResponseTab, diffMode], ([tab]) => {
+  if (tab === "diff") loadDiff();
+});
 
 const dirty = computed(() => {
   if (!original.value) return false;
@@ -318,6 +354,8 @@ async function load() {
   response.value = null;
   sendError.value = null;
   saveError.value = null;
+  diffResult.value = null;
+  diffError.value = null;
   try {
     const draft = await readRequest(props.request.path);
     // `url:` isn't supposed to carry its own query string, but nothing on
@@ -748,6 +786,16 @@ defineExpose({ dirty, save: handleSave });
           >
             Preview
           </button>
+          <button
+            type="button"
+            role="tab"
+            class="request-panel__tab"
+            :class="{ 'request-panel__tab--active': activeResponseTab === 'diff' }"
+            :aria-selected="activeResponseTab === 'diff'"
+            @click="activeResponseTab = 'diff'"
+          >
+            Diff
+          </button>
         </div>
 
         <div v-if="activeResponseTab === 'headers'" class="request-panel__tab-panel">
@@ -765,7 +813,7 @@ defineExpose({ dirty, save: handleSave });
           <p v-else class="response-pane__hint">Empty body.</p>
         </div>
 
-        <div v-else class="request-panel__tab-panel">
+        <div v-else-if="activeResponseTab === 'preview'" class="request-panel__tab-panel">
           <iframe
             v-if="response.body && isHtmlResponse"
             class="response-preview-frame"
@@ -779,6 +827,37 @@ defineExpose({ dirty, save: handleSave });
             readonly
           />
           <p v-else class="response-pane__hint">Empty body.</p>
+        </div>
+
+        <div v-else class="request-panel__tab-panel">
+          <div class="response-diff__toggle">
+            <button
+              type="button"
+              :class="diffMode === 'previous' ? 'button' : 'button--secondary'"
+              @click="diffMode = 'previous'"
+            >
+              vs Previous Run
+            </button>
+            <button
+              v-if="hasExampleResponse"
+              type="button"
+              :class="diffMode === 'example' ? 'button' : 'button--secondary'"
+              @click="diffMode = 'example'"
+            >
+              vs Saved Example
+            </button>
+          </div>
+
+          <p v-if="diffLoading" class="response-pane__hint">Loading diff…</p>
+          <p v-else-if="diffError" class="response-pane__error">{{ diffError }}</p>
+          <p v-else-if="!diffResult && diffMode === 'previous'" class="response-pane__hint">
+            No previous send of this request yet this session to compare against — send it again to
+            start comparing.
+          </p>
+          <p v-else-if="!diffResult" class="response-pane__hint">
+            This request has no saved <code>[response]</code> example to compare against.
+          </p>
+          <ResponseDiffView v-else :diff="diffResult" />
         </div>
       </template>
 

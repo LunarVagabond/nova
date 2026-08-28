@@ -18,6 +18,8 @@ pub fn run() {
             commands::send_request,
             commands::get_history,
             commands::reopen_history_entry,
+            commands::diff_against_previous_run,
+            commands::diff_against_example_response,
             commands::read_request,
             commands::save_request,
             commands::parse_multipart_body,

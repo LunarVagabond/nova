@@ -24,6 +24,7 @@ import type {
   RequestFile,
   RequestHeader,
   RequestResponse,
+  ResponseDiff,
   TestRunResult,
 } from "../types/nova";
 
@@ -86,6 +87,34 @@ export function getHistory(path: string): Promise<HistorySummary[]> {
 /** Reopens one past history entry from the project at `path` by the `id` `getHistory` handed out for it. */
 export function reopenHistoryEntry(path: string, id: number): Promise<HistoryDetail> {
   return invoke<HistoryDetail>("reopen_history_entry", { path, id });
+}
+
+/**
+ * Diffs the most recent send of the `.nova` file at `requestPath` against
+ * the send immediately before it in this project's session history — "did
+ * this response change since the last time it ran". Resolves to `null`
+ * (not an error) when there isn't a pair of matching history entries yet
+ * to compare.
+ */
+export function diffAgainstPreviousRun(
+  requestPath: string,
+  environment: string | null,
+): Promise<ResponseDiff | null> {
+  return invoke<ResponseDiff | null>("diff_against_previous_run", { requestPath, environment });
+}
+
+/**
+ * Diffs the most recent send of the `.nova` file at `requestPath` against
+ * its own hand-written `[response]` example, if it has one — "did this
+ * response drift from the documented example". Resolves to `null` (not an
+ * error) when the request has no example, or hasn't been sent yet this
+ * session.
+ */
+export function diffAgainstExampleResponse(
+  requestPath: string,
+  environment: string | null,
+): Promise<ResponseDiff | null> {
+  return invoke<ResponseDiff | null>("diff_against_example_response", { requestPath, environment });
 }
 
 /** Parses the `.nova` file at `requestPath` into an editable draft. */

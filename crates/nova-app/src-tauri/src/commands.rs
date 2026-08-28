@@ -11,11 +11,11 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use nova_engine::{
-    evaluate, export_to_spec, generate_project, multipart_fields_to_body_text, parse_curl,
-    parse_multipart_fields, write_generated_project, AssertionOutcome, AuthScheme, Collection,
-    Environment, GitFileStatus, GitStatusCache, Header, InitOptions, InitOutcome, Manifest,
-    MultipartField, NovaProject, OpenProjectOutcome, ParsedCurlRequest, RequestDraft, RequestFile,
-    Response, Session,
+    diff_responses, evaluate, export_to_spec, generate_project, multipart_fields_to_body_text,
+    parse_curl, parse_multipart_fields, write_generated_project, AssertionOutcome, AuthScheme,
+    Collection, ComparableResponse, Environment, GitFileStatus, GitStatusCache, Header,
+    InitOptions, InitOutcome, Manifest, MultipartField, NovaProject, OpenProjectOutcome,
+    ParsedCurlRequest, ParsedRequest, RequestDraft, RequestFile, Response, ResponseDiff, Session,
 };
 
 use crate::mock_server::{MockServerState, MockServerStatus, DEFAULT_HOST, DEFAULT_PORT};
@@ -254,6 +254,140 @@ pub fn reopen_history_entry(
             response: entry.response.clone(),
         })
     })
+}
+
+/// Resolves `request_path`'s parsed request, method, and full URL the same
+/// way [`send_request`] would (project/named environment plus collection
+/// variables), without sending anything — used by [`diff_against_previous_run`]/
+/// [`diff_against_example_response`] to find which
+/// [`nova_engine::HistoryEntry`] records belong to this request file.
+///
+/// This is a best-effort identity: a [`nova_engine::HistoryEntry`] doesn't
+/// carry the `.nova` path it came from (see #81), only the resolved
+/// request it sent — so "the same request" here means "the same method and
+/// fully-resolved URL". Two different request files that happen to hit the
+/// same URL would be conflated with each other, and a request whose URL
+/// depends on a session-chained variable (request chaining, see
+/// [`nova_engine::Session`]) that changed value between sends might not
+/// match its own earlier history entries. Both are edge cases judged
+/// acceptable over threading a source path through `Session::execute` just
+/// for this.
+fn resolved_identity(
+    project: &NovaProject,
+    path: &std::path::Path,
+    environment: Option<String>,
+) -> Result<(ParsedRequest, String, String), String> {
+    let resolved_environment = match environment {
+        Some(name) => project
+            .environment(&name)
+            .cloned()
+            .ok_or_else(|| format!("unknown environment '{name}'"))?,
+        None => project
+            .default_environment()
+            .cloned()
+            .ok_or_else(|| "project has no default environment".to_string())?,
+    };
+
+    let request_file = RequestFile {
+        name: String::new(),
+        path: path.to_path_buf(),
+        method: String::new(),
+    };
+    let parsed = request_file.parse().map_err(|e| e.to_string())?;
+
+    let collection_variables = project
+        .collections
+        .containing(path)
+        .map(|collection| collection.variables.clone())
+        .unwrap_or_default();
+
+    // Mirrors `nova_engine::Session`'s own environment/collection-variable
+    // merge, minus session-chained variables (not visible from here — see
+    // this function's doc comment).
+    let mut variables = collection_variables;
+    variables.extend(resolved_environment.variables.clone());
+    let effective_environment = Environment {
+        name: resolved_environment.name.clone(),
+        variables,
+        auth: resolved_environment.auth.clone(),
+        path: resolved_environment.path.clone(),
+    };
+
+    let resolved = parsed
+        .resolve(&effective_environment)
+        .map_err(|e| e.to_string())?;
+    let method = resolved.method.clone();
+    let full_url = resolved.full_url();
+    Ok((parsed, method, full_url))
+}
+
+/// Diffs the most recent send of the `.nova` file at `request_path`
+/// against the send immediately before it in this project's session
+/// history (see [`nova_engine::Session::history`]) — "did this response
+/// change since the last time this request ran".
+///
+/// `Ok(None)` (not an error) when there isn't a pair of matching history
+/// entries to compare yet — nothing sent this session, or only sent once.
+/// History is in-memory per [`Session`] (#81), so this resets along with
+/// it when the app restarts.
+#[tauri::command]
+pub fn diff_against_previous_run(
+    request_path: String,
+    environment: Option<String>,
+    sessions: tauri::State<SessionStore>,
+) -> Result<Option<ResponseDiff>, String> {
+    let path = std::path::Path::new(&request_path);
+    let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
+    let (_parsed, method, full_url) = resolved_identity(&project, path, environment)?;
+
+    Ok(sessions.with_session(&project.root, |session| {
+        // `history()` comes back most-recent first.
+        let matching: Vec<_> = session
+            .history()
+            .into_iter()
+            .filter(|entry| {
+                entry.request.method.eq_ignore_ascii_case(&method) && entry.url == full_url
+            })
+            .collect();
+
+        if matching.len() < 2 {
+            return None;
+        }
+        let after = ComparableResponse::from(&matching[0].response);
+        let before = ComparableResponse::from(&matching[1].response);
+        Some(diff_responses(&before, &after))
+    }))
+}
+
+/// Diffs the most recent send of the `.nova` file at `request_path`
+/// against its own hand-written `[response]` example, if it has one — "did
+/// this response drift from the example documented in the file".
+///
+/// `Ok(None)` (not an error) when the request has no `[response]` example,
+/// or hasn't been sent yet this session — nothing to compare the example
+/// against.
+#[tauri::command]
+pub fn diff_against_example_response(
+    request_path: String,
+    environment: Option<String>,
+    sessions: tauri::State<SessionStore>,
+) -> Result<Option<ResponseDiff>, String> {
+    let path = std::path::Path::new(&request_path);
+    let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
+    let (parsed, method, full_url) = resolved_identity(&project, path, environment)?;
+
+    let Some(example) = parsed.example_response.as_ref() else {
+        return Ok(None);
+    };
+    let before = ComparableResponse::from(example);
+
+    Ok(sessions.with_session(&project.root, |session| {
+        let latest = session.history().into_iter().find(|entry| {
+            entry.request.method.eq_ignore_ascii_case(&method) && entry.url == full_url
+        })?;
+        let after = ComparableResponse::from(&latest.response);
+        Some(diff_responses(&before, &after))
+    }))
 }
 
 /// Parse the `.nova` file at `request_path` into a [`RequestDraft`] for

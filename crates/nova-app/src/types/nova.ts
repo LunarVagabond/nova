@@ -281,6 +281,66 @@ export interface HistoryDetail {
   response: RequestResponse;
 }
 
+/** Mirrors `nova_engine::diff::StatusDiff` — a status code that changed between the two sides of a diff. */
+export interface StatusDiff {
+  before: number;
+  after: number;
+}
+
+/**
+ * Mirrors `nova_engine::diff::HeaderChange` — one header that differs
+ * between the two sides of a diff, tagged by `kind` (a Rust
+ * `#[serde(tag = "kind")]` enum): added outright, removed outright, or
+ * present on both sides with a different value.
+ */
+export type HeaderChange =
+  | { kind: "Added"; name: string; value: string }
+  | { kind: "Removed"; name: string; value: string }
+  | { kind: "Changed"; name: string; before: string; after: string };
+
+/**
+ * Mirrors `nova_engine::diff::JsonChange` — one JSON value that differs
+ * between the two sides of a diff, addressed by a `jq`-style path from the
+ * document root (e.g. `$.user.id`). `value`/`before`/`after` are the raw
+ * JSON values (any shape), passed through as-is for the caller to render.
+ */
+export type JsonChange =
+  | { kind: "Added"; path: string; value: unknown }
+  | { kind: "Removed"; path: string; value: unknown }
+  | { kind: "Changed"; path: string; before: unknown; after: unknown };
+
+/** Mirrors `nova_engine::diff::TextDiffLine` — one line of a line-based body diff. */
+export type TextDiffLine =
+  | { kind: "Added"; line: string }
+  | { kind: "Removed"; line: string }
+  | { kind: "Unchanged"; line: string };
+
+/**
+ * Mirrors `nova_engine::diff::BodyDiff` — the body half of a
+ * `ResponseDiff`. `Json` is used when both sides parse as JSON (a
+ * structural, path-addressed diff); `Text` is the line-based fallback for
+ * everything else; `Unchanged` means the two bodies were byte-for-byte
+ * identical.
+ */
+export type BodyDiff =
+  | { kind: "Json"; changes: JsonChange[] }
+  | { kind: "Text"; lines: TextDiffLine[] }
+  | { kind: "Unchanged" };
+
+/**
+ * Mirrors `nova_engine::diff::ResponseDiff` — the result of comparing two
+ * responses (see `diffAgainstPreviousRun`/`diffAgainstExampleResponse`).
+ * `status` is null when the status code didn't change; `identical` is a
+ * convenience that's true only when status, headers, and body all compare
+ * equal.
+ */
+export interface ResponseDiff {
+  status: StatusDiff | null;
+  header_changes: HeaderChange[];
+  body: BodyDiff;
+  identical: boolean;
+}
+
 /**
  * Mirrors `nova-app`'s `commands::ImportProjectOutcome` — the result of
  * generating a new Nova project from an OpenAPI spec or Postman collection

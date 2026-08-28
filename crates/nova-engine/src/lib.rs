@@ -9,6 +9,7 @@ mod auth;
 mod collection;
 mod collection_variables;
 mod curl;
+mod diff;
 mod environment;
 mod error;
 mod execute;
@@ -38,6 +39,10 @@ pub use collection_variables::{
     CollectionVariables, COLLECTION_VARIABLES_FILE_NAME,
 };
 pub use curl::{parse_curl, ParsedCurlRequest};
+pub use diff::{
+    diff_responses, BodyDiff, ComparableResponse, HeaderChange, JsonChange, ResponseDiff,
+    StatusDiff, TextDiffLine,
+};
 pub use environment::{create_environment, delete_environment, Environment};
 pub use error::{NovaError, NovaResult};
 pub use execute::{execute, Response};
