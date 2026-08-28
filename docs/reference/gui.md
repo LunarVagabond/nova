@@ -13,15 +13,24 @@ release bundle with `make build-app`.
 - **`src-tauri/src/commands.rs`** — every Tauri command. Each is a couple of
   lines that call `nova-engine` and map `NovaError` to `String` (or a
   richer typed result, e.g. `OpenProjectOutcome`) at the boundary.
+- **`src-tauri/src/session_store.rs`** — Tauri-managed state holding one
+  `nova_engine::Session` per open project root, keyed by project root, so
+  cookies/chained variables/request history accumulate across separate Send
+  clicks in the same project instead of a fresh `Session` resetting them on
+  every command call.
 - **`src/types/nova.ts`** — hand-mirrors the engine's `Serialize` shapes.
 - **`src/api/nova.ts`** — wraps `invoke()` and the dialog plugin.
 - **`src/components/`** — `Sidebar.vue`/`ProjectPanel.vue`/`CollectionNode.vue`
   for the collection tree; `RequestPanel.vue` for the request editor, split
   into Params/Auth/Headers/Body tabs (`AuthEditor.vue`, `KeyValueEditor.vue`,
   `MultipartEditor.vue`, `CodeEditor.vue`); `EnvironmentPanel.vue` for
-  environment editing; `Modal.vue` is the shared in-app dialog component —
-  used instead of `window.prompt`/`window.confirm`, which are unreliable
-  inside Tauri's webview.
+  environment editing; `HistoryPanel.vue` for the current project's recent
+  sends (method/status/timing/timestamp), reachable from the top bar's
+  clock-icon action, with a click on an entry reopening its full stored
+  request/response — in-memory and per-session, so it resets when the app
+  restarts; `Modal.vue` is the shared in-app dialog component — used
+  instead of `window.prompt`/`window.confirm`, which are unreliable inside
+  Tauri's webview.
 
 ## The enforced boundary
 

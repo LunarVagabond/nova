@@ -56,7 +56,7 @@ pub use request::{
     rename_request, ExampleResponse, GraphQlBody, Header, MultipartField, ParsedRequest,
     ParsedSseRequest, ParsedWebSocketRequest, QueryParam, RequestBody, RequestDraft, RequestFile,
 };
-pub use session::Session;
+pub use session::{HistoryEntry, Session, HISTORY_CAP};
 pub use sse::{
     connect_and_stream, SseEvent, SseExchange, DEFAULT_READ_TIMEOUT as SSE_DEFAULT_READ_TIMEOUT,
 };

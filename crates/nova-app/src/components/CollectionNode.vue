@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 
 import { gitStatusKind, type Collection, type GitFileStatus, type GitStatusMap, type RequestFile } from "../types/nova";
+import { methodClass, methodLabel } from "../lib/format";
 import Icon from "./Icon.vue";
 
 const props = defineProps<{
@@ -64,39 +65,6 @@ function subtreeHasChanges(collection: Collection, statuses: GitStatusMap): bool
   return collection.children.some((child) => subtreeHasChanges(child, statuses));
 }
 
-// Method badges reuse the app's fixed 4-color palette rather than inventing
-// per-method colors: GET/safe -> success, POST/primary -> accent,
-// PUT+PATCH/modifies -> warning, DELETE -> danger, anything else -> neutral.
-const METHOD_LABELS: Record<string, string> = {
-  GET: "GET",
-  POST: "POST",
-  PUT: "PUT",
-  PATCH: "PTCH",
-  DELETE: "DEL",
-  HEAD: "HEAD",
-  OPTIONS: "OPT",
-};
-
-function methodLabel(method: string): string {
-  const upper = method.toUpperCase();
-  return METHOD_LABELS[upper] ?? upper.slice(0, 4);
-}
-
-function methodClass(method: string): string {
-  switch (method.toUpperCase()) {
-    case "GET":
-      return "method-badge--get";
-    case "POST":
-      return "method-badge--post";
-    case "PUT":
-    case "PATCH":
-      return "method-badge--modify";
-    case "DELETE":
-      return "method-badge--delete";
-    default:
-      return "method-badge--neutral";
-  }
-}
 </script>
 
 <template>

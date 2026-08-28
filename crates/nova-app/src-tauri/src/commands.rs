@@ -17,6 +17,8 @@ use nova_engine::{
     RequestDraft, RequestFile, Response, Session,
 };
 
+use crate::session_store::SessionStore;
+
 /// Forces the next [`git_status`] call for whichever project `path` belongs
 /// to to recompute rather than potentially serving a cached result — call
 /// this right after any command that changes a file git would track, so
@@ -80,11 +82,18 @@ pub fn validate_project(path: String) -> Result<Vec<String>, String> {
 }
 
 /// Parse, resolve, and execute the `.nova` file at `request_path`, against
-/// `environment` if named (else the project's default). One fresh
-/// [`Session`] per call — request chaining across multiple Send clicks is
-/// out of scope for this command.
+/// `environment` if named (else the project's default).
+///
+/// Runs against the project's persistent [`Session`] in `sessions` rather
+/// than a fresh one per call, so cookies/chained variables *and* (see #81)
+/// request history accumulate across separate Send clicks in the same
+/// project instead of resetting on every call.
 #[tauri::command]
-pub fn send_request(request_path: String, environment: Option<String>) -> Result<Response, String> {
+pub fn send_request(
+    request_path: String,
+    environment: Option<String>,
+    sessions: tauri::State<SessionStore>,
+) -> Result<Response, String> {
     let path = std::path::Path::new(&request_path);
     let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
 
@@ -112,16 +121,89 @@ pub fn send_request(request_path: String, environment: Option<String>) -> Result
         .map(|collection| collection.variables.clone())
         .unwrap_or_default();
 
-    let mut session = Session::new();
-    let (_resolved, response) = session
-        .resolve_and_execute_in_collection(
-            &project.root,
-            &parsed,
-            &resolved_environment,
-            &collection_variables,
-        )
-        .map_err(|e| e.to_string())?;
-    Ok(response)
+    sessions.with_session(&project.root, |session| {
+        session
+            .resolve_and_execute_in_collection(
+                &project.root,
+                &parsed,
+                &resolved_environment,
+                &collection_variables,
+            )
+            .map(|(_resolved, response)| response)
+            .map_err(|e| e.to_string())
+    })
+}
+
+/// One [`nova_engine::HistoryEntry`] reduced to what a history list needs to
+/// display — method/status/timing/timestamp plus the URL — leaving the full
+/// request/response detail to [`reopen_history_entry`], which a click on a
+/// list row fetches on demand rather than shipping every stored response
+/// body up front.
+#[derive(Debug, Clone, Serialize)]
+pub struct HistorySummary {
+    pub id: u64,
+    pub method: String,
+    pub url: String,
+    pub status: u16,
+    pub elapsed_ms: u128,
+    pub sent_at_ms: u128,
+}
+
+impl From<&nova_engine::HistoryEntry> for HistorySummary {
+    fn from(entry: &nova_engine::HistoryEntry) -> Self {
+        Self {
+            id: entry.id,
+            method: entry.request.method.clone(),
+            url: entry.url.clone(),
+            status: entry.response.status,
+            elapsed_ms: entry.response.elapsed_ms,
+            sent_at_ms: entry.sent_at_ms,
+        }
+    }
+}
+
+/// A single past history entry reopened in full: the request it recorded,
+/// flattened to the same [`RequestDraft`] shape the request panel already
+/// knows how to render, alongside the response that came back.
+#[derive(Debug, Clone, Serialize)]
+pub struct HistoryDetail {
+    pub request: RequestDraft,
+    pub response: Response,
+}
+
+/// The project at `path`'s recent request/response history, most-recent
+/// first — see [`nova_engine::Session::history`]. Empty (not an error) for
+/// a project nothing has been sent in yet this session.
+#[tauri::command]
+pub fn get_history(
+    path: String,
+    sessions: tauri::State<SessionStore>,
+) -> Result<Vec<HistorySummary>, String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    Ok(sessions.with_session(&project.root, |session| {
+        session.history().iter().map(HistorySummary::from).collect()
+    }))
+}
+
+/// Reopens one past history entry from the project at `path` by the `id`
+/// [`get_history`] handed out for it, for display in the response panel.
+#[tauri::command]
+pub fn reopen_history_entry(
+    path: String,
+    id: u64,
+    sessions: tauri::State<SessionStore>,
+) -> Result<HistoryDetail, String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    sessions.with_session(&project.root, |session| {
+        let entry = session
+            .history_entry(id)
+            .ok_or_else(|| format!("no history entry with id {id}"))?;
+        let request = entry.request.to_draft().map_err(|e| e.to_string())?;
+        Ok(HistoryDetail {
+            request,
+            response: entry.response.clone(),
+        })
+    })
 }
 
 /// Parse the `.nova` file at `request_path` into a [`RequestDraft`] for

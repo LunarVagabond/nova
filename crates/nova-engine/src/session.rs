@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use serde::Serialize;
 
 use crate::assertion::resolve_extraction;
 use crate::auth::{fetch_client_credentials_token, AccessToken, AuthScheme};
@@ -8,6 +10,40 @@ use crate::environment::Environment;
 use crate::error::{NovaError, NovaResult};
 use crate::execute::{execute, Response};
 use crate::request::{Header, ParsedRequest};
+
+/// How many [`HistoryEntry`] records a [`Session`] keeps before evicting the
+/// oldest one — a session tracking every send of a long-running GUI session
+/// shouldn't grow without bound, and the last 50 is comfortably more than
+/// anyone scrolls back through in practice.
+pub const HISTORY_CAP: usize = 50;
+
+/// One past request/response pair recorded by a [`Session`] — see
+/// [`Session::history`]. Carries the fully-resolved request that actually
+/// went out (cookies and any deferred-auth header included, the same one
+/// [`Session::resolve_and_execute`] hands back) and the [`Response`] it
+/// got, so a past entry can be reopened for inspection rather than only
+/// showing its outcome.
+#[derive(Debug, Clone, Serialize)]
+pub struct HistoryEntry {
+    /// Identifies this entry independent of its position in
+    /// [`Session::history`]'s list, which shifts as new sends arrive and
+    /// old ones are evicted — look an entry up by this rather than by
+    /// index to avoid racing a concurrent send.
+    pub id: u64,
+    /// Milliseconds since the Unix epoch when the request was sent. Left
+    /// as a plain number rather than a formatted string so a caller can
+    /// render it however it likes.
+    pub sent_at_ms: u128,
+    /// The full URL the request actually went out to (base URL plus any
+    /// resolved query string) — see [`ParsedRequest::full_url`].
+    pub url: String,
+    /// The resolved request that was sent.
+    pub request: ParsedRequest,
+    /// The response that came back — status, timing, headers, and body are
+    /// all here already, reused as-is rather than duplicated onto this
+    /// type.
+    pub response: Response,
+}
 
 #[derive(Debug, Clone)]
 struct StoredCookie {
@@ -185,6 +221,13 @@ pub struct Session {
     /// many requests behind the same OAuth2-protected API authenticates
     /// once rather than once per request.
     access_tokens: HashMap<(String, String, Option<String>), AccessToken>,
+    /// Every request/response pair sent through this session so far,
+    /// oldest first, capped at [`HISTORY_CAP`] — see [`Session::history`].
+    history: Vec<HistoryEntry>,
+    /// The `id` to assign the next [`HistoryEntry`] — always increases, so
+    /// an id stays unique for the life of the session even as older
+    /// entries are evicted.
+    next_history_id: u64,
 }
 
 impl Session {
@@ -240,7 +283,43 @@ impl Session {
             self.jar.store(&url, &set_cookie_values);
         }
 
+        self.record_history(&request, &response);
+
         Ok(response)
+    }
+
+    /// Every request/response pair sent through this session so far,
+    /// most-recent first, capped at [`HISTORY_CAP`] entries.
+    pub fn history(&self) -> Vec<HistoryEntry> {
+        self.history.iter().rev().cloned().collect()
+    }
+
+    /// Looks up a single past entry by the `id` [`Session::history`] handed
+    /// out for it — `None` if it's already been evicted or never existed.
+    pub fn history_entry(&self, id: u64) -> Option<&HistoryEntry> {
+        self.history.iter().find(|entry| entry.id == id)
+    }
+
+    fn record_history(&mut self, request: &ParsedRequest, response: &Response) {
+        let sent_at_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0);
+
+        let id = self.next_history_id;
+        self.next_history_id += 1;
+
+        self.history.push(HistoryEntry {
+            id,
+            sent_at_ms,
+            url: request.full_url(),
+            request: request.clone(),
+            response: response.clone(),
+        });
+
+        if self.history.len() > HISTORY_CAP {
+            self.history.remove(0);
+        }
     }
 
     /// Resolve `parsed` against `environment` — extended with any variables
@@ -591,5 +670,105 @@ mod tests {
         jar.store(&url, &["session_id=second"]);
 
         assert_eq!(jar.header_for(&url), Some("session_id=second".to_string()));
+    }
+
+    fn minimal_request(method: &str, url: &str) -> ParsedRequest {
+        ParsedRequest {
+            method: method.to_string(),
+            url: url.to_string(),
+            query: Vec::new(),
+            headers: Vec::new(),
+            body: crate::request::RequestBody::None,
+            auth: None,
+            sync_content_type: true,
+            assertions: Vec::new(),
+            extractions: Vec::new(),
+            example_response: None,
+        }
+    }
+
+    fn minimal_response(status: u16) -> Response {
+        Response {
+            status,
+            headers: Vec::new(),
+            body: String::new(),
+            elapsed_ms: 1,
+        }
+    }
+
+    #[test]
+    fn recording_a_send_adds_a_history_entry_with_the_full_url() {
+        let mut session = Session::new();
+        session.record_history(
+            &minimal_request("GET", "http://example.com/users"),
+            &minimal_response(200),
+        );
+
+        let history = session.history();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].url, "http://example.com/users");
+        assert_eq!(history[0].request.method, "GET");
+        assert_eq!(history[0].response.status, 200);
+    }
+
+    #[test]
+    fn history_is_returned_most_recent_first() {
+        let mut session = Session::new();
+        session.record_history(
+            &minimal_request("GET", "http://example.com/first"),
+            &minimal_response(200),
+        );
+        session.record_history(
+            &minimal_request("GET", "http://example.com/second"),
+            &minimal_response(201),
+        );
+
+        let history = session.history();
+        assert_eq!(history[0].url, "http://example.com/second");
+        assert_eq!(history[1].url, "http://example.com/first");
+    }
+
+    #[test]
+    fn history_evicts_the_oldest_entry_beyond_the_cap() {
+        let mut session = Session::new();
+        for i in 0..(HISTORY_CAP + 5) {
+            session.record_history(
+                &minimal_request("GET", &format!("http://example.com/{i}")),
+                &minimal_response(200),
+            );
+        }
+
+        let history = session.history();
+        assert_eq!(history.len(), HISTORY_CAP);
+        // Most recent first, so the newest send is at the front and the
+        // oldest surviving one (five sends' worth evicted) is at the back.
+        assert_eq!(
+            history[0].url,
+            format!("http://example.com/{}", HISTORY_CAP + 4)
+        );
+        assert_eq!(history[history.len() - 1].url, "http://example.com/5");
+    }
+
+    #[test]
+    fn a_history_entry_can_be_looked_up_by_id_after_others_are_evicted() {
+        let mut session = Session::new();
+        session.record_history(
+            &minimal_request("GET", "http://example.com/keep"),
+            &minimal_response(200),
+        );
+        let kept_id = session.history()[0].id;
+
+        for i in 0..HISTORY_CAP {
+            session.record_history(
+                &minimal_request("GET", &format!("http://example.com/{i}")),
+                &minimal_response(200),
+            );
+        }
+
+        // The very first entry has long since been evicted by the cap.
+        assert!(session.history_entry(kept_id).is_none());
+
+        let survivor_id = session.history().last().unwrap().id;
+        assert!(session.history_entry(survivor_id).is_some());
     }
 }

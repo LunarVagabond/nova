@@ -31,6 +31,7 @@ import Sidebar from "./components/Sidebar.vue";
 import ProjectPanel from "./components/ProjectPanel.vue";
 import RequestPanel from "./components/RequestPanel.vue";
 import EnvironmentPanel from "./components/EnvironmentPanel.vue";
+import HistoryPanel from "./components/HistoryPanel.vue";
 import EmptyState from "./components/EmptyState.vue";
 import Modal from "./components/Modal.vue";
 import Icon from "./components/Icon.vue";
@@ -55,11 +56,11 @@ const gitStatus = ref<GitStatusMap | null>(null);
 // just which environment requests are sent against.
 const managedEnvironment = ref<NovaEnvironment | null>(null);
 
-// Which of the three main-panel views is on screen. Explicit (rather than
+// Which of the main-panel views is on screen. Explicit (rather than
 // inferred from `managedEnvironment`/`openTabs.length`) so there's always a
 // way back to "project" — e.g. a sidebar/header nav action — instead of it
 // only being reachable as an implicit fallback.
-type MainView = "request" | "environment" | "project";
+type MainView = "request" | "environment" | "project" | "history";
 const mainView = ref<MainView>("project");
 
 const error = ref<string | null>(null);
@@ -274,6 +275,17 @@ async function showProjectSettings() {
     environmentPanelDirty.value = false;
   }
   mainView.value = "project";
+}
+
+/** Shows the current project's recent-sends history — a read-only view, so no dirty-discard check is needed to leave it. */
+async function showHistory() {
+  if (mainView.value === "history") return;
+  if (mainView.value === "environment") {
+    if (!(await confirmDiscard(environmentPanelDirty.value))) return;
+    managedEnvironment.value = null;
+    environmentPanelDirty.value = false;
+  }
+  mainView.value = "history";
 }
 
 /** Recursively looks for a request at `path` anywhere in `collection`'s tree. */
@@ -727,10 +739,12 @@ function closeTestResults() {
       :environments="project?.environments ?? []"
       :selected-environment="selectedEnvironment"
       :showing-project-settings="mainView === 'project'"
+      :showing-history="mainView === 'history'"
       :running-tests="runningTests"
       @update:selected-environment="selectedEnvironment = $event"
       @switch-project="handleOpen"
       @project-settings="showProjectSettings"
+      @show-history="showHistory"
       @run-tests="handleRunTests"
     />
 
@@ -790,7 +804,10 @@ function closeTestResults() {
         </p>
       </div>
 
-      <div class="app-shell__content" :class="{ 'app-shell__content--flush': mainView === 'request' }">
+      <div
+        class="app-shell__content"
+        :class="{ 'app-shell__content--flush': mainView === 'request' || mainView === 'history' }"
+      >
         <template v-for="tab in openTabs" :key="tab.path">
           <RequestPanel
             v-show="project && mainView === 'request' && tab.path === activeRequestPath"
@@ -818,6 +835,11 @@ function closeTestResults() {
           :validation-issues="validationIssues"
           @dirty-change="projectPanelDirty = $event"
           @saved="refreshProjectTree"
+        />
+        <HistoryPanel
+          v-else-if="project && mainView === 'history'"
+          :project-root="project.root"
+          :active="mainView === 'history'"
         />
         <EmptyState v-else-if="!project" :error="error" @open="handleOpen" />
       </div>
