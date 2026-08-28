@@ -18,6 +18,15 @@ pub struct Cli {
     /// shorthand for `nova inspect <path>`.
     #[arg(default_value = ".")]
     pub path: PathBuf,
+
+    /// Print machine-readable JSON instead of human-formatted text.
+    /// Supported by `inspect`/`open`, `validate`, `run`, and `test`; the
+    /// JSON shape reuses `nova-engine`'s own `Serialize` types rather than
+    /// a CLI-specific schema. On failure, a JSON error object is printed
+    /// to stderr instead of the usual `error: ...` line; the exit code is
+    /// unchanged either way.
+    #[arg(long, global = true)]
+    pub json: bool,
 }
 
 #[derive(Debug, Subcommand)]

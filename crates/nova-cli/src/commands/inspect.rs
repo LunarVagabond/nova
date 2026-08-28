@@ -2,9 +2,18 @@ use std::path::Path;
 
 use nova_engine::{Collection, NovaProject};
 
-pub fn run(path: &Path) -> Result<(), String> {
+/// `json`: print the discovered [`NovaProject`] (manifest, environments,
+/// collection tree) as pretty-printed JSON instead of the human-formatted
+/// listing — the same `Serialize` shape `nova-app`'s `open_project` Tauri
+/// command hands the frontend for a found project.
+pub fn run(path: &Path, json: bool) -> Result<(), String> {
     let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
-    print_project(&project);
+    if json {
+        let text = serde_json::to_string_pretty(&project).map_err(|e| e.to_string())?;
+        println!("{text}");
+    } else {
+        print_project(&project);
+    }
     Ok(())
 }
 

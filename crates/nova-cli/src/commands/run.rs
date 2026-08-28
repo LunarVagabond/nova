@@ -19,25 +19,62 @@ use crate::discovery::{requests_at, resolve_environment};
 /// response.<path>` directive) is available as `{{name}}` on later ones —
 /// both scoped to this one run/environment, not persisted anywhere beyond
 /// it.
-pub fn run(request: &Path, environment: Option<&str>) -> Result<(), String> {
+///
+/// `json`: instead of printing each response as it comes in, collect one
+/// result object per request — `path`, `method`, `url`, and either
+/// `response` (the same [`nova_engine::Response`] shape `nova-app`'s
+/// `send_request` Tauri command returns) or `error` — into a single JSON
+/// array printed at the end, so a caller doesn't have to stitch together
+/// interleaved per-request output for a directory of requests.
+pub fn run(request: &Path, environment: Option<&str>, json: bool) -> Result<(), String> {
     let project = NovaProject::discover(request).map_err(|e| e.to_string())?;
     let environment = resolve_environment(&project, environment)?;
     let requests = requests_at(&project.collections, request)?;
 
     let mut session = Session::new();
     let mut had_failure = false;
+    let mut results = Vec::new();
+
     for request_file in requests {
-        if let Err(message) = run_one(
+        match run_one(
             &project.root,
             request_file,
             &environment,
             &project.collections,
             &mut session,
         ) {
-            eprintln!("{}: {message}", request_file.path.display());
-            had_failure = true;
+            Ok((resolved, response)) => {
+                if json {
+                    results.push(serde_json::json!({
+                        "path": request_file.path,
+                        "method": resolved.method,
+                        "url": resolved.full_url(),
+                        "response": response,
+                    }));
+                } else {
+                    print_outcome(&resolved, &response);
+                }
+            }
+            Err(message) => {
+                had_failure = true;
+                if json {
+                    results.push(serde_json::json!({
+                        "path": request_file.path,
+                        "error": message,
+                    }));
+                } else {
+                    eprintln!("{}: {message}", request_file.path.display());
+                }
+            }
         }
-        println!();
+        if !json {
+            println!();
+        }
+    }
+
+    if json {
+        let text = serde_json::to_string_pretty(&results).map_err(|e| e.to_string())?;
+        println!("{text}");
     }
 
     if had_failure {
@@ -53,21 +90,23 @@ fn run_one(
     environment: &Environment,
     collections: &Collection,
     session: &mut Session,
-) -> Result<(), String> {
+) -> Result<(nova_engine::ParsedRequest, nova_engine::Response), String> {
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
     let collection_variables = collections
         .containing(&request_file.path)
         .map(|collection| collection.variables.clone())
         .unwrap_or_default();
-    let (resolved, response) = session
+    session
         .resolve_and_execute_in_collection(
             project_root,
             &parsed,
             environment,
             &collection_variables,
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+}
 
+fn print_outcome(resolved: &nova_engine::ParsedRequest, response: &nova_engine::Response) {
     println!("{} {}", resolved.method, resolved.full_url());
     println!("{} ({}ms)", response.status, response.elapsed_ms);
     for header in &response.headers {
@@ -77,6 +116,4 @@ fn run_one(
         println!();
         println!("{}", response.body);
     }
-
-    Ok(())
 }
