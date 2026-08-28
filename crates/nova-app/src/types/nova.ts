@@ -291,3 +291,14 @@ export interface ImportProjectOutcome {
   request_count: number;
   warnings: string[];
 }
+
+/**
+ * Mirrors `nova-app`'s `mock_server::MockServerStatus` — the desktop app's
+ * mock server toggle state. `host`/`port` are set only while `running` is
+ * true.
+ */
+export interface MockServerStatus {
+  running: boolean;
+  host: string | null;
+  port: number | null;
+}

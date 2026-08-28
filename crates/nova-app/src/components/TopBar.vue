@@ -5,6 +5,7 @@
 // open, which environment requests are sent against, and project settings —
 // so the sidebar underneath it can stay a pure navigation tree.
 import Icon from "./Icon.vue";
+import type { MockServerStatus } from "../types/nova";
 
 defineProps<{
   projectName: string | null;
@@ -13,6 +14,8 @@ defineProps<{
   showingProjectSettings: boolean;
   showingHistory: boolean;
   runningTests: boolean;
+  mockServerStatus: MockServerStatus;
+  mockServerBusy: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -22,6 +25,7 @@ const emit = defineEmits<{
   (e: "showHistory"): void;
   (e: "runTests"): void;
   (e: "importExport"): void;
+  (e: "toggleMockServer"): void;
 }>();
 </script>
 
@@ -58,6 +62,30 @@ const emit = defineEmits<{
         {{ env.name }}
       </option>
     </select>
+
+    <button
+      v-if="projectName"
+      type="button"
+      class="mock-toggle"
+      :class="{ 'mock-toggle--running': mockServerStatus.running }"
+      :disabled="mockServerBusy"
+      :title="
+        mockServerStatus.running
+          ? `Mock server running on ${mockServerStatus.host}:${mockServerStatus.port} — click to stop`
+          : 'Mock server is off — click to start it for this project'
+      "
+      @click="emit('toggleMockServer')"
+    >
+      <span class="mock-toggle__dot"></span>
+      <Icon name="server" />
+      <span class="mock-toggle__label">
+        {{
+          mockServerStatus.running
+            ? `${mockServerStatus.host}:${mockServerStatus.port}`
+            : "Mock server"
+        }}
+      </span>
+    </button>
 
     <button
       v-if="projectName"

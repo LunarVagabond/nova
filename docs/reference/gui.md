@@ -18,6 +18,14 @@ release bundle with `make build-app`.
   cookies/chained variables/request history accumulate across separate Send
   clicks in the same project instead of a fresh `Session` resetting them on
   every command call.
+- **`src-tauri/src/mock_server.rs`** — lifecycle management for the mock
+  server toggle in the top bar: binds a `tiny_http::Server` on a background
+  thread and holds its handle in Tauri-managed state (`MockServerState`) so
+  it survives across command invocations and stops cleanly on explicit
+  stop or app exit. The route table itself (which `.nova` requests become
+  which routes) still comes from `nova_engine::mock`, shared with `nova
+  mock` — only the "actually run an HTTP server and keep a handle to it" is
+  GUI-side, since that's inherently desktop-app state, not engine state.
 - **`src/types/nova.ts`** — hand-mirrors the engine's `Serialize` shapes.
 - **`src/api/nova.ts`** — wraps `invoke()` and the dialog plugin.
 - **`src/components/`** — `Sidebar.vue`/`ProjectPanel.vue`/`CollectionNode.vue`
