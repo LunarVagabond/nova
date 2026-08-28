@@ -79,7 +79,6 @@ The engine owns:
 * variable resolution
 * HTTP execution
 * authentication
-* scripting
 * assertions
 * request chaining
 * response handling
