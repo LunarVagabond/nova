@@ -54,6 +54,25 @@ impl RequestFile {
         })
     }
 
+    /// Read and parse this file's contents as a Server-Sent Events
+    /// connection declaration — the SSE counterpart to
+    /// [`RequestFile::parse`]/[`RequestFile::parse_websocket`]. See
+    /// [`ParsedSseRequest`].
+    ///
+    /// Errors (as a [`NovaError::RequestParse`], same as `parse`) if the
+    /// file's `[request]` section doesn't declare `protocol: sse`, e.g.
+    /// when called on an ordinary HTTP or WebSocket request file.
+    pub fn parse_sse(&self) -> NovaResult<ParsedSseRequest> {
+        let contents = fs::read_to_string(&self.path).map_err(|source| NovaError::Io {
+            path: self.path.clone(),
+            source,
+        })?;
+        parse_nova_sse(&contents).map_err(|message| NovaError::RequestParse {
+            path: self.path.clone(),
+            message,
+        })
+    }
+
     /// Write an edited [`RequestDraft`] — method/URL/query/headers/body,
     /// plus the request's `[auth]` scheme and `[settings]` — back to this
     /// file on disk, going through [`ParsedRequest::to_nova_string`]
@@ -1077,6 +1096,150 @@ fn parse_nova_websocket(contents: &str) -> Result<ParsedWebSocketRequest, String
         headers,
         messages,
     })
+}
+
+/// A `.nova` file parsed as a Server-Sent Events connection declaration —
+/// `protocol: sse` under `[request]` — rather than an HTTP request.
+///
+/// SSE is always a GET per spec, so there's no method to declare. Only
+/// `url` and `[headers]` apply: there's no query params, body, auth, or
+/// example response for an SSE endpoint in this first pass, mirroring
+/// [`ParsedWebSocketRequest`]'s own first-pass scope. See [`crate::sse`] for
+/// what actually opens the connection and reads events once a request like
+/// this has been parsed and resolved.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ParsedSseRequest {
+    pub url: String,
+    pub headers: Vec<Header>,
+}
+
+impl ParsedSseRequest {
+    /// Resolve `{{variable}}` placeholders in the URL and header values
+    /// against `environment`'s variables — the SSE counterpart to
+    /// [`ParsedRequest::resolve`]/[`ParsedWebSocketRequest::resolve`].
+    pub fn resolve(&self, environment: &Environment) -> NovaResult<ParsedSseRequest> {
+        let headers = self
+            .headers
+            .iter()
+            .map(|h| {
+                Ok(Header {
+                    name: h.name.clone(),
+                    value: substitute(&h.value, environment)?,
+                })
+            })
+            .collect::<NovaResult<Vec<_>>>()?;
+
+        Ok(ParsedSseRequest {
+            url: substitute(&self.url, environment)?,
+            headers,
+        })
+    }
+}
+
+/// Parse a `.nova` file's raw contents as a Server-Sent Events connection
+/// declaration — the SSE counterpart to [`parse_nova`]/[`parse_nova_websocket`].
+///
+/// Expected shape:
+/// ```text
+/// [request]
+/// protocol: sse
+/// url: {{base_url}}/events
+///
+/// [headers]
+/// Authorization: Bearer {{token}}
+/// ```
+/// `[request]` must declare `protocol: sse` (any other or missing value is
+/// an error — that's how a caller tells an HTTP/WebSocket request file
+/// apart from an SSE one before parsing which kind it needs). `[params]`,
+/// `[auth]`, `[body]`, `[assert]`, `[settings]`, `[messages]`, and
+/// `[response ...]` sections don't apply to an SSE connection and are
+/// silently ignored if present.
+fn parse_nova_sse(contents: &str) -> Result<ParsedSseRequest, String> {
+    let mut current: Option<Section> = None;
+    let mut request_lines: Vec<&str> = Vec::new();
+    let mut header_lines: Vec<&str> = Vec::new();
+
+    for line in contents.lines() {
+        if let Some((section, _status)) = parse_section_marker(line) {
+            current = Some(section);
+            continue;
+        }
+
+        match current {
+            None => {
+                if !line.trim().is_empty() {
+                    return Err(format!(
+                        "content before the first [section] marker (expected \"[request]\" first): {line:?}"
+                    ));
+                }
+            }
+            Some(Section::Request) => request_lines.push(line),
+            Some(Section::Headers) => header_lines.push(line),
+            // Not meaningful for an SSE connection — ignored rather than
+            // rejected, so a file can carry, say, a `[settings]` section
+            // without that being an error here.
+            Some(
+                Section::Settings
+                | Section::Params
+                | Section::Auth
+                | Section::Body
+                | Section::Assert
+                | Section::Response
+                | Section::Messages,
+            ) => {}
+        }
+    }
+
+    if request_lines.is_empty() && current.is_none() {
+        return Err("empty request file".to_string());
+    }
+
+    let mut protocol = None;
+    let mut url = None;
+    for line in &request_lines {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let (key, value) = line.split_once(':').ok_or_else(|| {
+            format!("malformed [request] line (expected \"key: value\"): {line:?}")
+        })?;
+        match key.trim().to_ascii_lowercase().as_str() {
+            "protocol" => protocol = Some(value.trim().to_string()),
+            "url" => url = Some(value.trim().to_string()),
+            _ => {}
+        }
+    }
+
+    match protocol.as_deref() {
+        Some(value) if value.eq_ignore_ascii_case("sse") => {}
+        Some(other) => {
+            return Err(format!(
+                "[request] section's \"protocol:\" is {other:?}, expected \"sse\""
+            ))
+        }
+        None => return Err("[request] section is missing a \"protocol: sse\" line".to_string()),
+    }
+
+    let url = url.ok_or_else(|| "[request] section is missing a \"url:\" line".to_string())?;
+    if url.is_empty() {
+        return Err("[request] section's \"url:\" line has no value".to_string());
+    }
+
+    let mut headers = Vec::new();
+    for line in &header_lines {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let (name, value) = line.split_once(':').ok_or_else(|| {
+            format!("malformed [headers] line (expected \"Name: Value\"): {line:?}")
+        })?;
+        headers.push(Header {
+            name: name.trim().to_string(),
+            value: value.trim().to_string(),
+        });
+    }
+
+    Ok(ParsedSseRequest { url, headers })
 }
 
 /// Replace every `{{name}}` placeholder in `text` with the matching
@@ -2783,5 +2946,75 @@ mod tests {
         assert_eq!(resolved.url, "wss://example.com/socket");
         assert_eq!(resolved.headers[0].value, "Bearer secret123");
         assert_eq!(resolved.messages[0], "hello secret123");
+    }
+
+    #[test]
+    fn parses_a_minimal_sse_request() {
+        let contents = "[request]\nprotocol: sse\nurl: {{base_url}}/events\n";
+
+        let parsed = parse_nova_sse(contents).unwrap();
+
+        assert_eq!(parsed.url, "{{base_url}}/events");
+        assert!(parsed.headers.is_empty());
+    }
+
+    #[test]
+    fn parses_an_sse_request_with_headers() {
+        let contents = "[request]\nprotocol: sse\nurl: https://example.com/events\n\n[headers]\nAuthorization: Bearer {{token}}\n";
+
+        let parsed = parse_nova_sse(contents).unwrap();
+
+        assert_eq!(parsed.url, "https://example.com/events");
+        assert_eq!(
+            parsed.headers,
+            vec![Header {
+                name: "Authorization".to_string(),
+                value: "Bearer {{token}}".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn sse_parse_rejects_a_missing_protocol_declaration() {
+        let contents = "[request]\nurl: https://example.com/events\n";
+
+        let err = parse_nova_sse(contents).unwrap_err();
+
+        assert!(err.contains("protocol"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn sse_parse_rejects_an_http_request_file() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/users\n";
+
+        let err = parse_nova_sse(contents).unwrap_err();
+
+        assert!(err.contains("protocol"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn sse_request_resolves_url_and_headers() {
+        let mut variables = std::collections::HashMap::new();
+        variables.insert("base_url".to_string(), "https://example.com".to_string());
+        variables.insert("token".to_string(), "secret123".to_string());
+        let environment = Environment {
+            name: "local".to_string(),
+            variables,
+            auth: None,
+            path: PathBuf::from("local.yaml"),
+        };
+
+        let parsed = ParsedSseRequest {
+            url: "{{base_url}}/events".to_string(),
+            headers: vec![Header {
+                name: "Authorization".to_string(),
+                value: "Bearer {{token}}".to_string(),
+            }],
+        };
+
+        let resolved = parsed.resolve(&environment).unwrap();
+
+        assert_eq!(resolved.url, "https://example.com/events");
+        assert_eq!(resolved.headers[0].value, "Bearer secret123");
     }
 }

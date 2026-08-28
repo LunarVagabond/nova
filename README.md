@@ -172,6 +172,22 @@ ping
 `nova ws <path>` opens the connection, sends its declared messages (plus any given
 with `--message`), and prints what comes back.
 
+A request can likewise declare itself as a Server-Sent Events connection by setting
+`protocol: sse` in `[request]`. SSE is always a GET per spec, so there is no method
+either — just the endpoint's URL and any `[headers]`:
+
+```text
+[request]
+protocol: sse
+url: {{base_url}}/events
+
+[headers]
+Authorization: Bearer {{token}}
+```
+
+`nova sse <path>` connects and prints each event as it arrives rather than waiting
+for the connection to close.
+
 Environment configuration could remain equally straightforward:
 
 ```yaml
@@ -200,11 +216,11 @@ Initial focus:
 * cookies
 * file uploads
 * WebSockets (text messages)
+* Server-Sent Events
 
 Future protocol support:
 
 * gRPC
-* Server-Sent Events
 
 ### Environments
 
