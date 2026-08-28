@@ -17,7 +17,14 @@ struct TestSummary {
 /// executed and every assertion it declared passed. A request with no
 /// assertions still runs (useful for smoke-testing an endpoint) but can't
 /// fail on assertions it doesn't have.
-pub fn run(path: &Path, environment: Option<&str>) -> Result<(), String> {
+///
+/// `json`: instead of printing a pass/fail line per assertion as it runs,
+/// collect one result object per request — `path`, `method`, `url`,
+/// `response`, and `outcomes` (the same [`nova_engine::AssertionOutcome`]
+/// list `nova_engine::evaluate` returns), or `error` for a request that
+/// couldn't be parsed/resolved/sent at all — into a single JSON object
+/// alongside the `passed`/`failed` totals.
+pub fn run(path: &Path, environment: Option<&str>, json: bool) -> Result<(), String> {
     let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
     let environment = resolve_environment(&project, environment)?;
     let requests = requests_at(&project.collections, path)?;
@@ -26,6 +33,7 @@ pub fn run(path: &Path, environment: Option<&str>) -> Result<(), String> {
     let mut total_passed = 0;
     let mut total_failed = 0;
     let mut had_error = false;
+    let mut results = Vec::new();
 
     for request_file in requests {
         match test_one(
@@ -34,20 +42,43 @@ pub fn run(path: &Path, environment: Option<&str>) -> Result<(), String> {
             &environment,
             &project.collections,
             &mut session,
+            json,
         ) {
-            Ok(summary) => {
+            Ok((summary, detail)) => {
                 total_passed += summary.passed;
                 total_failed += summary.failed;
+                if json {
+                    results.push(detail);
+                }
             }
             Err(message) => {
-                eprintln!("{}: {message}", request_file.path.display());
                 had_error = true;
+                if json {
+                    results.push(serde_json::json!({
+                        "path": request_file.path,
+                        "error": message,
+                    }));
+                } else {
+                    eprintln!("{}: {message}", request_file.path.display());
+                }
             }
         }
-        println!();
+        if !json {
+            println!();
+        }
     }
 
-    println!("{total_passed} passed, {total_failed} failed");
+    if json {
+        let text = serde_json::to_string_pretty(&serde_json::json!({
+            "passed": total_passed,
+            "failed": total_failed,
+            "requests": results,
+        }))
+        .map_err(|e| e.to_string())?;
+        println!("{text}");
+    } else {
+        println!("{total_passed} passed, {total_failed} failed");
+    }
 
     if had_error || total_failed > 0 {
         Err("one or more tests failed".to_string())
@@ -62,7 +93,8 @@ fn test_one(
     environment: &Environment,
     collections: &Collection,
     session: &mut Session,
-) -> Result<TestSummary, String> {
+    json: bool,
+) -> Result<(TestSummary, serde_json::Value), String> {
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
     let collection_variables = collections
         .containing(&request_file.path)
@@ -77,15 +109,29 @@ fn test_one(
         )
         .map_err(|e| e.to_string())?;
 
-    println!("{} {}", resolved.method, resolved.full_url());
-    println!("  {} ({}ms)", response.status, response.elapsed_ms);
+    if !json {
+        println!("{} {}", resolved.method, resolved.full_url());
+        println!("  {} ({}ms)", response.status, response.elapsed_ms);
+    }
 
     if resolved.assertions.is_empty() {
-        println!("  (no assertions)");
-        return Ok(TestSummary {
-            passed: 0,
-            failed: 0,
+        if !json {
+            println!("  (no assertions)");
+        }
+        let detail = serde_json::json!({
+            "path": request_file.path,
+            "method": resolved.method,
+            "url": resolved.full_url(),
+            "response": response,
+            "outcomes": [],
         });
+        return Ok((
+            TestSummary {
+                passed: 0,
+                failed: 0,
+            },
+            detail,
+        ));
     }
 
     let outcomes = evaluate(&resolved.assertions, &response, &resolved);
@@ -94,15 +140,27 @@ fn test_one(
     for outcome in &outcomes {
         if outcome.passed {
             passed += 1;
-            println!("  PASS  {}", outcome.raw);
+            if !json {
+                println!("  PASS  {}", outcome.raw);
+            }
         } else {
             failed += 1;
-            println!("  FAIL  {}", outcome.raw);
-            if let Some(failure) = &outcome.failure {
-                println!("        {failure}");
+            if !json {
+                println!("  FAIL  {}", outcome.raw);
+                if let Some(failure) = &outcome.failure {
+                    println!("        {failure}");
+                }
             }
         }
     }
 
-    Ok(TestSummary { passed, failed })
+    let detail = serde_json::json!({
+        "path": request_file.path,
+        "method": resolved.method,
+        "url": resolved.full_url(),
+        "response": response,
+        "outcomes": outcomes,
+    });
+
+    Ok((TestSummary { passed, failed }, detail))
 }
