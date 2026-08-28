@@ -487,7 +487,7 @@ pub struct MultipartField {
 /// `[body]` text, and [`crate::execute`] for how it's assembled into the
 /// standard `{"query", "variables", "operationName"}` JSON envelope that
 /// actually goes out on the wire.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GraphQlBody {
     pub query: String,
     pub variables: Option<serde_json::Value>,
@@ -1912,7 +1912,7 @@ fn parse_response_section(status_text: &str, lines: &[&str]) -> Result<ExampleRe
 /// among its recognized names, so they're just ordinary content as far as
 /// the outer parser is concerned — the same reasoning that lets a JSON or
 /// XML body safely contain lines that happen to look bracketed.
-fn parse_graphql_body(text: &str) -> Result<GraphQlBody, String> {
+pub fn parse_graphql_body(text: &str) -> Result<GraphQlBody, String> {
     #[derive(PartialEq)]
     enum Part {
         Query,
@@ -1976,7 +1976,7 @@ fn parse_graphql_body(text: &str) -> Result<GraphQlBody, String> {
 /// Serialize a [`GraphQlBody`] back to the `[body]` text
 /// [`parse_graphql_body`] reads — query first, then an optional
 /// `[variables]` block, then an optional `[operationName]` block.
-fn graphql_body_to_text(graphql: &GraphQlBody) -> Result<String, String> {
+pub fn graphql_body_to_text(graphql: &GraphQlBody) -> Result<String, String> {
     let mut out = graphql.query.trim_end().to_string();
     out.push('\n');
 

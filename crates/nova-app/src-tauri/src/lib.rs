@@ -28,6 +28,8 @@ pub fn run() {
             commands::create_websocket_request,
             commands::parse_multipart_body,
             commands::serialize_multipart_body,
+            commands::parse_graphql_body_text,
+            commands::serialize_graphql_body,
             commands::save_manifest,
             commands::create_request,
             commands::delete_request,

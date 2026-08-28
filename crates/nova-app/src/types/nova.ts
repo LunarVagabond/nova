@@ -177,6 +177,13 @@ export interface MultipartField {
   file_path: string | null;
 }
 
+/** Mirrors `nova_engine::GraphQlBody`. */
+export interface GraphQlBody {
+  query: string;
+  variables: unknown | null;
+  operation_name: string | null;
+}
+
 /**
  * Mirrors `nova_engine::RequestDraft` — a flattened, GUI-editable view of a
  * `.nova` file's method/URL/query/headers/body. The body always comes back

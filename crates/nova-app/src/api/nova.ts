@@ -10,6 +10,7 @@ import type {
   AuthScheme,
   Collection,
   GitStatusMap,
+  GraphQlBody,
   HistoryDetail,
   HistorySummary,
   ImportProjectOutcome,
@@ -189,6 +190,24 @@ export function serializeMultipartBody(
   headers: RequestHeader[],
 ): Promise<string> {
   return invoke<string>("serialize_multipart_body", { fields, headers });
+}
+
+/**
+ * Parses a GraphQL body's raw wire text (the same text `RequestDraft.body_text`
+ * carries) into its query/variables/operation name, for the Body tab's
+ * GraphQL query+variables editor.
+ */
+export function parseGraphqlBody(bodyText: string): Promise<GraphQlBody> {
+  return invoke<GraphQlBody>("parse_graphql_body_text", { bodyText });
+}
+
+/**
+ * Serializes a GraphQL query/variables/operation name back to the raw wire
+ * text a `.nova` file's `[body]` marker would hold for it — the inverse of
+ * `parseGraphqlBody`.
+ */
+export function serializeGraphqlBody(graphql: GraphQlBody): Promise<string> {
+  return invoke<string>("serialize_graphql_body", { graphql });
 }
 
 /**

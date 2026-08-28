@@ -275,17 +275,62 @@
 .request-panel__body-type {
   display: flex;
   align-items: center;
-  gap: $spacing-sm;
+  flex-wrap: wrap;
+  gap: $spacing-md;
   margin-bottom: $spacing-sm;
 }
 
-.request-panel__body-type-label {
+.request-panel__body-type-radios {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: $spacing-md;
+}
+
+.request-panel__radio {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-xs;
   font-size: $font-size-sm;
   color: var(--color-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:has(input:checked) {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  input[type="radio"] {
+    accent-color: var(--color-accent);
+    cursor: pointer;
+  }
 }
 
 .request-panel__body-editor {
   position: relative;
+}
+
+// GraphQL's query and variables are edited side by side rather than one
+// above the other — both are usually short enough that a horizontal split
+// makes better use of the panel's width than a tall stack would.
+.request-panel__graphql {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $spacing-md;
+}
+
+.request-panel__graphql-pane {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+  min-width: 0;
+}
+
+.request-panel__graphql-label {
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: var(--color-text-muted);
 }
 
 // Floats over the code editor's bottom-right corner rather than sitting in

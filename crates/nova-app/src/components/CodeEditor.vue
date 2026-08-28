@@ -25,9 +25,11 @@ import {
 import { tags } from "@lezer/highlight";
 import { json, jsonParseLinter } from "@codemirror/lang-json";
 import { xml } from "@codemirror/lang-xml";
+import { javascript } from "@codemirror/lang-javascript";
+import { html } from "@codemirror/lang-html";
 import { lintGutter, linter } from "@codemirror/lint";
 
-export type EditorLanguage = "json" | "xml" | "text";
+export type EditorLanguage = "json" | "xml" | "javascript" | "html" | "text";
 
 const props = defineProps<{
   modelValue: string;
@@ -128,6 +130,10 @@ function languageExtension(language: EditorLanguage): Extension[] {
       return [json(), linter(jsonLinterIgnoringEmpty()), lintGutter()];
     case "xml":
       return [xml()];
+    case "javascript":
+      return [javascript()];
+    case "html":
+      return [html()];
     case "text":
     default:
       return [];

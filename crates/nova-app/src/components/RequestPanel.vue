@@ -5,14 +5,17 @@ import {
   diffAgainstExampleResponse,
   diffAgainstPreviousRun,
   parseCurlCommand,
+  parseGraphqlBody,
   parseMultipartBody,
   readRequest,
   saveRequest,
   sendRequest,
+  serializeGraphqlBody,
   serializeMultipartBody,
 } from "../api/nova";
 import type {
   AuthScheme,
+  GraphQlBody,
   MultipartField,
   QueryParam,
   RequestDraft,
@@ -28,7 +31,11 @@ import {
   detectBodyType,
   languageForContentType,
   randomBoundary,
+  RAW_LANGUAGE_CONTENT_TYPES,
+  RAW_LANGUAGE_LABELS,
+  RAW_LANGUAGE_OPTIONS,
   type BodyType,
+  type RawLanguage,
 } from "../lib/bodyType";
 import { formatBytes, statusClass } from "../lib/format";
 import { parseQueryString, serializeQuery, splitUrlAndQuery } from "../lib/queryString";
@@ -86,6 +93,9 @@ const activeResponseTab = ref<ResponseTab>("preview");
 // whenever a request is (re)loaded so it reflects what the file actually
 // has, not just the last selection made in this session.
 const bodyType = ref<BodyType>("none");
+// Only meaningful while `bodyType` is "raw" — which sub-language's editor/
+// Content-Type applies (Text/JavaScript/JSON/HTML/XML).
+const rawLanguage = ref<RawLanguage>("text");
 
 function upsertContentTypeHeader(value: string | null) {
   const index = headers.value.findIndex((h) => h.name.toLowerCase() === "content-type");
@@ -120,6 +130,12 @@ function handleBodyTypeChange(next: BodyType) {
     // rather than trying to reinterpret it.
     multipartFields.value = [];
     multipartParseError.value = null;
+  } else if (next === "graphql") {
+    graphqlQuery.value = "";
+    graphqlVariablesText.value = "";
+    graphqlVariablesError.value = null;
+  } else if (next === "raw") {
+    rawLanguage.value = "text";
   }
 
   if (!syncContentType.value) return;
@@ -130,9 +146,21 @@ function handleBodyTypeChange(next: BodyType) {
     return;
   }
 
-  upsertContentTypeHeader(
-    next === "multipart" ? `multipart/form-data; boundary=${randomBoundary()}` : BODY_TYPE_CONTENT_TYPES[next],
-  );
+  const contentType =
+    next === "multipart"
+      ? `multipart/form-data; boundary=${randomBoundary()}`
+      : next === "raw"
+        ? RAW_LANGUAGE_CONTENT_TYPES[rawLanguage.value]
+        : BODY_TYPE_CONTENT_TYPES[next];
+  upsertContentTypeHeader(contentType);
+}
+
+/** The language sub-choice shown only while `bodyType` is "raw". */
+function handleRawLanguageChange(next: RawLanguage) {
+  rawLanguage.value = next;
+  if (syncContentType.value) {
+    upsertContentTypeHeader(RAW_LANGUAGE_CONTENT_TYPES[next]);
+  }
 }
 
 // Structured view of the Body tab's `multipart` body type — mirrors
@@ -184,6 +212,56 @@ watch(
   },
   { deep: true },
 );
+
+// Structured view of the Body tab's `graphql` body type — same
+// two-refs-plus-watcher shape as `multipartFields` above, since
+// `parseGraphqlBody`/`serializeGraphqlBody` are async Tauri calls too, not
+// a plain computed get/set.
+const graphqlQuery = ref("");
+const graphqlVariablesText = ref("");
+const graphqlVariablesError = ref<string | null>(null);
+let applyingParsedGraphql = false;
+
+async function refreshGraphqlFromText() {
+  graphqlVariablesError.value = null;
+  try {
+    const parsed = await parseGraphqlBody(bodyText.value);
+    applyingParsedGraphql = true;
+    graphqlQuery.value = parsed.query;
+    graphqlVariablesText.value = parsed.variables ? JSON.stringify(parsed.variables, null, 2) : "";
+    await nextTick();
+    applyingParsedGraphql = false;
+  } catch (e) {
+    graphqlQuery.value = "";
+    graphqlVariablesText.value = "";
+    graphqlVariablesError.value = String(e);
+  }
+}
+
+watch([graphqlQuery, graphqlVariablesText], async ([query, variablesText]) => {
+  if (applyingParsedGraphql) return;
+
+  let variables: unknown = null;
+  if (variablesText.trim() !== "") {
+    try {
+      variables = JSON.parse(variablesText);
+    } catch {
+      // Leave `bodyText` as it was — a half-typed JSON object is an
+      // expected, transient state while editing, not worth erroring loudly
+      // over on every keystroke; the field itself shows the message below.
+      graphqlVariablesError.value = "Variables must be valid JSON";
+      return;
+    }
+  }
+  graphqlVariablesError.value = null;
+
+  const draft: GraphQlBody = { query, variables, operation_name: null };
+  try {
+    bodyText.value = await serializeGraphqlBody(draft);
+  } catch {
+    // Mirrors the multipart watcher above — nothing sensible to show here.
+  }
+});
 
 const saving = ref(false);
 const saveError = ref<string | null>(null);
@@ -239,11 +317,7 @@ const dirty = computed(() => {
 
 watch(dirty, (value) => emit("dirtyChange", value));
 
-const editorLanguage = computed<EditorLanguage>(() => {
-  if (bodyType.value === "json") return "json";
-  if (bodyType.value === "xml") return "xml";
-  return "text";
-});
+const editorLanguage = computed<EditorLanguage>(() => (bodyType.value === "raw" ? rawLanguage.value : "text"));
 
 // Two-way sync between the URL field and the Params tab: `url` itself
 // always stays the bare base URL (what actually gets saved as
@@ -277,14 +351,14 @@ const formFields = computed<QueryParam[]>({
 });
 
 function beautifyBody() {
-  if (bodyType.value === "json") {
+  if (rawLanguage.value === "json") {
     try {
       bodyText.value = beautifyJson(bodyText.value);
     } catch {
       // Leave it as-is — the editor's own JSON linter already flags what's
       // wrong; beautify has nothing useful to do with genuinely invalid JSON.
     }
-  } else if (bodyType.value === "xml") {
+  } else if (rawLanguage.value === "xml") {
     bodyText.value = formatXml(bodyText.value);
   }
 }
@@ -309,13 +383,7 @@ async function handleUrlPaste(event: ClipboardEvent) {
     urlDisplay.value = parsed.url;
     headers.value = parsed.headers.map((h) => ({ ...h }));
     bodyText.value = parsed.body ?? "";
-    bodyType.value = detectBodyType(headers.value, bodyText.value);
-    if (bodyType.value === "multipart") {
-      await refreshMultipartFieldsFromText();
-    } else {
-      multipartFields.value = [];
-      multipartParseError.value = null;
-    }
+    await syncBodyTypeFromText();
   } catch (e) {
     urlDisplay.value = text;
     curlPasteError.value = String(e);
@@ -349,6 +417,21 @@ const responseBody = computed(() => {
   return body;
 });
 
+/** Re-derives `bodyType`/`rawLanguage` from the current headers/`bodyText`, and refreshes whichever structured editor (multipart/GraphQL) that body type needs. */
+async function syncBodyTypeFromText() {
+  const detected = detectBodyType(headers.value, bodyText.value);
+  bodyType.value = detected.type;
+  rawLanguage.value = detected.rawLanguage;
+  if (bodyType.value === "multipart") {
+    await refreshMultipartFieldsFromText();
+  } else if (bodyType.value === "graphql") {
+    await refreshGraphqlFromText();
+  } else {
+    multipartFields.value = [];
+    multipartParseError.value = null;
+  }
+}
+
 // Populates the editable working-copy refs from a snapshot — shared by
 // `load()` (a freshly-read draft) and `handleRevert()` (the same
 // `original` snapshot the user is discarding their edits back to), so the
@@ -361,13 +444,7 @@ async function applyDraft(draft: RequestDraft) {
   bodyText.value = draft.body_text;
   auth.value = draft.auth ? { ...draft.auth } : null;
   syncContentType.value = draft.sync_content_type;
-  bodyType.value = detectBodyType(headers.value, bodyText.value);
-  if (bodyType.value === "multipart") {
-    await refreshMultipartFieldsFromText();
-  } else {
-    multipartFields.value = [];
-    multipartParseError.value = null;
-  }
+  await syncBodyTypeFromText();
 }
 
 async function load() {
@@ -684,14 +761,26 @@ defineExpose({ dirty, save: handleSave });
 
       <div v-else class="request-panel__tab-panel">
         <div class="request-panel__body-type">
-          <span class="request-panel__body-type-label">Content-Type</span>
-          <select
-            class="request-panel__body-type-select"
-            :value="bodyType"
-            @change="handleBodyTypeChange(($event.target as HTMLSelectElement).value as BodyType)"
-          >
-            <option v-for="option in BODY_TYPE_OPTIONS" :key="option" :value="option">
+          <div class="request-panel__body-type-radios" role="radiogroup" aria-label="Body type">
+            <label v-for="option in BODY_TYPE_OPTIONS" :key="option" class="request-panel__radio">
+              <input
+                type="radio"
+                name="body-type"
+                :value="option"
+                :checked="bodyType === option"
+                @change="handleBodyTypeChange(option)"
+              />
               {{ BODY_TYPE_LABELS[option] }}
+            </label>
+          </div>
+          <select
+            v-if="bodyType === 'raw'"
+            class="request-panel__body-type-select"
+            :value="rawLanguage"
+            @change="handleRawLanguageChange(($event.target as HTMLSelectElement).value as RawLanguage)"
+          >
+            <option v-for="lang in RAW_LANGUAGE_OPTIONS" :key="lang" :value="lang">
+              {{ RAW_LANGUAGE_LABELS[lang] }}
             </option>
           </select>
           <label class="request-panel__body-setting">
@@ -717,10 +806,21 @@ defineExpose({ dirty, save: handleSave });
           </p>
           <MultipartEditor v-model="multipartFields" :project-root="projectRoot" />
         </template>
-        <div v-else class="request-panel__body-editor">
+        <div v-else-if="bodyType === 'graphql'" class="request-panel__graphql">
+          <div class="request-panel__graphql-pane">
+            <span class="request-panel__graphql-label">Query</span>
+            <CodeEditor v-model="graphqlQuery" language="text" />
+          </div>
+          <div class="request-panel__graphql-pane">
+            <span class="request-panel__graphql-label">Variables</span>
+            <CodeEditor v-model="graphqlVariablesText" language="json" />
+            <p v-if="graphqlVariablesError" class="request-panel__save-error">{{ graphqlVariablesError }}</p>
+          </div>
+        </div>
+        <div v-else-if="bodyType === 'raw'" class="request-panel__body-editor">
           <CodeEditor v-model="bodyText" :language="editorLanguage" />
           <button
-            v-if="bodyType === 'json' || bodyType === 'xml'"
+            v-if="rawLanguage === 'json' || rawLanguage === 'xml'"
             type="button"
             class="icon-button icon-button--outline request-panel__beautify"
             title="Beautify"

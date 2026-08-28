@@ -11,12 +11,12 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use nova_engine::{
-    diff_responses, evaluate, export_to_spec, generate_project, multipart_fields_to_body_text,
-    parse_curl, parse_multipart_fields, write_generated_project, AssertionOutcome, AuthScheme,
-    Collection, ComparableResponse, Environment, GitFileStatus, GitStatusCache, Header,
-    InitOptions, InitOutcome, Manifest, MultipartField, NovaProject, OpenProjectOutcome,
-    ParsedCurlRequest, ParsedRequest, RequestDraft, RequestFile, Response, ResponseDiff, Session,
-    WebSocketDraft, WebSocketExchange,
+    diff_responses, evaluate, export_to_spec, generate_project, graphql_body_to_text,
+    multipart_fields_to_body_text, parse_curl, parse_graphql_body, parse_multipart_fields,
+    write_generated_project, AssertionOutcome, AuthScheme, Collection, ComparableResponse,
+    Environment, GitFileStatus, GitStatusCache, GraphQlBody, Header, InitOptions, InitOutcome,
+    Manifest, MultipartField, NovaProject, OpenProjectOutcome, ParsedCurlRequest, ParsedRequest,
+    RequestDraft, RequestFile, Response, ResponseDiff, Session, WebSocketDraft, WebSocketExchange,
 };
 
 use crate::mock_server::{MockServerState, MockServerStatus, DEFAULT_HOST, DEFAULT_PORT};
@@ -574,6 +574,23 @@ pub fn serialize_multipart_body(
     headers: Vec<Header>,
 ) -> Result<String, String> {
     multipart_fields_to_body_text(&fields, &headers)
+}
+
+/// Parse a GraphQL body's raw wire text — the same text
+/// [`RequestDraft::body_text`] carries — into its query/variables/operation
+/// name, for the Body tab's GraphQL query+variables editor. See
+/// [`nova_engine::parse_graphql_body`].
+#[tauri::command]
+pub fn parse_graphql_body_text(body_text: String) -> Result<GraphQlBody, String> {
+    parse_graphql_body(&body_text)
+}
+
+/// Serialize a GraphQL query/variables/operation name back to the raw wire
+/// text a `.nova` file's `[body]` marker would hold for it — the inverse of
+/// [`parse_graphql_body_text`]. See [`nova_engine::graphql_body_to_text`].
+#[tauri::command]
+pub fn serialize_graphql_body(graphql: GraphQlBody) -> Result<String, String> {
+    graphql_body_to_text(&graphql)
 }
 
 /// Write an edited [`Manifest`] back to `project_root`'s `nova.yaml`,
