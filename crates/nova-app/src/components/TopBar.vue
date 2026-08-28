@@ -11,6 +11,7 @@ defineProps<{
   environments: { name: string }[];
   selectedEnvironment: string | null;
   showingProjectSettings: boolean;
+  showingHistory: boolean;
   runningTests: boolean;
 }>();
 
@@ -18,6 +19,7 @@ const emit = defineEmits<{
   (e: "update:selectedEnvironment", value: string): void;
   (e: "switchProject"): void;
   (e: "projectSettings"): void;
+  (e: "showHistory"): void;
   (e: "runTests"): void;
 }>();
 </script>
@@ -65,6 +67,17 @@ const emit = defineEmits<{
       @click="emit('runTests')"
     >
       <Icon name="play" />
+    </button>
+
+    <button
+      v-if="projectName"
+      type="button"
+      class="icon-button icon-button--outline"
+      :class="{ 'icon-button--active': showingHistory }"
+      title="Request history"
+      @click="emit('showHistory')"
+    >
+      <Icon name="history" />
     </button>
 
     <button

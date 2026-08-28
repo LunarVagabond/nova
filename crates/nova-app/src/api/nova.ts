@@ -10,6 +10,8 @@ import type {
   AuthScheme,
   Collection,
   GitStatusMap,
+  HistoryDetail,
+  HistorySummary,
   InitOutcome,
   Manifest,
   MultipartField,
@@ -67,6 +69,21 @@ export function sendRequest(
   environment: string | null,
 ): Promise<RequestResponse> {
   return invoke<RequestResponse>("send_request", { requestPath, environment });
+}
+
+/**
+ * The project at `path`'s recent request/response history, most-recent
+ * first — empty (not an error) if nothing has been sent in this project
+ * yet this session. History lives only for the life of the app session;
+ * closing and reopening the project starts it over.
+ */
+export function getHistory(path: string): Promise<HistorySummary[]> {
+  return invoke<HistorySummary[]>("get_history", { path });
+}
+
+/** Reopens one past history entry from the project at `path` by the `id` `getHistory` handed out for it. */
+export function reopenHistoryEntry(path: string, id: number): Promise<HistoryDetail> {
+  return invoke<HistoryDetail>("reopen_history_entry", { path, id });
 }
 
 /** Parses the `.nova` file at `requestPath` into an editable draft. */

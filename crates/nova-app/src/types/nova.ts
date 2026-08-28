@@ -252,3 +252,31 @@ export interface TestRunResult {
   failed: number;
   requests: TestRequestResult[];
 }
+
+/**
+ * Mirrors `nova-app`'s `commands::HistorySummary` — one past send reduced
+ * to what a history list needs to show (method/status/timing/timestamp
+ * plus the URL). Fetch the full request/response with `reopenHistoryEntry`
+ * when a row is clicked, rather than shipping every stored response body
+ * up front.
+ */
+export interface HistorySummary {
+  id: number;
+  method: string;
+  url: string;
+  status: number;
+  elapsed_ms: number;
+  /** Milliseconds since the Unix epoch — format with `new Date(sent_at_ms)`. */
+  sent_at_ms: number;
+}
+
+/**
+ * Mirrors `nova-app`'s `commands::HistoryDetail` — one history entry
+ * reopened in full: the request it recorded (as a `RequestDraft`, the same
+ * shape the request panel already renders) alongside the response that
+ * came back.
+ */
+export interface HistoryDetail {
+  request: RequestDraft;
+  response: RequestResponse;
+}

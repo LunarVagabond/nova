@@ -1,4 +1,5 @@
 mod commands;
+mod session_store;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -6,12 +7,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(nova_engine::GitStatusCache::new())
+        .manage(session_store::SessionStore::new())
         .invoke_handler(tauri::generate_handler![
             commands::open_project,
             commands::init_project,
             commands::validate_project,
             commands::git_status,
             commands::send_request,
+            commands::get_history,
+            commands::reopen_history_entry,
             commands::read_request,
             commands::save_request,
             commands::parse_multipart_body,

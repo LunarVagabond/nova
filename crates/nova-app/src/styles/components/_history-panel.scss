@@ -1,0 +1,155 @@
+@use "../variables" as *;
+
+// The History panel (see HistoryPanel.vue, TopBar's clock-icon action) —
+// a master/detail layout: a scrolling list of recent sends on the left,
+// the selected entry's full request/response on the right. Sits in the
+// same flush content region a request tab does (see `.app-shell__content
+// --flush`), so it owns its own scrolling rather than relying on the
+// outer content region.
+.history-panel {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.history-panel__list {
+  flex: 0 0 22rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+}
+
+.history-panel__list-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $spacing-md $spacing-lg;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.history-panel__title {
+  margin: 0;
+  font-size: $font-size-md;
+  font-weight: 600;
+}
+
+.history-panel__entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.history-panel__entry {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  width: 100%;
+  padding: $spacing-sm $spacing-lg;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-panel__entry:hover {
+  background-color: var(--color-bg-raised);
+}
+
+.history-panel__entry--active {
+  background-color: var(--color-bg-raised);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+.history-panel__url {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+}
+
+.history-panel__status {
+  flex-shrink: 0;
+}
+
+.history-panel__meta {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  font-size: $font-size-xs;
+  white-space: nowrap;
+}
+
+.history-panel__detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+  padding: $spacing-lg;
+}
+
+.history-panel__section {
+  margin-bottom: $spacing-lg;
+}
+
+.history-panel__section-title {
+  margin: 0 0 $spacing-sm;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted);
+}
+
+.history-panel__request-line {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  margin-bottom: $spacing-sm;
+}
+
+.history-panel__headers {
+  margin-bottom: $spacing-sm;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-md;
+  overflow: hidden;
+}
+
+.history-panel__header-row {
+  display: flex;
+  gap: $spacing-sm;
+  padding: $spacing-xs $spacing-sm;
+  font-size: $font-size-sm;
+  font-family: $font-family-mono;
+}
+
+.history-panel__header-row:not(:last-child) {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.history-panel__header-name {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+}
+
+.history-panel__header-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.history-panel__hint {
+  color: var(--color-text-muted);
+  padding: $spacing-lg;
+}
+
+.history-panel__error {
+  color: var(--color-danger);
+  padding: $spacing-lg;
+}
