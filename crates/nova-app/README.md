@@ -1,6 +1,13 @@
-# Tauri + Vue + TypeScript
+# nova-app
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+Nova's desktop application: a Tauri shell (`src-tauri/`) around a Vue 3 +
+TypeScript frontend (`src/`), backed entirely by the `nova-engine` crate —
+this app never parses project files itself.
+
+Run `make dev` from the repo root to start it in dev mode, or `make
+build-app` for a release bundle. See
+[`docs/reference/gui.md`](../../docs/reference/gui.md) for the app's layout
+and conventions.
 
 ## Recommended IDE Setup
 
