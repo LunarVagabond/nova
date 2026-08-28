@@ -377,13 +377,18 @@ async function main() {
     await page.waitForTimeout(200);
     await shot("response-view.png");
 
-    // 3. Diff view — a differentiator over a generic HTTP client: comparing
-    // this response against the previous run of the same request.
-    await page.getByRole("tab", { name: "Diff" }).click();
+    // 3. Import/export dialog — a structurally different screen (a modal
+    // overlay, not another view of the request/response panes) showing a
+    // distinct part of the app.
+    await page.getByTitle("Import / export").click();
+    await page.waitForSelector(".import-export__heading");
     await page.waitForTimeout(200);
-    await shot("diff-view.png");
+    await shot("import-export.png");
+    await page.getByRole("button", { name: "Close" }).click();
+    await page.waitForTimeout(100);
 
-    // 4. History panel — the project's recent sends, master/detail.
+    // 4. History panel — the project's recent sends, master/detail — a
+    // third distinct screen layout (no request/response tabs at all).
     await page.getByTitle("Request history").click();
     await page.waitForSelector(".history-panel__entry");
     await page.locator(".history-panel__entry").first().click();

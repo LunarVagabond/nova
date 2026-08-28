@@ -35,7 +35,7 @@ invitation. No exporting/importing collections between team members.
     <td><img src="docs/images/response-view.png" width="400" alt="A sent request's response, showing status, timing, and a JSON body"></td>
   </tr>
   <tr>
-    <td><img src="docs/images/diff-view.png" width="400" alt="Response diff view comparing a request's latest send against its previous run"></td>
+    <td><img src="docs/images/import-export.png" width="400" alt="Import/export dialog for generating a project from OpenAPI/Postman or exporting collections as OpenAPI"></td>
     <td><img src="docs/images/history-panel.png" width="400" alt="Request history panel listing recent sends with a selected entry's detail"></td>
   </tr>
 </table>
