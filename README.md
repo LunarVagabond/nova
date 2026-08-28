@@ -118,6 +118,7 @@ model to learn.
 
 ## Documentation
 
+- [Quickstart](docs/quickstart.md)
 - [`.nova` request file format](docs/reference/nova-file-format.md)
 - [Project structure and `nova.yaml`](docs/reference/project-structure.md)
 - [CLI reference](docs/reference/cli.md)
@@ -142,6 +143,16 @@ nova open
 
 Everything another developer needs to explore and test that project's API
 is already there. No workspace invitation required.
+
+## Getting Help
+
+- [GitHub Issues](https://github.com/LunarVagabond/nova/issues) — bugs and
+  feature requests
+- [GitHub Discussions](https://github.com/LunarVagabond/nova/discussions) —
+  usage questions, anything worth keeping searchable
+- [Discord](https://discord.gg/cHtuCFkRRm) — "Dev Syndicate" server, casual
+  chat and quick questions
+- Prefer not to join a server? Reach out directly to `lunar_vagabond`.
 
 ## Support the project
 

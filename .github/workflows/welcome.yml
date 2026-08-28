@@ -21,7 +21,7 @@ jobs:
           issue_message: |
             Thanks for taking the time to file this — reports like this are what keep Nova moving in the right direction. Someone will take a look and follow up here soon.
 
-            Want to talk it through before or while it's being picked up? GitHub Discussions is there for anything worth keeping searchable. Glad to have you here.
+            Want to talk it through before or while it's being picked up? [Discord](https://discord.gg/cHtuCFkRRm) ("Dev Syndicate") is a good spot to drop in, and GitHub Discussions is there for anything worth keeping searchable. Glad to have you here.
           pr_message: unused
 
   welcome-pr:
@@ -60,5 +60,6 @@ jobs:
                 "It genuinely means a lot to see the project picked up and built on.\n\n" +
                 "CONTRIBUTING.md (in `.github/`) covers the branch/commit/PR conventions if anything looks unfamiliar, but don't sweat getting every " +
                 'detail perfect — a maintainer will review and help square it away. If anything\'s unclear or you get ' +
-                "stuck, GitHub Discussions is a good place to ask. Looking forward to seeing this through.",
+                'stuck, [Discord](https://discord.gg/cHtuCFkRRm) ("Dev Syndicate") and GitHub Discussions ' +
+                'are both good places to ask. Looking forward to seeing this through.',
             });

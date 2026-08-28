@@ -7,6 +7,8 @@ way.
 
 ## Layout
 
+- **[quickstart.md](quickstart.md)** — getting the binaries, running your
+  first request, and the other first-hour basics a new user needs.
 - **[architecture.md](architecture.md)** — how `nova-engine`, `nova-cli`,
   and `nova-app` fit together, and the boundary that keeps them consistent.
 - **[reference/](reference)** — implementation-level detail for the things a

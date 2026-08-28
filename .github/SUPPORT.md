@@ -6,7 +6,10 @@ Use GitHub Issues. Search existing issues first to avoid duplicates.
 
 ## Questions and general help
 
-Use GitHub Discussions for usage questions and general chat.
+Use GitHub Discussions for usage questions and general chat. For quick
+back-and-forth, join the **Dev Syndicate** Discord:
+https://discord.gg/cHtuCFkRRm. Prefer not to join a server? Reach out
+directly to `lunar_vagabond` instead.
 
 ## Contributing
 

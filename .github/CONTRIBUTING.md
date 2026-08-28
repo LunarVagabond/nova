@@ -19,9 +19,10 @@ If no, refine or drop the proposal.
 
 ## Questions before you file
 
-For a design question or a sanity check before opening an issue, use GitHub
-Discussions — it keeps the conversation searchable for the next person who has the
-same question.
+For a quick question or a sanity check before opening an issue, drop into
+[Discord](https://discord.gg/cHtuCFkRRm) (server name: "Dev Syndicate"). For
+anything worth keeping searchable — a design question, a proposal — use GitHub
+Discussions instead.
 
 If you're using Nova on a real project and hit something it doesn't support yet,
 that's exactly the kind of report this project wants — open an issue or a
@@ -32,10 +33,10 @@ Discussion rather than working around it quietly or forking.
 The branching model, commit format, and process rules below are a starting point,
 not a settled standard. Follow them as written. But if one is genuinely getting in
 the way of a contribution, doesn't fit a situation, or just seems off, raise it
-first — a GitHub Discussion — before working around it. Same goes for friction in
-the tools, the codebase, or the workflow generally: surfacing it is always welcome.
-The goal is to talk it through and adjust the rule if it's wrong, not to greenlight
-quietly deviating from it.
+first — a GitHub Discussion or a note in [Discord](https://discord.gg/cHtuCFkRRm) —
+before working around it. Same goes for friction in the tools, the codebase, or the
+workflow generally: surfacing it is always welcome. The goal is to talk it through
+and adjust the rule if it's wrong, not to greenlight quietly deviating from it.
 
 ## Contribution Principles
 
