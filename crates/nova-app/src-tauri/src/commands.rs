@@ -18,6 +18,7 @@ use nova_engine::{
     Response, Session,
 };
 
+use crate::mock_server::{MockServerState, MockServerStatus, DEFAULT_HOST, DEFAULT_PORT};
 use crate::session_store::SessionStore;
 
 /// Forces the next [`git_status`] call for whichever project `path` belongs
@@ -720,4 +721,36 @@ fn run_one_test(
             error: None,
         },
     ))
+}
+
+/// Current state of the desktop app's mock server — off, or running on a
+/// host/port — for the toggle in the top bar to render on load/refresh.
+#[tauri::command]
+pub fn mock_server_status(state: tauri::State<MockServerState>) -> MockServerStatus {
+    state.status()
+}
+
+/// Starts the mock server for the project at `path`, serving each
+/// discovered request's example response the same way `nova mock` does.
+/// `host`/`port` default to the CLI's own defaults (`127.0.0.1:4010`) when
+/// null — the frontend always passes them explicitly today, but the
+/// default keeps this command's contract sensible on its own.
+#[tauri::command]
+pub fn start_mock_server(
+    path: String,
+    host: Option<String>,
+    port: Option<u16>,
+    state: tauri::State<MockServerState>,
+) -> Result<MockServerStatus, String> {
+    state.start(
+        std::path::Path::new(&path),
+        host.as_deref().unwrap_or(DEFAULT_HOST),
+        port.unwrap_or(DEFAULT_PORT),
+    )
+}
+
+/// Stops the desktop app's mock server. A no-op when it isn't running.
+#[tauri::command]
+pub fn stop_mock_server(state: tauri::State<MockServerState>) -> MockServerStatus {
+    state.stop()
 }

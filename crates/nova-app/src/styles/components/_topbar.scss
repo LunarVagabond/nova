@@ -80,3 +80,53 @@
     border-color: var(--color-text-muted);
   }
 }
+
+// The mock server start/stop toggle: off by default (muted, same visual
+// weight as the other outlined icon buttons), a solid accent-colored dot
+// once running — mirrors the git-status dot's off/on convention rather
+// than inventing a new one.
+.mock-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-xs;
+  height: $control-height-sm;
+  padding: 0 $spacing-sm;
+  border-radius: $radius-sm;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-raised);
+  color: var(--color-text-muted);
+  font-size: $font-size-sm;
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.mock-toggle--running {
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.mock-toggle__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.mock-toggle--running .mock-toggle__dot {
+  background-color: var(--color-success);
+}
+
+.mock-toggle__label {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

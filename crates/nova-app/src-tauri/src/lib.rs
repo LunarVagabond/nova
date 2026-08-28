@@ -1,4 +1,5 @@
 mod commands;
+mod mock_server;
 mod session_store;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -8,6 +9,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(nova_engine::GitStatusCache::new())
         .manage(session_store::SessionStore::new())
+        .manage(mock_server::MockServerState::new())
         .invoke_handler(tauri::generate_handler![
             commands::open_project,
             commands::init_project,
@@ -35,6 +37,9 @@ pub fn run() {
             commands::run_tests,
             commands::import_project,
             commands::export_project,
+            commands::mock_server_status,
+            commands::start_mock_server,
+            commands::stop_mock_server,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 
 import {
   createCollection,
@@ -13,6 +13,7 @@ import {
   gitStatus as fetchGitStatus,
   importProject,
   initProject,
+  mockServerStatus as fetchMockServerStatus,
   openProject,
   pickExportDestination,
   pickImportDestination,
@@ -21,12 +22,15 @@ import {
   renameCollection,
   renameRequest,
   runTests,
+  startMockServer,
+  stopMockServer,
   validateProject,
 } from "./api/nova";
 import type {
   Collection,
   GitStatusMap,
   ImportProjectOutcome,
+  MockServerStatus,
   NovaEnvironment,
   NovaProject,
   RequestFile,
@@ -61,6 +65,13 @@ const gitStatus = ref<GitStatusMap | null>(null);
 // the main panel — distinct from `selectedEnvironment` above, which is
 // just which environment requests are sent against.
 const managedEnvironment = ref<NovaEnvironment | null>(null);
+
+// The desktop app's mock server toggle — its state lives in the Tauri
+// backend (one server per app instance, independent of which project is
+// open in the sidebar), so this mirrors it rather than owning it.
+const mockServer = ref<MockServerStatus>({ running: false, host: null, port: null });
+const mockServerBusy = ref(false);
+const mockServerError = ref<string | null>(null);
 
 // Which of the main-panel views is on screen. Explicit (rather than
 // inferred from `managedEnvironment`/`openTabs.length`) so there's always a
@@ -732,6 +743,15 @@ async function handleRunTests() {
   }
 }
 
+onMounted(async () => {
+  try {
+    mockServer.value = await fetchMockServerStatus();
+  } catch {
+    // The toggle just starts from "off" if the initial status fetch fails
+    // — never worth blocking app startup over.
+  }
+});
+
 function closeTestResults() {
   testRunResult.value = null;
   testRunError.value = null;
@@ -818,6 +838,31 @@ async function handleExport() {
     exporting.value = false;
   }
 }
+
+/**
+ * Toggles the desktop app's mock server: starts it for the currently open
+ * project if it's off, stops it if it's on. Errors (e.g. the configured
+ * port is already in use by something else) surface the same way other
+ * top-level failures do, via `error`.
+ */
+async function handleToggleMockServer() {
+  if (mockServerBusy.value) return;
+
+  mockServerBusy.value = true;
+  mockServerError.value = null;
+  try {
+    if (mockServer.value.running) {
+      mockServer.value = await stopMockServer();
+    } else if (project.value) {
+      mockServer.value = await startMockServer(project.value.root);
+    }
+  } catch (e) {
+    mockServerError.value = String(e);
+    error.value = mockServerError.value;
+  } finally {
+    mockServerBusy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -829,12 +874,15 @@ async function handleExport() {
       :showing-project-settings="mainView === 'project'"
       :showing-history="mainView === 'history'"
       :running-tests="runningTests"
+      :mock-server-status="mockServer"
+      :mock-server-busy="mockServerBusy"
       @update:selected-environment="selectedEnvironment = $event"
       @switch-project="handleOpen"
       @project-settings="showProjectSettings"
       @show-history="showHistory"
       @run-tests="handleRunTests"
       @import-export="openImportExport"
+      @toggle-mock-server="handleToggleMockServer"
     />
 
     <aside class="app-shell__sidebar">

@@ -15,6 +15,7 @@ import type {
   ImportProjectOutcome,
   InitOutcome,
   Manifest,
+  MockServerStatus,
   MultipartField,
   NovaEnvironment,
   OpenProjectOutcome,
@@ -236,6 +237,33 @@ export function deleteEnvironment(environmentPath: string): Promise<void> {
  */
 export function runTests(path: string, environment: string | null): Promise<TestRunResult> {
   return invoke<TestRunResult>("run_tests", { path, environment });
+}
+
+/** Current state of the desktop app's mock server toggle. */
+export function mockServerStatus(): Promise<MockServerStatus> {
+  return invoke<MockServerStatus>("mock_server_status");
+}
+
+/**
+ * Starts the mock server for the project at `path`, serving each
+ * discovered request's example response the same way `nova mock` does.
+ * `host`/`port` default to the CLI's own defaults (`127.0.0.1:4010`) when
+ * omitted.
+ */
+export function startMockServer(
+  path: string,
+  options?: { host?: string; port?: number },
+): Promise<MockServerStatus> {
+  return invoke<MockServerStatus>("start_mock_server", {
+    path,
+    host: options?.host ?? null,
+    port: options?.port ?? null,
+  });
+}
+
+/** Stops the desktop app's mock server. A no-op if it isn't running. */
+export function stopMockServer(): Promise<MockServerStatus> {
+  return invoke<MockServerStatus>("stop_mock_server");
 }
 
 /** Opens the native folder picker and returns the chosen path, or null if cancelled. */
