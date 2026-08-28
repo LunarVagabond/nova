@@ -2304,7 +2304,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "nova-app"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "nova-engine",
  "serde",
@@ -2318,7 +2318,7 @@ dependencies = [
 
 [[package]]
 name = "nova-cli"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "clap",
  "nova-engine",
@@ -2330,7 +2330,7 @@ dependencies = [
 
 [[package]]
 name = "nova-engine"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "base64 0.22.1",
  "httpdate",
