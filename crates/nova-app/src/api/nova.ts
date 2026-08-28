@@ -4,7 +4,7 @@
 // only calls `invoke` and types the result.
 
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 
 import type {
   AuthScheme,
@@ -12,6 +12,7 @@ import type {
   GitStatusMap,
   HistoryDetail,
   HistorySummary,
+  ImportProjectOutcome,
   InitOutcome,
   Manifest,
   MultipartField,
@@ -247,4 +248,60 @@ export async function pickProjectDirectory(): Promise<string | null> {
 export async function pickFile(): Promise<string | null> {
   const selected = await open({ directory: false, multiple: false });
   return typeof selected === "string" ? selected : null;
+}
+
+/**
+ * Opens the native file picker, filtered to OpenAPI/Postman collection
+ * files, and returns the chosen file's path (or null if cancelled) — for
+ * the import dialog's "pick a spec/collection to import" step.
+ */
+export async function pickImportSource(): Promise<string | null> {
+  const selected = await open({
+    directory: false,
+    multiple: false,
+    filters: [{ name: "OpenAPI spec / Postman collection", extensions: ["yaml", "yml", "json"] }],
+  });
+  return typeof selected === "string" ? selected : null;
+}
+
+/**
+ * Opens the native folder picker for "where should the imported project be
+ * written" and returns the chosen path, or null if cancelled. A thin,
+ * separately-named wrapper over `pickProjectDirectory` so the import
+ * dialog's intent reads clearly at the call site even though the
+ * underlying picker is identical.
+ */
+export function pickImportDestination(): Promise<string | null> {
+  return pickProjectDirectory();
+}
+
+/**
+ * Opens the native save-file picker, defaulting to `openapi.yaml`, and
+ * returns the chosen destination path (or null if cancelled) — for the
+ * export dialog's "where should the OpenAPI spec be written" step.
+ */
+export async function pickExportDestination(): Promise<string | null> {
+  const selected = await save({
+    defaultPath: "openapi.yaml",
+    filters: [{ name: "OpenAPI spec (YAML)", extensions: ["yaml", "yml"] }],
+  });
+  return selected ?? null;
+}
+
+/**
+ * Generates a new Nova project from an OpenAPI 3.x spec or a Postman
+ * Collection Format v2.1 export at `inputPath`, and writes it under
+ * `outputPath/nova/` — the same thing `nova generate` does on the CLI.
+ */
+export function importProject(inputPath: string, outputPath: string): Promise<ImportProjectOutcome> {
+  return invoke<ImportProjectOutcome>("import_project", { inputPath, outputPath });
+}
+
+/**
+ * Exports the project at `projectRoot`'s collections as an OpenAPI 3.x
+ * spec (YAML), written to `outputPath` — the same thing `nova export` does
+ * on the CLI.
+ */
+export function exportProject(projectRoot: string, outputPath: string): Promise<void> {
+  return invoke<void>("export_project", { projectRoot, outputPath });
 }

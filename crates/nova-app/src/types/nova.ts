@@ -280,3 +280,14 @@ export interface HistoryDetail {
   request: RequestDraft;
   response: RequestResponse;
 }
+
+/**
+ * Mirrors `nova-app`'s `commands::ImportProjectOutcome` — the result of
+ * generating a new Nova project from an OpenAPI spec or Postman collection
+ * export via the `import_project` Tauri command.
+ */
+export interface ImportProjectOutcome {
+  project_root: string;
+  request_count: number;
+  warnings: string[];
+}

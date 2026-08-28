@@ -9,9 +9,14 @@ import {
   deleteEnvironment,
   deleteRequest,
   duplicateRequest,
+  exportProject,
   gitStatus as fetchGitStatus,
+  importProject,
   initProject,
   openProject,
+  pickExportDestination,
+  pickImportDestination,
+  pickImportSource,
   pickProjectDirectory,
   renameCollection,
   renameRequest,
@@ -21,6 +26,7 @@ import {
 import type {
   Collection,
   GitStatusMap,
+  ImportProjectOutcome,
   NovaEnvironment,
   NovaProject,
   RequestFile,
@@ -730,6 +736,88 @@ function closeTestResults() {
   testRunResult.value = null;
   testRunError.value = null;
 }
+
+// Import/export — one Modal covering both directions (see `Modal.vue`),
+// opened from the top bar. Each direction drives the native file/folder
+// pickers itself rather than collecting paths through form fields, the
+// same way `handleOpen` above does for opening a project.
+const importExportOpen = ref(false);
+const importing = ref(false);
+const importResult = ref<ImportProjectOutcome | null>(null);
+const importError = ref<string | null>(null);
+const exporting = ref(false);
+const exportedTo = ref<string | null>(null);
+const exportError = ref<string | null>(null);
+
+function openImportExport() {
+  importResult.value = null;
+  importError.value = null;
+  exportedTo.value = null;
+  exportError.value = null;
+  importExportOpen.value = true;
+}
+
+function closeImportExport() {
+  if (importing.value || exporting.value) return;
+  importExportOpen.value = false;
+}
+
+/**
+ * Generates a new Nova project from a picked OpenAPI spec or Postman
+ * collection export, into a picked destination folder — the GUI
+ * equivalent of `nova generate`. Leaves the currently open project alone;
+ * "Open imported project" (in the template) is a separate, explicit step.
+ */
+async function handleImport() {
+  if (importing.value) return;
+  importResult.value = null;
+  importError.value = null;
+
+  const source = await pickImportSource();
+  if (!source) return;
+  const destination = await pickImportDestination();
+  if (!destination) return;
+
+  importing.value = true;
+  try {
+    importResult.value = await importProject(source, destination);
+  } catch (e) {
+    importError.value = String(e);
+  } finally {
+    importing.value = false;
+  }
+}
+
+/** Opens the just-imported project and closes the import/export dialog. */
+async function openImportedProject() {
+  const result = importResult.value;
+  if (!result) return;
+  importExportOpen.value = false;
+  await loadProject(result.project_root);
+}
+
+/**
+ * Exports the currently open project's collections as an OpenAPI spec to a
+ * picked destination file — the GUI equivalent of `nova export`.
+ */
+async function handleExport() {
+  if (!project.value || exporting.value) return;
+  exportedTo.value = null;
+  exportError.value = null;
+
+  const destination = await pickExportDestination();
+  if (!destination) return;
+
+  exporting.value = true;
+  try {
+    await exportProject(project.value.root, destination);
+    exportedTo.value = destination;
+  } catch (e) {
+    exportError.value = String(e);
+  } finally {
+    exporting.value = false;
+  }
+}
 </script>
 
 <template>
@@ -746,6 +834,7 @@ function closeTestResults() {
       @project-settings="showProjectSettings"
       @show-history="showHistory"
       @run-tests="handleRunTests"
+      @import-export="openImportExport"
     />
 
     <aside class="app-shell__sidebar">
@@ -1165,6 +1254,55 @@ function closeTestResults() {
 
       <template #actions>
         <button type="button" class="button" @click="closeTestResults">Close</button>
+      </template>
+    </Modal>
+
+    <Modal v-if="importExportOpen" title="Import / export" @cancel="closeImportExport">
+      <div class="import-export__section">
+        <h3 class="import-export__heading">Import</h3>
+        <p class="import-export__hint">
+          Generate a new Nova project from an OpenAPI 3.x spec or a Postman collection export.
+        </p>
+        <button type="button" class="button button--secondary" :disabled="importing" @click="handleImport">
+          {{ importing ? "Importing…" : "Choose a file to import…" }}
+        </button>
+        <p v-if="importError" class="modal__error">{{ importError }}</p>
+        <div v-if="importResult" class="import-export__result">
+          <p>
+            Generated <strong>{{ importResult.request_count }}</strong> request(s) into
+            <code>{{ importResult.project_root }}</code>.
+          </p>
+          <p v-for="(warning, index) in importResult.warnings" :key="index" class="import-export__warning">
+            {{ warning }}
+          </p>
+          <button type="button" class="button" @click="openImportedProject">Open imported project</button>
+        </div>
+      </div>
+
+      <div class="import-export__section">
+        <h3 class="import-export__heading">Export</h3>
+        <p class="import-export__hint">
+          Export {{ project?.manifest.project.name ?? "this project" }}'s collections as an OpenAPI
+          3.x spec (YAML).
+        </p>
+        <button
+          type="button"
+          class="button button--secondary"
+          :disabled="!project || exporting"
+          @click="handleExport"
+        >
+          {{ exporting ? "Exporting…" : "Choose where to save…" }}
+        </button>
+        <p v-if="exportError" class="modal__error">{{ exportError }}</p>
+        <p v-if="exportedTo" class="import-export__result">
+          Exported to <code>{{ exportedTo }}</code>.
+        </p>
+      </div>
+
+      <template #actions>
+        <button type="button" class="button button--secondary" :disabled="importing || exporting" @click="closeImportExport">
+          Close
+        </button>
       </template>
     </Modal>
   </div>
