@@ -1,6 +1,9 @@
 # Rust workspace build output
 /target/
 
+# Staged release artifacts (scripts/stage-release.sh)
+/release-files/
+
 # OS junk
 .DS_Store
 Thumbs.db

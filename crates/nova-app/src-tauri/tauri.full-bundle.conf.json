@@ -1,0 +1,17 @@
+{
+  "productName": "nova-full",
+  "bundle": {
+    "linux": {
+      "deb": {
+        "files": {
+          "usr/bin/nova": "../../../target/release/nova"
+        }
+      },
+      "appimage": {
+        "files": {
+          "usr/bin/nova": "../../../target/release/nova"
+        }
+      }
+    }
+  }
+}
