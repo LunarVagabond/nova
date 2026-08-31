@@ -21,7 +21,7 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::execute::Response;
+use crate::execution::http::Response;
 use crate::request::{ExampleResponse, Header};
 
 /// A response reduced to just the fields a diff cares about — status,

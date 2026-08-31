@@ -4,9 +4,11 @@ use openapiv3::{
     PathItem, Paths, ReferenceOr, RequestBody as OpenApiRequestBody, Responses,
 };
 
-use crate::collection::Collection;
 use crate::error::{NovaError, NovaResult};
-use crate::manifest::{Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION};
+use crate::project::collection::Collection;
+use crate::project::manifest::{
+    Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION,
+};
 use crate::project::NovaProject;
 use crate::request::{Header, ParsedRequest, QueryParam, RequestBody};
 

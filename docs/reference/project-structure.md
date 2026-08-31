@@ -2,7 +2,7 @@
 
 A Nova project is any directory containing a `nova/` directory with a
 `nova.yaml` manifest inside it. `NovaProject::discover`
-(`crates/nova-engine/src/project.rs`) walks upward from a given path looking
+(`crates/nova-engine/src/project/mod.rs`) walks upward from a given path looking
 for it, the same way `git` looks for `.git` — so any command can be run from
 a subdirectory of the project, not just its root.
 
@@ -28,13 +28,14 @@ my-project/
 
 - **`collections/`** (path configurable, see below) is walked recursively;
   any subdirectory is a collection, any `.nova` file inside one is a
-  request. See `crates/nova-engine/src/collection.rs`.
+  request. See `crates/nova-engine/src/project/collection.rs`.
 - **`envs/`** (path configurable) is *not* walked recursively — every
   `*.yaml`/`*.yml` file directly inside it is one environment. See
-  `crates/nova-engine/src/environment.rs`.
+  `crates/nova-engine/src/project/environment.rs`.
 - **`scripts/`** (not configurable) holds pre-request/post-response
   scripts that a request's `[script]` section names by bare filename. See
-  `crates/nova-engine/src/script.rs` and the `.nova` file format reference.
+  `crates/nova-engine/src/execution/script.rs` and the `.nova` file format
+  reference.
 - Individual requests are never listed in the manifest; they're always
   discovered from disk.
 

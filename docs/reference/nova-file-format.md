@@ -5,7 +5,7 @@ A `.nova` file describes one HTTP request. It's plain text, organized into
 method/URL, a header, a body field. This is the format both the CLI and the
 desktop app read and write; there is no other on-disk representation of a
 request. Parsing/serialization lives in
-`crates/nova-engine/src/request.rs` (`parse_nova` /
+`crates/nova-engine/src/request/parse.rs` (`parse_nova` /
 `ParsedRequest::to_nova_string`).
 
 ## Sections
@@ -196,7 +196,8 @@ differently-shaped body.
 ### `[assert]`
 
 Test assertions, and extractions that later requests in the same run can
-reference as `{{variable}}`s (see `crates/nova-engine/src/assertion.rs`).
+reference as `{{variable}}`s (see
+`crates/nova-engine/src/execution/assertion.rs`).
 
 ```text
 [assert]
@@ -250,7 +251,7 @@ Authorization: Bearer {{access_token}}
 ### `[script]`
 
 Names a pre-request and/or post-response script to run around this
-request's execution (see `crates/nova-engine/src/script.rs`):
+request's execution (see `crates/nova-engine/src/execution/script.rs`):
 
 ```text
 [script]

@@ -82,8 +82,8 @@ the Rust side rather than the GUI hand-rolling `.nova` syntax.
 composer: a `CodeEditor` for the message about to be sent, a format
 selector (JSON/Text/Binary/XML/HTML — "Binary" is edited as plain text with
 beautify disabled, since the engine only ever sends text frames; see
-`crates/nova-engine/src/websocket.rs`'s module doc comment) with a beautify
-button next to it (reusing the same `beautifyJson`/`formatXml` helpers
+`crates/nova-engine/src/execution/websocket.rs`'s module doc comment) with a
+beautify button next to it (reusing the same `beautifyJson`/`formatXml` helpers
 `RequestPanel.vue`'s raw body editor uses), and a Send button enabled only
 while a session is open. Alongside it, a saved-messages list is just a
 picker over the request's `[messages]` list — the on-disk format is

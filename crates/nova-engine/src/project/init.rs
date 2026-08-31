@@ -7,8 +7,10 @@ use std::process::Command;
 use serde::Serialize;
 
 use crate::error::{NovaError, NovaResult};
-use crate::git_diagnostics::describe_spawn_failure;
-use crate::manifest::{Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION};
+use crate::git::diagnostics::describe_spawn_failure;
+use crate::project::manifest::{
+    Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION,
+};
 
 /// The environment name (and file stem) used for the single starter
 /// environment written by `scaffold_project`.

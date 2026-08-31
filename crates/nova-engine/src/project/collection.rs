@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::collection_variables::load_collection_variables;
 use crate::error::{NovaError, NovaResult};
+use crate::project::collection_variables::load_collection_variables;
 use crate::request::RequestFile;
 
 /// A directory beneath the project's collections root.
@@ -21,7 +21,7 @@ pub struct Collection {
     pub requests: Vec<RequestFile>,
     /// Variables scoped to this collection directory, loaded from a
     /// `_collection.yaml` file directly inside it (see
-    /// [`crate::collection_variables`]). Empty when no such file exists.
+    /// [`crate::project::collection_variables`]). Empty when no such file exists.
     /// Scoping is per-directory, not inherited by children — see
     /// [`crate::CollectionVariables`] for why.
     pub variables: HashMap<String, String>,

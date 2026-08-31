@@ -1,7 +1,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::execute::Response;
+use crate::execution::http::Response;
 use crate::request::{ParsedRequest, RequestBody};
 
 /// A single assertion parsed from a `.nova` file's `[assert]`

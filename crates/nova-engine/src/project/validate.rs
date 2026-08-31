@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use crate::auth::AuthScheme;
-use crate::collection::Collection;
+use crate::execution::auth::AuthScheme;
+use crate::project::collection::Collection;
 use crate::project::NovaProject;
 
 /// A non-fatal issue found while validating an already-loaded project.

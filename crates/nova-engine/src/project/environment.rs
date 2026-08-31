@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::auth::AuthScheme;
 use crate::error::{NovaError, NovaResult};
+use crate::execution::auth::AuthScheme;
 
 /// A single environment (`local`, `staging`, `production`, ...) loaded from
 /// a YAML file under the project's environments directory.
@@ -48,7 +48,7 @@ struct EnvironmentYaml {
 impl Environment {
     /// Serialize back to the YAML text an environment file would contain —
     /// the inverse of parsing (see [`load_environments`]). Mirrors
-    /// [`crate::manifest::Manifest::to_yaml_string`] for `nova.yaml`: a
+    /// [`crate::project::manifest::Manifest::to_yaml_string`] for `nova.yaml`: a
     /// thin wrapper over `serde_yaml::to_string`, just dropping the
     /// runtime-only `path` field first.
     pub fn to_yaml_string(&self) -> Result<String, String> {
@@ -82,7 +82,7 @@ impl Environment {
 /// not something that would let a caller escape the intended environments
 /// directory (`.`/`..`, or containing a path separator). Returns the
 /// trimmed name on success. Mirrors
-/// `crate::collection::validate_collection_name`.
+/// `crate::project::collection::validate_collection_name`.
 fn validate_environment_name(name: &str) -> NovaResult<String> {
     let trimmed = name.trim();
 
@@ -291,7 +291,7 @@ mod tests {
             Some(AuthScheme::ApiKey {
                 name: "X-API-Key".to_string(),
                 value: "{{api_key}}".to_string(),
-                location: crate::auth::ApiKeyLocation::Query,
+                location: crate::execution::auth::ApiKeyLocation::Query,
             })
         );
     }
@@ -307,7 +307,7 @@ mod tests {
             Some(AuthScheme::ApiKey {
                 name: "X-API-Key".to_string(),
                 value: "abc".to_string(),
-                location: crate::auth::ApiKeyLocation::Header,
+                location: crate::execution::auth::ApiKeyLocation::Header,
             })
         );
     }

@@ -1,6 +1,6 @@
 //! Turning raw failures from shelling out to `git` into actionable text.
 //!
-//! [`crate::git_status`] and [`crate::init`] both invoke `git` as a
+//! [`crate::git::status`] and [`crate::project::init`] both invoke `git` as a
 //! subprocess and both want the same two things out of a failure: a
 //! friendly explanation when the `git` binary itself couldn't be run at
 //! all (not installed, not on `PATH`, not executable), and a friendly

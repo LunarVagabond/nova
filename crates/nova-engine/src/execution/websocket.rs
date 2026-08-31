@@ -1,6 +1,6 @@
 //! Connect to a WebSocket endpoint, send its declared text messages, and
 //! collect whatever text messages come back — the WebSocket counterpart to
-//! [`crate::execute::execute`].
+//! [`crate::execution::http::execute`].
 //!
 //! Kept behind the same request/session shape as HTTP execution (a parsed,
 //! `{{variable}}`-resolved request goes in; a typed result comes out)
@@ -64,7 +64,7 @@ pub struct WebSocketExchange {
 ///
 /// A connection failure (bad handshake, refused connection, non-`ws(s)://`
 /// URL) is a typed [`NovaError::RequestExecution`], matching how
-/// [`crate::execute::execute`] reports a transport failure.
+/// [`crate::execution::http::execute`] reports a transport failure.
 pub fn connect_and_exchange(
     request: &ParsedWebSocketRequest,
     read_timeout: Duration,

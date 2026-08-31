@@ -4,11 +4,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use crate::assertion::resolve_extraction;
-use crate::auth::{fetch_client_credentials_token, AccessToken, AuthScheme};
-use crate::environment::Environment;
 use crate::error::{NovaError, NovaResult};
-use crate::execute::{execute, Response};
+use crate::execution::assertion::resolve_extraction;
+use crate::execution::auth::{fetch_client_credentials_token, AccessToken, AuthScheme};
+use crate::execution::http::{execute, Response};
+use crate::project::environment::Environment;
 use crate::request::{Header, ParsedRequest};
 
 /// How many [`HistoryEntry`] records a [`Session`] keeps before evicting the
@@ -337,7 +337,7 @@ impl Session {
     /// exchanged for an access token (reusing this session's cached one
     /// when it's still valid) and goes out with a `Bearer` header.
     ///
-    /// `project_root` is forwarded to [`crate::execute::execute`] — it's
+    /// `project_root` is forwarded to [`crate::execution::http::execute`] — it's
     /// only consulted when the request's body has a multipart field
     /// referencing a file on disk (see [`crate::MultipartField::file_path`]).
     pub fn execute(
@@ -468,8 +468,8 @@ impl Session {
     /// Like [`Session::resolve_and_execute`], but also folds in
     /// `collection_variables` — the values from the request's owning
     /// collection's `_collection.yaml` (see
-    /// [`crate::collection::Collection::variables`] /
-    /// [`crate::collection::Collection::containing`]).
+    /// [`crate::project::collection::Collection::variables`] /
+    /// [`crate::project::collection::Collection::containing`]).
     ///
     /// Precedence, from lowest to highest: collection variables, then this
     /// session's chained variables, then the environment's own variables
@@ -481,7 +481,7 @@ impl Session {
     /// specific still overrides them.
     ///
     /// If the request declares a `[script]` section (see
-    /// [`crate::script`]), its `pre:` script runs after resolution but
+    /// [`crate::execution::script`]), its `pre:` script runs after resolution but
     /// before the request is sent — its header/param/body overrides are
     /// applied to the resolved request — and its `post:` script runs
     /// after the response comes back, with whatever variables it extracts
@@ -500,7 +500,8 @@ impl Session {
         let mut resolved = parsed.resolve(&effective_environment)?;
 
         if let Some(pre_script) = resolved.script.as_ref().and_then(|s| s.pre.as_deref()) {
-            let overrides = crate::script::run_pre_request(project_root, pre_script, &resolved)?;
+            let overrides =
+                crate::execution::script::run_pre_request(project_root, pre_script, &resolved)?;
             overrides.apply(&mut resolved);
         }
 
@@ -508,7 +509,8 @@ impl Session {
         self.store_extractions(&resolved, &response)?;
 
         if let Some(post_script) = resolved.script.as_ref().and_then(|s| s.post.as_deref()) {
-            let extracted = crate::script::run_post_response(project_root, post_script, &response)?;
+            let extracted =
+                crate::execution::script::run_post_response(project_root, post_script, &response)?;
             self.chained_variables.extend(extracted);
         }
 
