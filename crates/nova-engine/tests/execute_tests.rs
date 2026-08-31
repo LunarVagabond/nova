@@ -100,6 +100,38 @@ fn executes_a_request_and_captures_the_response() {
 }
 
 #[test]
+fn captures_a_timing_breakdown_that_sums_to_the_total_elapsed_time() {
+    let (url, handle) = mock_server(200, "{\"ok\":true}");
+
+    let request = ParsedRequest {
+        method: "GET".to_string(),
+        url,
+        query: vec![],
+        headers: vec![],
+        body: RequestBody::None,
+        auth: None,
+        sync_content_type: true,
+        assertions: vec![],
+        extractions: vec![],
+        script: None,
+        example_response: None,
+    };
+
+    let response = execute(&project_root(), &request).unwrap();
+
+    // Both phases are real measurements, not fabricated placeholders — the
+    // exact split isn't asserted (that would make the test flaky), but the
+    // two phases must add up to the total `elapsed_ms` this crate has
+    // always reported.
+    assert_eq!(
+        response.timing.time_to_first_byte_ms + response.timing.content_download_ms,
+        response.elapsed_ms
+    );
+
+    handle.join().unwrap();
+}
+
+#[test]
 fn non_2xx_status_is_still_a_successful_response() {
     let (url, handle) = mock_server(404, "{\"error\":\"not found\"}");
 

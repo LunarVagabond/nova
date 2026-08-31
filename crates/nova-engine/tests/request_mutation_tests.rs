@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use nova_engine::{
     delete_request, duplicate_request, rename_request, save_example_response, Header, NovaError,
-    NovaProject, Response,
+    NovaProject, Response, ResponseTiming,
 };
 
 fn fixture(name: &str) -> PathBuf {
@@ -274,6 +274,10 @@ fn save_example_response_writes_a_response_section() {
         }],
         body: "{\"id\": \"usr_1234\", \"name\": \"John\"}".to_string(),
         elapsed_ms: 84,
+        timing: ResponseTiming {
+            time_to_first_byte_ms: 80,
+            content_download_ms: 4,
+        },
     };
 
     save_example_response(&request_file, &response).unwrap();
@@ -308,6 +312,10 @@ fn save_example_response_replaces_an_existing_example() {
             headers: Vec::new(),
             body: "old".to_string(),
             elapsed_ms: 1,
+            timing: ResponseTiming {
+                time_to_first_byte_ms: 1,
+                content_download_ms: 0,
+            },
         },
     )
     .unwrap();
@@ -319,6 +327,10 @@ fn save_example_response_replaces_an_existing_example() {
             headers: Vec::new(),
             body: "new".to_string(),
             elapsed_ms: 1,
+            timing: ResponseTiming {
+                time_to_first_byte_ms: 1,
+                content_download_ms: 0,
+            },
         },
     )
     .unwrap();
@@ -343,6 +355,10 @@ fn save_example_response_on_an_unparseable_file_is_a_typed_error() {
             headers: Vec::new(),
             body: String::new(),
             elapsed_ms: 1,
+            timing: ResponseTiming {
+                time_to_first_byte_ms: 1,
+                content_download_ms: 0,
+            },
         },
     )
     .unwrap_err();

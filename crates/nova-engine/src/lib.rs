@@ -32,11 +32,14 @@ pub use execution::assertion::{
     evaluate, Assertion, AssertionOutcome, Extraction, Op as AssertionOp, Term as AssertionTerm,
 };
 pub use execution::auth::{encode_basic_auth, ApiKeyLocation, AuthScheme};
+pub use execution::boundary_values::{
+    BoundaryGenerator, BoundaryValue, HUGE_VALUE, NEGATIVE_VALUE, UNICODE_VALUE, VERY_LONG_LENGTH,
+};
 pub use execution::graphql_introspection::{
     parse_introspection_response, GraphQlArgDef, GraphQlFieldDef, GraphQlSchema, GraphQlTypeDef,
     INTROSPECTION_QUERY,
 };
-pub use execution::http::{execute, save_example_response, Response};
+pub use execution::http::{execute, save_example_response, Response, ResponseTiming};
 pub use execution::script::{
     resolve_script_path, run_post_response, run_pre_request, PreRequestOverrides, ScriptSection,
     SCRIPTS_DIR_NAME,
