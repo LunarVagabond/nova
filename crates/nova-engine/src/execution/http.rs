@@ -63,15 +63,27 @@ pub struct ResponseTiming {
 
 /// Sent on every request unless the request's own `[headers]` already set
 /// the same name (case-insensitively) — mirrors what a browser or any
-/// ordinary HTTP client adds automatically, so a `.nova` file doesn't need
-/// this boilerplate written into it just to look like a normal HTTP client.
-/// `ureq` itself also adds a `Host` header (from the URL) and, with its
-/// default `gzip` feature enabled, `Accept-Encoding: gzip` — those aren't
-/// set here since `ureq` already handles them, but `nova-app`'s Headers tab
-/// mentions all four as a read-only hint so what actually goes over the
-/// wire isn't a surprise.
-const DEFAULT_USER_AGENT: &str = concat!("Nova/", env!("CARGO_PKG_VERSION"));
-const DEFAULT_ACCEPT: &str = "*/*";
+/// ordinary HTTP client adds automatically, so a hand-authored `.nova` file
+/// doesn't need this boilerplate written into it just to look like a normal
+/// HTTP client. A freshly scaffolded request (see
+/// [`crate::request::file::RequestFile::create`]) writes these two plus
+/// `Accept-Encoding` into its own `[headers]` explicitly instead of relying
+/// on this fallback, so they show up as ordinary editable/deletable rows in
+/// `nova-app`'s Headers tab rather than invisible defaults — this constant
+/// pair stays `pub(crate)` so `file.rs` can reuse the exact same values
+/// rather than a second hardcoded copy, and still applies as-is to any
+/// older or hand-written file that omits them. `ureq` itself also adds a
+/// `Host` header (derived from the URL) and, with its default `gzip`
+/// feature enabled, `Accept-Encoding: gzip`, in both cases only if the
+/// request doesn't already set one — nothing here needs to duplicate that
+/// logic, `ureq` already does the right thing once these values are
+/// present in `request.headers`. `Host` itself is deliberately never
+/// pre-populated into a scaffolded file: its value tracks the request's
+/// current URL, and a literal `Host:` row would go stale (and silently win
+/// over the URL) the moment that URL changed.
+pub(crate) const DEFAULT_USER_AGENT: &str = concat!("Nova/", env!("CARGO_PKG_VERSION"));
+pub(crate) const DEFAULT_ACCEPT: &str = "*/*";
+pub(crate) const DEFAULT_ACCEPT_ENCODING: &str = "gzip";
 
 /// Send `request` over HTTP and capture its response.
 ///

@@ -364,6 +364,25 @@ fn create_writes_a_minimal_default_request_and_refuses_to_overwrite() {
     assert_eq!(parsed.method, "GET");
     assert_eq!(parsed.url, "{{base_url}}/");
     assert_eq!(parsed.body, RequestBody::None);
+    // Real, editable/deletable rows from the start — see `RequestFile::create`'s
+    // own doc comment for why `Host` isn't among them.
+    assert_eq!(
+        parsed.headers,
+        vec![
+            Header {
+                name: "User-Agent".to_string(),
+                value: format!("Nova/{}", env!("CARGO_PKG_VERSION"))
+            },
+            Header {
+                name: "Accept".to_string(),
+                value: "*/*".to_string()
+            },
+            Header {
+                name: "Accept-Encoding".to_string(),
+                value: "gzip".to_string()
+            },
+        ]
+    );
 
     let err = RequestFile::create(path).unwrap_err();
     assert!(

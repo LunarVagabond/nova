@@ -43,14 +43,22 @@ pub fn request(
     let created = RequestFile::create(collection_dir.join(file_name)).map_err(|e| e.to_string())?;
 
     if graphql {
+        // Reuses whatever `create()` just wrote (the same default headers a
+        // plain scaffolded request gets) rather than restating them here,
+        // so this stays in sync with `RequestFile::create` automatically —
+        // `write` below replaces the whole `[headers]` section, so without
+        // this a GraphQL-scaffolded request would silently lose them.
+        let mut headers = created.parse().map_err(|e| e.to_string())?.headers;
+        headers.push(Header {
+            name: "Content-Type".to_string(),
+            value: "application/graphql+json".to_string(),
+        });
+
         let draft = RequestDraft {
             method: "POST".to_string(),
             url: "{{base_url}}/graphql".to_string(),
             query: vec![],
-            headers: vec![Header {
-                name: "Content-Type".to_string(),
-                value: "application/graphql+json".to_string(),
-            }],
+            headers,
             body_text: "query {\n  \n}\n\n[variables]\n{}\n".to_string(),
             auth: None,
             sync_content_type: true,

@@ -48,7 +48,14 @@ fn new_request_creates_a_minimal_request_at_the_collections_root() {
 
     assert!(output.status.success(), "{output:?}");
     let contents = fs::read_to_string(dir.join("nova/collections/smoke.nova")).unwrap();
-    assert_eq!(contents, "[request]\nmethod: GET\nurl: {{base_url}}/\n");
+    assert_eq!(
+        contents,
+        format!(
+            "[request]\nmethod: GET\nurl: {{{{base_url}}}}/\n\n\
+             [headers]\nUser-Agent: Nova/{}\nAccept: */*\nAccept-Encoding: gzip\n",
+            env!("CARGO_PKG_VERSION")
+        )
+    );
 
     fs::remove_dir_all(&dir).unwrap();
 }
