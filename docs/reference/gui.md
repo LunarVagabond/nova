@@ -47,7 +47,13 @@ release bundle with `make build-app`.
   sends (method/status/timing/timestamp), reachable from the top bar's
   clock-icon action, with a click on an entry reopening its full stored
   request/response — in-memory and per-session, so it resets when the app
-  restarts; `ResponseDiffView.vue` renders a structured response diff (see
+  restarts; `CookiesPanel.vue` for the current project's session cookie jar,
+  reachable from the top bar's cookie-icon action — lists every cookie
+  currently stored (host/name/value/path/domain/secure/expiry), with inline
+  editing of a cookie's value, deleting a single cookie, or clearing the
+  whole jar; also in-memory and per-session, resetting along with
+  `HistoryPanel.vue`'s history when the app restarts;
+  `ResponseDiffView.vue` renders a structured response diff (see
   below) for the response pane's Diff tab; `Modal.vue` is the shared
   in-app dialog component — used instead of `window.prompt`/
   `window.confirm`, which are unreliable inside Tauri's webview.

@@ -344,6 +344,22 @@ export interface HistoryDetail {
   response: RequestResponse;
 }
 
+/**
+ * Mirrors `nova_engine::session::CookieView` — one cookie currently stored
+ * in a project's session, flattened for display/editing. Already-expired
+ * cookies are never included — see `getCookies`.
+ */
+export interface CookieView {
+  host: string;
+  name: string;
+  value: string;
+  path: string;
+  secure: boolean;
+  domain: string | null;
+  /** Milliseconds since the Unix epoch — `null` means no expiry (lasts for the life of the session). */
+  expires_at_ms: number | null;
+}
+
 /** Mirrors `nova_engine::diff::StatusDiff` — a status code that changed between the two sides of a diff. */
 export interface StatusDiff {
   before: number;

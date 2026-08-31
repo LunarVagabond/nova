@@ -69,7 +69,7 @@ pub use script::{
     resolve_script_path, run_post_response, run_pre_request, PreRequestOverrides, ScriptSection,
     SCRIPTS_DIR_NAME,
 };
-pub use session::{HistoryEntry, Session, HISTORY_CAP};
+pub use session::{CookieView, HistoryEntry, Session, HISTORY_CAP};
 pub use sse::{
     connect_and_stream, SseEvent, SseExchange, DEFAULT_READ_TIMEOUT as SSE_DEFAULT_READ_TIMEOUT,
 };
