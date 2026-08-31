@@ -359,7 +359,7 @@
 // makes better use of the panel's width than a tall stack would.
 .request-panel__graphql {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(200px, 240px) 1fr 1fr;
   gap: $spacing-md;
 }
 
@@ -1026,6 +1026,11 @@ $variables-drawer-width: 18rem;
   flex: 1;
   min-width: 0;
   word-break: break-all;
+}
+
+.ws-panel__transcript-text--binary {
+  color: var(--color-text-muted);
+  font-style: italic;
 }
 
 .ws-panel__transcript-time {

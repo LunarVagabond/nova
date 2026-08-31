@@ -186,6 +186,42 @@ export interface GraphQlBody {
   operation_name: string | null;
 }
 
+/** Mirrors `nova_engine::GraphQlArgDef`. */
+export interface GraphQlArgDef {
+  name: string;
+  description: string | null;
+  type_ref: string;
+}
+
+/** Mirrors `nova_engine::GraphQlFieldDef`. */
+export interface GraphQlFieldDef {
+  name: string;
+  description: string | null;
+  args: GraphQlArgDef[];
+  type_ref: string;
+}
+
+/** Mirrors `nova_engine::GraphQlTypeDef`. */
+export interface GraphQlTypeDef {
+  name: string;
+  kind: string;
+  description: string | null;
+  fields: GraphQlFieldDef[];
+}
+
+/**
+ * Mirrors `nova_engine::GraphQlSchema` — the result of introspecting a
+ * GraphQL server, as fetched via `fetchGraphqlSchema`. `query_type`/
+ * `mutation_type`/`subscription_type` name the root operation type (if the
+ * server declares one); look it up in `types` to get its field list.
+ */
+export interface GraphQlSchema {
+  query_type: string | null;
+  mutation_type: string | null;
+  subscription_type: string | null;
+  types: GraphQlTypeDef[];
+}
+
 /**
  * Mirrors `nova_engine::RequestDraft` — a flattened, GUI-editable view of a
  * `.nova` file's method/URL/query/headers/body. The body always comes back
@@ -229,28 +265,48 @@ export interface RequestDraft {
 }
 
 /**
+ * Mirrors `nova_engine::WebSocketMessage` — one entry in a WebSocket
+ * request's `[messages]` section: either a plain text frame, or a
+ * reference to a file (path relative to the project root) whose raw bytes
+ * are sent as a single binary frame.
+ */
+export type WebSocketMessage =
+  | { kind: "text"; text: string }
+  | { kind: "binary_file"; path: string };
+
+/**
  * Mirrors `nova_engine::WebSocketDraft` — a flattened, GUI-editable view of
  * a `.nova` WebSocket connection declaration (`protocol: websocket`): the
- * URL, headers, and the ordered list of plain-text messages sent once
- * connected. There's no method/query/body/auth/assertions/example response
- * for a WebSocket request — see `docs/reference/nova-file-format.md`'s
+ * URL, headers, and the ordered list of messages sent once connected.
+ * There's no method/query/body/auth/assertions/example response for a
+ * WebSocket request — see `docs/reference/nova-file-format.md`'s
  * "WebSocket requests" section for the full shape.
  */
 export interface WebSocketDraft {
   url: string;
   headers: RequestHeader[];
-  messages: string[];
+  messages: WebSocketMessage[];
 }
+
+/**
+ * Mirrors `nova_engine::WebSocketReceivedMessage` — one message received
+ * over a WebSocket connection. A binary frame's bytes come back
+ * base64-encoded (JSON has no native byte string) rather than rendered as
+ * text.
+ */
+export type WebSocketReceivedMessage =
+  | { kind: "text"; text: string }
+  | { kind: "binary"; data_base64: string; len: number };
 
 /**
  * Mirrors `nova_engine::WebSocketExchange` — the result of connecting to a
  * WebSocket request's URL, sending its declared messages in order, and
- * collecting whatever text messages came back before the read timeout
- * elapsed or the server closed the connection.
+ * collecting whatever came back before the read timeout elapsed or the
+ * server closed the connection.
  */
 export interface WebSocketExchange {
-  sent: string[];
-  received: string[];
+  sent: WebSocketMessage[];
+  received: WebSocketReceivedMessage[];
   elapsed_ms: number;
 }
 
@@ -266,11 +322,15 @@ export interface WebSocketSessionStatus {
 
 /**
  * Mirrors `nova_app_lib::websocket_session::WsMessageEvent` — the payload
- * of a `"ws-session:message"` event, emitted once per text message the
+ * of a `"ws-session:message"` event, emitted once per message the
  * currently-open interactive WebSocket session receives, in arrival order.
+ * `text` is set for a text frame; `dataBase64`/`len` are set for a binary
+ * one — never both.
  */
 export interface WsSessionMessageEvent {
-  text: string;
+  text: string | null;
+  dataBase64: string | null;
+  len: number | null;
   atMs: number;
 }
 

@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::path::Path;
 
-use nova_engine::{evaluate, Environment, NovaProject, RequestFile, Session};
+use nova_engine::{evaluate, load_data_iterations, Environment, NovaProject, RequestFile, Session};
 
+use crate::commands::run::environment_for_iteration;
 use crate::discovery::{requests_at, resolve_environment};
 
 struct TestSummary {
@@ -19,15 +21,32 @@ struct TestSummary {
 /// fail on assertions it doesn't have.
 ///
 /// `json`: instead of printing a pass/fail line per assertion as it runs,
-/// collect one result object per request — `path`, `method`, `url`,
-/// `response`, and `outcomes` (the same [`nova_engine::AssertionOutcome`]
-/// list `nova_engine::evaluate` returns), or `error` for a request that
-/// couldn't be parsed/resolved/sent at all — into a single JSON object
-/// alongside the `passed`/`failed` totals.
-pub fn run(path: &Path, environment: Option<&str>, json: bool) -> Result<(), String> {
+/// collect one result object per request (per iteration, if `data` is
+/// given) — `path`, `method`, `url`, `response`, and `outcomes` (the same
+/// [`nova_engine::AssertionOutcome`] list `nova_engine::evaluate` returns),
+/// or `error` for a request that couldn't be parsed/resolved/sent at all —
+/// into a single JSON object alongside the `passed`/`failed` totals.
+///
+/// `data`: a CSV or JSON file (see [`load_data_iterations`]) whose rows/
+/// objects each become one iteration's `{{variable}}`s, layered on top of
+/// the active environment — every request's assertions run once per
+/// iteration instead of once, with `passed`/`failed` totaled across all of
+/// them.
+pub fn run(
+    path: &Path,
+    environment: Option<&str>,
+    json: bool,
+    data: Option<&Path>,
+) -> Result<(), String> {
     let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
     let environment = resolve_environment(&project, environment)?;
     let requests = requests_at(&project.collections, path)?;
+
+    let iterations = match data {
+        Some(data_path) => load_data_iterations(data_path).map_err(|e| e.to_string())?,
+        None => vec![HashMap::new()],
+    };
+    let multiple_iterations = data.is_some() && iterations.len() > 1;
 
     let mut session = Session::new();
     let mut total_passed = 0;
@@ -36,28 +55,47 @@ pub fn run(path: &Path, environment: Option<&str>, json: bool) -> Result<(), Str
     let mut results = Vec::new();
 
     for request_file in requests {
-        match test_one(&project, request_file, &environment, &mut session, json) {
-            Ok((summary, detail)) => {
-                total_passed += summary.passed;
-                total_failed += summary.failed;
-                if json {
-                    results.push(detail);
+        for (index, iteration) in iterations.iter().enumerate() {
+            let iteration_environment = environment_for_iteration(&environment, iteration);
+            if multiple_iterations && !json {
+                println!("[iteration {index}]");
+            }
+            match test_one(
+                &project,
+                request_file,
+                &iteration_environment,
+                &mut session,
+                json,
+            ) {
+                Ok((summary, mut detail)) => {
+                    total_passed += summary.passed;
+                    total_failed += summary.failed;
+                    if json {
+                        if data.is_some() {
+                            detail["iteration"] = serde_json::json!(index);
+                        }
+                        results.push(detail);
+                    }
+                }
+                Err(message) => {
+                    had_error = true;
+                    if json {
+                        let mut entry = serde_json::json!({
+                            "path": request_file.path,
+                            "error": message,
+                        });
+                        if data.is_some() {
+                            entry["iteration"] = serde_json::json!(index);
+                        }
+                        results.push(entry);
+                    } else {
+                        eprintln!("{}: {message}", request_file.path.display());
+                    }
                 }
             }
-            Err(message) => {
-                had_error = true;
-                if json {
-                    results.push(serde_json::json!({
-                        "path": request_file.path,
-                        "error": message,
-                    }));
-                } else {
-                    eprintln!("{}: {message}", request_file.path.display());
-                }
+            if !json {
+                println!();
             }
-        }
-        if !json {
-            println!();
         }
     }
 

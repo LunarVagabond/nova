@@ -7,11 +7,16 @@ import {
   disconnectWebSocketSession,
   listenForWebSocketSessionClosed,
   listenForWebSocketSessionMessages,
+  pickBinaryFrameDestination,
+  pickFile,
   readWebSocketRequest,
+  saveBinaryFrame,
   saveWebSocketRequest,
+  sendWebSocketSessionBinaryFile,
   sendWebSocketSessionMessage,
 } from "../api/nova";
-import type { RequestFile, RequestHeader } from "../types/nova";
+import { relativeToRoot } from "../lib/relativePath";
+import type { RequestFile, RequestHeader, WebSocketMessage } from "../types/nova";
 import { beautifyJson } from "../lib/jsonFormat";
 import { formatXml } from "../lib/xmlFormat";
 import CodeEditor, { type EditorLanguage } from "./CodeEditor.vue";
@@ -21,6 +26,7 @@ import KeyValueEditor from "./KeyValueEditor.vue";
 const props = defineProps<{
   request: RequestFile;
   selectedEnvironment: string | null;
+  projectRoot: string;
   active: boolean;
 }>();
 
@@ -36,13 +42,16 @@ const loadError = ref<string | null>(null);
 // is the last loaded/saved snapshot, the refs below are what the form edits,
 // and `dirty` is a plain comparison between the two. `messages` here is the
 // request's *saved-messages list* (still exactly `[messages]` on disk) —
-// the composer's currently-being-typed text is a separate `composedText`
-// ref below, not part of this list until explicitly saved into it.
-const original = ref<{ url: string; headers: RequestHeader[]; messages: string[] } | null>(null);
+// the composer's currently-being-typed text is a separate `composedText`/
+// `composedBinaryPath` pair below, not part of this list until explicitly
+// saved into it.
+const original = ref<{ url: string; headers: RequestHeader[]; messages: WebSocketMessage[] } | null>(
+  null,
+);
 
 const url = ref("");
 const headers = ref<RequestHeader[]>([]);
-const messages = ref<string[]>([]);
+const messages = ref<WebSocketMessage[]>([]);
 
 const dirty = computed(() => {
   if (!original.value) return false;
@@ -55,7 +64,7 @@ const dirty = computed(() => {
 
 watch(dirty, (value) => emit("dirtyChange", value));
 
-function applyDraft(draft: { url: string; headers: RequestHeader[]; messages: string[] }) {
+function applyDraft(draft: { url: string; headers: RequestHeader[]; messages: WebSocketMessage[] }) {
   url.value = draft.url;
   headers.value = draft.headers.map((h) => ({ ...h }));
   messages.value = [...draft.messages];
@@ -83,10 +92,17 @@ const connecting = ref(false);
 const connectError = ref<string | null>(null);
 const sessionConnected = ref(false);
 
+// A transcript entry mirrors whichever of `WebSocketMessage` (sent) or
+// `WebSocketReceivedMessage` (received) it came from, flattened for
+// display: `text` for a text frame, `binary` for a binary one —
+// `dataBase64` is only ever present on a *received* binary frame (so it
+// can be saved to disk); a sent binary frame only ever names the file it
+// came from, not its bytes, since nova-app never reads those itself.
 interface TranscriptEntry {
   direction: "sent" | "received";
-  text: string;
   atMs: number;
+  text?: string;
+  binary?: { len?: number; dataBase64?: string; sourcePath?: string };
 }
 
 const transcript = ref<TranscriptEntry[]>([]);
@@ -170,7 +186,15 @@ async function handleConnect() {
 
   try {
     unlistenMessage = await listenForWebSocketSessionMessages((message) => {
-      transcript.value = [...transcript.value, { direction: "received", text: message.text, atMs: message.atMs }];
+      const entry: TranscriptEntry =
+        message.text !== null
+          ? { direction: "received", text: message.text, atMs: message.atMs }
+          : {
+              direction: "received",
+              atMs: message.atMs,
+              binary: { len: message.len ?? undefined, dataBase64: message.dataBase64 ?? undefined },
+            };
+      transcript.value = [...transcript.value, entry];
     });
     unlistenClosed = await listenForWebSocketSessionClosed(() => {
       sessionConnected.value = false;
@@ -211,11 +235,12 @@ onBeforeUnmount(() => {
 
 // --- Composer --------------------------------------------------------------
 //
-// Five message formats the composer offers. "Binary" has no real binary
-// framing behind it — see `websocket.rs`'s module doc comment,
-// text-frames-only is this pass's whole engine-side scope — so it's edited
-// as plain text with beautify/lint disabled, and a hint below the selector
-// says so plainly rather than pretending otherwise.
+// Five message formats the composer offers. "Binary" sends a real binary
+// frame sourced from a file on disk (see `nova_engine::WebSocketMessage::
+// BinaryFile`) — there's no text to edit for it, just a file picker,
+// mirroring `BinaryEditor.vue`'s HTTP body counterpart. The other four are
+// all still plain text frames; the format only picks the editor's syntax
+// highlighting/beautify, same as before.
 type WsMessageFormat = "json" | "text" | "binary" | "xml" | "html";
 
 const WS_FORMAT_OPTIONS: WsMessageFormat[] = ["json", "text", "binary", "xml", "html"];
@@ -236,6 +261,11 @@ const WS_FORMAT_EDITOR_LANGUAGE: Record<WsMessageFormat, EditorLanguage> = {
 
 const composedText = ref("");
 const composedFormat = ref<WsMessageFormat>("json");
+// The binary composer's chosen file, project-root-relative — mirrors
+// `BinaryEditor.vue`'s `modelValue`. Only meaningful while `composedFormat`
+// is "binary".
+const composedBinaryPath = ref<string | null>(null);
+const composedBinaryError = ref<string | null>(null);
 // Index into `messages` this composer's text was loaded from, if any — lets
 // Save update that entry in place instead of always appending a new one.
 // Cleared whenever the text is edited away from what was loaded, or a
@@ -259,28 +289,55 @@ function beautifyComposedText() {
   }
 }
 
+async function chooseComposedBinaryFile() {
+  composedBinaryError.value = null;
+  const picked = await pickFile();
+  if (!picked) return;
+
+  const relative = props.projectRoot ? relativeToRoot(props.projectRoot, picked) : null;
+  if (relative === null) {
+    composedBinaryError.value =
+      "That file is outside the project — move or copy it under the project directory first.";
+    return;
+  }
+  composedBinaryPath.value = relative;
+}
+
 /** A short label for a saved message with no name of its own — this pass
  * doesn't add a `name:` field to `[messages]` (see the design note in
  * `docs/reference/gui.md`'s WebSocket section for why), so the side panel
  * names each entry by a truncated preview of its own content instead. */
-function messagePreview(text: string): string {
-  const trimmed = text.trim();
+function messagePreview(message: WebSocketMessage): string {
+  if (message.kind === "binary_file") return `[binary: ${message.path}]`;
+  const trimmed = message.text.trim();
   if (trimmed === "") return "(empty message)";
   const firstLine = trimmed.split("\n", 1)[0];
   return firstLine.length > 48 ? `${firstLine.slice(0, 48)}…` : firstLine;
 }
 
 function loadSavedMessage(index: number) {
-  composedText.value = messages.value[index] ?? "";
+  const message = messages.value[index];
   loadedMessageIndex.value = index;
+  if (!message) return;
+  if (message.kind === "binary_file") {
+    composedFormat.value = "binary";
+    composedBinaryPath.value = message.path;
+    composedBinaryError.value = null;
+  } else {
+    composedFormat.value = composedFormat.value === "binary" ? "json" : composedFormat.value;
+    composedText.value = message.text;
+  }
 }
 
 function saveComposedMessage() {
-  const text = composedText.value;
+  const message: WebSocketMessage =
+    composedFormat.value === "binary"
+      ? { kind: "binary_file", path: composedBinaryPath.value ?? "" }
+      : { kind: "text", text: composedText.value };
   if (loadedMessageIndex.value !== null) {
-    messages.value = messages.value.map((m, i) => (i === loadedMessageIndex.value ? text : m));
+    messages.value = messages.value.map((m, i) => (i === loadedMessageIndex.value ? message : m));
   } else {
-    messages.value = [...messages.value, text];
+    messages.value = [...messages.value, message];
     loadedMessageIndex.value = messages.value.length - 1;
   }
 }
@@ -288,6 +345,8 @@ function saveComposedMessage() {
 function newComposedMessage() {
   composedText.value = "";
   composedFormat.value = "json";
+  composedBinaryPath.value = null;
+  composedBinaryError.value = null;
   loadedMessageIndex.value = null;
 }
 
@@ -302,19 +361,50 @@ function removeSavedMessage(index: number) {
 
 const sending = ref(false);
 
+const canSend = computed(() =>
+  composedFormat.value === "binary" ? composedBinaryPath.value !== null : composedText.value !== "",
+);
+
 async function handleSend() {
-  if (!sessionConnected.value || composedText.value === "") return;
+  if (!sessionConnected.value || !canSend.value) return;
   sending.value = true;
   try {
-    await sendWebSocketSessionMessage(composedText.value);
+    if (composedFormat.value === "binary" && composedBinaryPath.value !== null) {
+      await sendWebSocketSessionBinaryFile(composedBinaryPath.value);
+      transcript.value = [
+        ...transcript.value,
+        { direction: "sent", atMs: Date.now(), binary: { sourcePath: composedBinaryPath.value } },
+      ];
+    } else {
+      await sendWebSocketSessionMessage(composedText.value);
+      transcript.value = [...transcript.value, { direction: "sent", text: composedText.value, atMs: Date.now() }];
+    }
     // Appended immediately rather than waiting on any round-trip — sending
     // doesn't need a reply to know it happened, and the live transcript
     // should reflect that right away.
-    transcript.value = [...transcript.value, { direction: "sent", text: composedText.value, atMs: Date.now() }];
   } catch (e) {
     connectError.value = String(e);
   } finally {
     sending.value = false;
+  }
+}
+
+const savingBinaryFrame = ref<number | null>(null);
+
+/** Saves a received binary frame's decoded bytes to a file the user picks. */
+async function saveReceivedBinaryFrame(entryIndex: number) {
+  const entry = transcript.value[entryIndex];
+  if (!entry?.binary?.dataBase64) return;
+
+  savingBinaryFrame.value = entryIndex;
+  try {
+    const destination = await pickBinaryFrameDestination(`frame-${entry.atMs}.bin`);
+    if (!destination) return;
+    await saveBinaryFrame(entry.binary.dataBase64, destination);
+  } catch (e) {
+    connectError.value = String(e);
+  } finally {
+    savingBinaryFrame.value = null;
   }
 }
 
@@ -416,16 +506,33 @@ defineExpose({ dirty, save: handleSave });
                 <button
                   type="button"
                   class="button request-panel__send"
-                  :disabled="!sessionConnected || sending || composedText === ''"
+                  :disabled="!sessionConnected || sending || !canSend"
                   @click="handleSend"
                 >
                   {{ sending ? "Sending…" : "Send" }}
                 </button>
               </div>
-              <p v-if="composedFormat === 'binary'" class="request-panel__hint-text">
-                Sent as a text frame, not true binary — real binary framing isn't supported yet.
-              </p>
-              <CodeEditor v-model="composedText" :language="editorLanguage" />
+              <template v-if="composedFormat === 'binary'">
+                <p v-if="composedBinaryError" class="request-panel__save-error">{{ composedBinaryError }}</p>
+                <div class="kv-editor">
+                  <div class="kv-editor__file-slot">
+                    <button type="button" class="kv-editor__file-btn" @click="chooseComposedBinaryFile">
+                      <Icon name="file-plus" />
+                      {{ composedBinaryPath ? "Change file" : "Choose file" }}
+                    </button>
+                    <span
+                      v-if="composedBinaryPath"
+                      class="kv-editor__file-chip"
+                      :title="composedBinaryPath"
+                      >{{ composedBinaryPath }}</span
+                    >
+                  </div>
+                </div>
+                <p class="request-panel__hint-text">
+                  Sent as a real binary frame — the file's raw bytes, not typed text.
+                </p>
+              </template>
+              <CodeEditor v-else v-model="composedText" :language="editorLanguage" />
               <div class="ws-panel__composer-save">
                 <button type="button" class="button button--ghost" @click="newComposedMessage">New</button>
                 <button type="button" class="button button--secondary" @click="saveComposedMessage">
@@ -478,7 +585,23 @@ defineExpose({ dirty, save: handleSave });
           :class="`ws-panel__transcript-line--${entry.direction}`"
         >
           <span class="ws-panel__transcript-arrow">{{ entry.direction === "sent" ? "↑" : "↓" }}</span>
-          <span class="ws-panel__transcript-text">{{ entry.text }}</span>
+          <span v-if="entry.text !== undefined" class="ws-panel__transcript-text">{{ entry.text }}</span>
+          <template v-else-if="entry.binary">
+            <span class="ws-panel__transcript-text ws-panel__transcript-text--binary">
+              <template v-if="entry.direction === 'sent'">binary file: {{ entry.binary.sourcePath }}</template>
+              <template v-else>binary frame: {{ entry.binary.len }} bytes</template>
+            </span>
+            <button
+              v-if="entry.direction === 'received' && entry.binary.dataBase64"
+              type="button"
+              class="icon-button icon-button--outline"
+              title="Save this binary frame to a file"
+              :disabled="savingBinaryFrame === index"
+              @click="saveReceivedBinaryFrame(index)"
+            >
+              <Icon name="file-plus" />
+            </button>
+          </template>
           <span class="ws-panel__transcript-time">{{ formatTimestamp(entry.atMs) }}</span>
         </li>
       </ul>

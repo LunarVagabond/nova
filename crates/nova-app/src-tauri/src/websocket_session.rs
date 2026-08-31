@@ -7,15 +7,16 @@
 //! closed" callbacks into events the frontend can `listen()` for, since the
 //! engine itself stays free of any Tauri dependency.
 
+use std::path::Path;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use nova_engine::WebSocketSession;
+use nova_engine::{WebSocketReceivedMessage, WebSocketSession};
 
-/// Event emitted to the frontend for every text message the open session
+/// Event emitted to the frontend for every message the open session
 /// receives, in arrival order.
 pub const MESSAGE_EVENT: &str = "ws-session:message";
 /// Event emitted when the open session's connection ends on its own (the
@@ -24,11 +25,35 @@ pub const MESSAGE_EVENT: &str = "ws-session:message";
 /// about that one.
 pub const CLOSED_EVENT: &str = "ws-session:closed";
 
+/// A received message, flattened for the frontend the same way
+/// [`nova_engine::WebSocketReceivedMessage`] already shapes it — `text` set
+/// for a text frame, `data_base64`/`len` set for a binary one, never both.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WsMessageEvent {
-    pub text: String,
+    pub text: Option<String>,
+    pub data_base64: Option<String>,
+    pub len: Option<usize>,
     pub at_ms: u128,
+}
+
+impl WsMessageEvent {
+    fn from_received(message: WebSocketReceivedMessage, at_ms: u128) -> Self {
+        match message {
+            WebSocketReceivedMessage::Text { text } => Self {
+                text: Some(text),
+                data_base64: None,
+                len: None,
+                at_ms,
+            },
+            WebSocketReceivedMessage::Binary { data_base64, len } => Self {
+                text: None,
+                data_base64: Some(data_base64),
+                len: Some(len),
+                at_ms,
+            },
+        }
+    }
 }
 
 /// Tauri-managed state holding the interactive WebSocket session's handle,
@@ -64,13 +89,15 @@ impl WebSocketSessionState {
         }
     }
 
-    /// Opens `request`'s connection and stores it as the current session,
-    /// wiring its `on_message`/`on_close` callbacks to emit
+    /// Opens `request`'s connection (resolving a `send_binary_file` call's
+    /// file paths against `project_root`) and stores it as the current
+    /// session, wiring its `on_message`/`on_close` callbacks to emit
     /// [`MESSAGE_EVENT`]/[`CLOSED_EVENT`] on `app`. Rejects starting a
     /// second session while one is already open.
     pub fn connect(
         &self,
         request: &nova_engine::ParsedWebSocketRequest,
+        project_root: &Path,
         app: AppHandle,
     ) -> Result<(), String> {
         let mut guard = self
@@ -82,13 +109,10 @@ impl WebSocketSessionState {
         }
 
         let message_app = app.clone();
-        let on_message = move |text: String| {
+        let on_message = move |message: WebSocketReceivedMessage| {
             let _ = message_app.emit(
                 MESSAGE_EVENT,
-                WsMessageEvent {
-                    text,
-                    at_ms: now_ms(),
-                },
+                WsMessageEvent::from_received(message, now_ms()),
             );
         };
 
@@ -97,22 +121,38 @@ impl WebSocketSessionState {
             let _ = closed_app.emit(CLOSED_EVENT, ());
         };
 
-        let session =
-            WebSocketSession::connect(request, on_message, on_close).map_err(|e| e.to_string())?;
+        let session = WebSocketSession::connect(request, project_root, on_message, on_close)
+            .map_err(|e| e.to_string())?;
         *guard = Some(session);
         Ok(())
     }
 
-    /// Sends `text` on the currently-open session. An error (no session
-    /// open, or the underlying send failing) comes back as a plain string,
-    /// matching every other command boundary in this crate.
-    pub fn send(&self, text: &str) -> Result<(), String> {
+    /// Sends `text` as a text frame on the currently-open session. An error
+    /// (no session open, or the underlying send failing) comes back as a
+    /// plain string, matching every other command boundary in this crate.
+    pub fn send_text(&self, text: &str) -> Result<(), String> {
         let guard = self
             .0
             .lock()
             .expect("websocket session state mutex poisoned");
         match guard.as_ref() {
-            Some(session) => session.send(text).map_err(|e| e.to_string()),
+            Some(session) => session.send_text(text).map_err(|e| e.to_string()),
+            None => Err("no WebSocket session is open".to_string()),
+        }
+    }
+
+    /// Sends a file's raw bytes, resolved relative to the project root the
+    /// session connected under, as a single binary frame on the
+    /// currently-open session.
+    pub fn send_binary_file(&self, file_path: &str) -> Result<(), String> {
+        let guard = self
+            .0
+            .lock()
+            .expect("websocket session state mutex poisoned");
+        match guard.as_ref() {
+            Some(session) => session
+                .send_binary_file(file_path)
+                .map_err(|e| e.to_string()),
             None => Err("no WebSocket session is open".to_string()),
         }
     }

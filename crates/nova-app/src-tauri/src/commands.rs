@@ -15,10 +15,10 @@ use nova_engine::{
     git_diff, git_fetch, git_pull, git_push, git_stage, git_unstage, graphql_body_to_text,
     multipart_fields_to_body_text, parse_curl, parse_graphql_body, parse_multipart_fields,
     write_generated_project, AssertionOutcome, AuthScheme, Collection, ComparableResponse,
-    CookieView, Environment, ExportFormat, GitFileStatus, GitStatusCache, GraphQlBody, Header,
-    InitOptions, InitOutcome, Manifest, MultipartField, NovaProject, OpenProjectOutcome,
-    ParsedCurlRequest, ParsedRequest, ParsedWebSocketRequest, RequestDraft, RequestFile, Response,
-    ResponseDiff, Session, WebSocketDraft, WebSocketExchange,
+    CookieView, Environment, ExportFormat, GitFileStatus, GitStatusCache, GraphQlBody,
+    GraphQlSchema, Header, InitOptions, InitOutcome, Manifest, MultipartField, NovaProject,
+    OpenProjectOutcome, ParsedCurlRequest, ParsedRequest, ParsedWebSocketRequest, RequestDraft,
+    RequestFile, Response, ResponseDiff, Session, WebSocketDraft, WebSocketExchange,
 };
 
 use crate::mock_server::{MockServerState, MockServerStatus, DEFAULT_HOST, DEFAULT_PORT};
@@ -274,6 +274,55 @@ pub fn send_request(
                 &scoped_scripts,
             )
             .map(|(_resolved, response)| response)
+            .map_err(|e| e.to_string())
+    })
+}
+
+/// Introspect the GraphQL schema at `request_path`'s own URL, reusing its
+/// resolved headers/auth — see [`nova_engine::Session::fetch_graphql_schema`].
+/// `force_refresh` bypasses this project's cached schema for that URL (the
+/// GUI's "Refresh" action); otherwise a previously-fetched schema is served
+/// without hitting the network again.
+#[tauri::command]
+pub fn fetch_graphql_schema(
+    request_path: String,
+    environment: Option<String>,
+    force_refresh: bool,
+    sessions: tauri::State<SessionStore>,
+) -> Result<GraphQlSchema, String> {
+    let path = std::path::Path::new(&request_path);
+    let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
+
+    let resolved_environment = match environment {
+        Some(name) => project
+            .environment(&name)
+            .cloned()
+            .ok_or_else(|| format!("unknown environment '{name}'"))?,
+        None => project
+            .default_environment()
+            .cloned()
+            .ok_or_else(|| "project has no default environment".to_string())?,
+    };
+
+    let request_file = RequestFile {
+        name: String::new(),
+        path: path.to_path_buf(),
+        method: String::new(),
+        protocol: String::new(),
+    };
+    let parsed = request_file.parse().map_err(|e| e.to_string())?;
+
+    let collection_variables = project.effective_collection_variables(path);
+
+    sessions.with_session(&project.root, |session| {
+        session
+            .fetch_graphql_schema(
+                &project.root,
+                &parsed,
+                &resolved_environment,
+                &collection_variables,
+                force_refresh,
+            )
             .map_err(|e| e.to_string())
     })
 }
@@ -752,8 +801,10 @@ pub fn connect_websocket(
     environment: Option<String>,
 ) -> Result<WebSocketExchange, String> {
     let resolved = resolve_websocket_request(&request_path, environment)?;
+    let project =
+        NovaProject::discover(std::path::Path::new(&request_path)).map_err(|e| e.to_string())?;
 
-    nova_engine::connect_and_exchange(&resolved, nova_engine::DEFAULT_READ_TIMEOUT)
+    nova_engine::connect_and_exchange(&resolved, &project.root, nova_engine::DEFAULT_READ_TIMEOUT)
         .map_err(|e| e.to_string())
 }
 
@@ -824,17 +875,31 @@ pub fn connect_websocket_session(
     state: tauri::State<WebSocketSessionState>,
 ) -> Result<(), String> {
     let resolved = resolve_websocket_request(&request_path, environment)?;
-    state.connect(&resolved, app)
+    let project =
+        NovaProject::discover(std::path::Path::new(&request_path)).map_err(|e| e.to_string())?;
+    state.connect(&resolved, &project.root, app)
 }
 
-/// Send `text` on the currently-open interactive WebSocket session. Errors
-/// if no session is open.
+/// Send `text` as a text frame on the currently-open interactive WebSocket
+/// session. Errors if no session is open.
 #[tauri::command]
 pub fn send_websocket_session_message(
     text: String,
     state: tauri::State<WebSocketSessionState>,
 ) -> Result<(), String> {
-    state.send(&text)
+    state.send_text(&text)
+}
+
+/// Send a file's raw bytes, resolved relative to the open session's
+/// project root, as a single binary frame on the currently-open
+/// interactive WebSocket session. Errors if no session is open, or if
+/// `file_path` doesn't resolve to somewhere genuinely inside the project.
+#[tauri::command]
+pub fn send_websocket_session_binary_file(
+    file_path: String,
+    state: tauri::State<WebSocketSessionState>,
+) -> Result<(), String> {
+    state.send_binary_file(&file_path)
 }
 
 /// Close the currently-open interactive WebSocket session, if any — a
@@ -871,6 +936,22 @@ pub fn create_websocket_request(
     let request_file = RequestFile::create_websocket(path).map_err(|e| e.to_string())?;
     invalidate_git_status_cache(&request_file.path, &cache);
     Ok(request_file)
+}
+
+/// Decode a base64-encoded binary WebSocket frame (as received over
+/// `"ws-session:message"`/[`WebSocketExchange::received`]) and write it to
+/// `output_path` — the transcript's "save this binary frame" action.
+/// `output_path` is wherever the frontend's native save-file dialog picked;
+/// this just does the decode-and-write nova-app otherwise never needs a
+/// binary-data command for.
+#[tauri::command]
+pub fn save_binary_frame(data_base64: String, output_path: String) -> Result<(), String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&data_base64)
+        .map_err(|source| format!("failed to decode binary frame data: {source}"))?;
+    std::fs::write(&output_path, bytes)
+        .map_err(|source| format!("failed to write {output_path}: {source}"))
 }
 
 /// Parse a multipart body's raw wire text — the same text

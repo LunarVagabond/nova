@@ -149,6 +149,11 @@ Both markers are optional. On the wire this is assembled into the standard
 `{"query", "variables", "operationName"}` JSON envelope GraphQL servers
 expect; `variables` defaults to an empty object when omitted.
 
+The desktop app can also introspect a GraphQL request's live schema, using
+the request's own resolved URL/headers/auth — see
+[the GUI reference](./gui.md#graphql-schema-explorer). This doesn't change
+anything about the file format above; it's a read-only browsing aid.
+
 ### `[auth]`
 
 Structured auth, as an alternative to a literal `Authorization` header.
@@ -360,18 +365,27 @@ Authorization: Bearer {{auth_token}}
 [messages]
 hello
 world
+@file: fixtures/payload.bin
 ```
 
-`[messages]` lists text messages to send, one per line, in order, once the
-connection opens. `nova ws` (see the [CLI reference](./cli.md)) sends them,
-then collects whatever text messages come back until the connection closes
-or a read timeout elapses. Binary/ping/pong frames are out of scope for now
-— only text messages are sent or collected. The desktop app's WebSocket
-panel treats this same list as a saved-messages picker for its interactive
-composer (see [the GUI reference](./gui.md)) rather than something it sends
-in one batch — saving or updating a message from the composer just
+`[messages]` lists messages to send, one per line, in order, once the
+connection opens. Most lines are sent as a text frame verbatim; a line
+starting with `@file: <path>` instead sends that file's raw bytes as a
+single binary frame — `path` resolved relative to the project root (and
+run through `{{variable}}` substitution first), the same convention and
+escape-checked resolution an HTTP `[body]`'s `@file:` binary body already
+uses. `nova ws` (see the [CLI reference](./cli.md)) sends every message in
+order, then collects whatever comes back until the connection closes or a
+read timeout elapses; a received binary frame prints as its byte length
+rather than attempting to render arbitrary bytes as text. Ping/pong frames
+are still out of scope — only text and binary messages are sent or
+collected. The desktop app's WebSocket panel treats this same list as a
+saved-messages picker for its interactive composer (see
+[the GUI reference](./gui.md)) rather than something it sends in one
+batch — saving or updating a message from the composer just
 appends-or-replaces an entry here, so the on-disk shape stays exactly this
-plain one-message-per-line list either way.
+plain one-message-per-line list either way. A received binary frame in the
+live transcript can be saved to disk from there.
 
 ## Server-Sent Events requests
 

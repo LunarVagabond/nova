@@ -63,6 +63,9 @@ pub enum NovaError {
     #[error("failed to execute request: {message}")]
     RequestExecution { message: String },
 
+    #[error("GraphQL schema introspection failed: {message}")]
+    GraphQlIntrospection { message: String },
+
     #[error(
         "multipart field {field:?} references a file at {path} that doesn't exist \
          (looked relative to the project root)"
@@ -108,6 +111,12 @@ pub enum NovaError {
 
     #[error("failed to parse Postman collection: {message}")]
     PostmanParse { message: String },
+
+    #[error("failed to parse data file at {path}: {message}")]
+    DataFileParse { path: PathBuf, message: String },
+
+    #[error("unsupported data file extension at {0} (expected .csv or .json)")]
+    UnsupportedDataFileFormat(PathBuf),
 
     #[error("invalid collection name {name:?}: {reason}")]
     InvalidCollectionName { name: String, reason: String },
