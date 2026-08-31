@@ -81,6 +81,33 @@ pub enum AuthScheme {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scope: Option<String>,
     },
+
+    /// OAuth2 authorization-code grant (RFC 6749 §4.1). Also needs I/O —
+    /// and more of it than client credentials: a human has to authorize in
+    /// a real browser at `auth_url` first, which is why obtaining the
+    /// token isn't part of [`crate::Session::execute`] at all. Instead a
+    /// caller (the GUI's "Get New Access Token" button, or a CLI command)
+    /// drives [`crate::begin_oauth2_authorization_code`] up front, and the
+    /// resulting token lands in the same cache
+    /// [`crate::Session::execute`] already consults for
+    /// [`AuthScheme::Oauth2ClientCredentials`] — this variant only ever
+    /// reads that cache, never populates it itself.
+    Oauth2AuthorizationCode {
+        auth_url: String,
+        token_url: String,
+        client_id: String,
+        client_secret: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<String>,
+    },
+
+    /// HTTP Digest authentication (RFC 7616), MD5 only. Needs a
+    /// `WWW-Authenticate` challenge from the server before a response can
+    /// be computed, so — like the OAuth2 variants — this can't be resolved
+    /// without I/O: [`crate::Session::execute`] sends the request once
+    /// unauthenticated, and on a `401` carrying a `Digest` challenge,
+    /// computes the response and resends.
+    Digest { username: String, password: String },
 }
 
 /// What applying a resolved [`AuthScheme`] contributes to the outgoing
@@ -105,6 +132,8 @@ impl AuthScheme {
             AuthScheme::Basic { .. } => "basic",
             AuthScheme::ApiKey { .. } => "api_key",
             AuthScheme::Oauth2ClientCredentials { .. } => "oauth2_client_credentials",
+            AuthScheme::Oauth2AuthorizationCode { .. } => "oauth2_authorization_code",
+            AuthScheme::Digest { .. } => "digest",
         }
     }
 
@@ -139,6 +168,23 @@ impl AuthScheme {
                 client_id: sub(client_id)?,
                 client_secret: sub(client_secret)?,
                 scope: scope.as_deref().map(sub).transpose()?,
+            },
+            AuthScheme::Oauth2AuthorizationCode {
+                auth_url,
+                token_url,
+                client_id,
+                client_secret,
+                scope,
+            } => AuthScheme::Oauth2AuthorizationCode {
+                auth_url: sub(auth_url)?,
+                token_url: sub(token_url)?,
+                client_id: sub(client_id)?,
+                client_secret: sub(client_secret)?,
+                scope: scope.as_deref().map(sub).transpose()?,
+            },
+            AuthScheme::Digest { username, password } => AuthScheme::Digest {
+                username: sub(username)?,
+                password: sub(password)?,
             },
         })
     }
@@ -175,7 +221,9 @@ impl AuthScheme {
                 name: name.clone(),
                 value: value.clone(),
             }),
-            AuthScheme::Oauth2ClientCredentials { .. } => AppliedAuth::Deferred,
+            AuthScheme::Oauth2ClientCredentials { .. }
+            | AuthScheme::Oauth2AuthorizationCode { .. }
+            | AuthScheme::Digest { .. } => AppliedAuth::Deferred,
         }
     }
 
@@ -215,6 +263,25 @@ impl AuthScheme {
                 if let Some(scope) = scope {
                     out.push_str(&format!("scope: {scope}\n"));
                 }
+            }
+            AuthScheme::Oauth2AuthorizationCode {
+                auth_url,
+                token_url,
+                client_id,
+                client_secret,
+                scope,
+            } => {
+                out.push_str(&format!("auth_url: {auth_url}\n"));
+                out.push_str(&format!("token_url: {token_url}\n"));
+                out.push_str(&format!("client_id: {client_id}\n"));
+                out.push_str(&format!("client_secret: {client_secret}\n"));
+                if let Some(scope) = scope {
+                    out.push_str(&format!("scope: {scope}\n"));
+                }
+            }
+            AuthScheme::Digest { username, password } => {
+                out.push_str(&format!("username: {username}\n"));
+                out.push_str(&format!("password: {password}\n"));
             }
         }
 
@@ -291,9 +358,23 @@ pub(crate) fn parse_auth_section(lines: &[&str]) -> Result<Option<AuthScheme>, S
                 .filter(|value| !value.is_empty())
                 .map(str::to_string),
         },
+        "oauth2_authorization_code" => AuthScheme::Oauth2AuthorizationCode {
+            auth_url: required("auth_url")?,
+            token_url: required("token_url")?,
+            client_id: required("client_id")?,
+            client_secret: required("client_secret")?,
+            scope: field("scope")
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+        },
+        "digest" => AuthScheme::Digest {
+            username: required("username")?,
+            password: required("password")?,
+        },
         other => {
             return Err(format!(
-                "unknown [auth] type {other:?} (expected one of: bearer, basic, api_key, oauth2_client_credentials)"
+                "unknown [auth] type {other:?} (expected one of: bearer, basic, api_key, \
+                 oauth2_client_credentials, oauth2_authorization_code, digest)"
             ))
         }
     }))
@@ -355,13 +436,46 @@ pub(crate) fn fetch_client_credentials_token(
         form.push(("scope", scope));
     }
 
+    post_token_request(token_url, &form)
+}
+
+/// Exchange an authorization code for an access token at `token_url`,
+/// using the OAuth2 authorization-code grant (RFC 6749 §4.1.3): a
+/// form-urlencoded POST carrying `grant_type=authorization_code`, the
+/// `code` a local loopback listener caught off the browser redirect (see
+/// [`crate::begin_oauth2_authorization_code`]), the same `redirect_uri`
+/// that was sent to the authorization endpoint, and the client
+/// credentials.
+pub(crate) fn fetch_authorization_code_token(
+    token_url: &str,
+    client_id: &str,
+    client_secret: &str,
+    code: &str,
+    redirect_uri: &str,
+) -> NovaResult<AccessToken> {
+    let form: Vec<(&str, &str)> = vec![
+        ("grant_type", "authorization_code"),
+        ("code", code),
+        ("redirect_uri", redirect_uri),
+        ("client_id", client_id),
+        ("client_secret", client_secret),
+    ];
+
+    post_token_request(token_url, &form)
+}
+
+/// Shared token-endpoint plumbing behind both
+/// [`fetch_client_credentials_token`] and [`fetch_authorization_code_token`]
+/// — the two grants differ only in which fields go into the form, not in
+/// how the response is sent, read, or parsed.
+fn post_token_request(token_url: &str, form: &[(&str, &str)]) -> NovaResult<AccessToken> {
     let failure = |message: String| NovaError::OAuth2TokenRequest {
         token_url: token_url.to_string(),
         message,
     };
 
     let agent = ureq::Agent::new();
-    let response = match agent.post(token_url).send_form(&form) {
+    let response = match agent.post(token_url).send_form(form) {
         Ok(response) => response,
         Err(ureq::Error::Status(status, response)) => {
             // The body of a token-endpoint failure carries the actual
@@ -399,6 +513,158 @@ pub(crate) fn fetch_client_credentials_token(
         access_token,
         expires_at,
     })
+}
+
+/// One `WWW-Authenticate: Digest ...` challenge (RFC 7616 §3.3), parsed
+/// out of the header value a `401` response comes back with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DigestChallenge {
+    pub realm: String,
+    pub nonce: String,
+    /// `auth` when the server offered it (preferred over `auth-int`, which
+    /// this doesn't support since it requires hashing the request body);
+    /// `None` when the server declared no `qop` at all, which falls back
+    /// to the simpler RFC 2617 response calculation.
+    pub qop: Option<String>,
+    pub opaque: Option<String>,
+    /// Defaults to `"MD5"` when the challenge doesn't declare one —
+    /// [`build_digest_header`] only implements plain `MD5`, so anything
+    /// else (`MD5-sess`, `SHA-256`, `SHA-512-256`) is reported as an error
+    /// at that point rather than here.
+    pub algorithm: String,
+}
+
+/// Split a `WWW-Authenticate` header's comma-separated `key=value` (or
+/// `key="value"`) pairs, respecting quoted commas (a `realm` or `opaque`
+/// value never contains one in practice, but this doesn't assume that).
+fn split_digest_params(input: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+
+    for c in input.chars() {
+        match c {
+            '"' => {
+                in_quotes = !in_quotes;
+                current.push(c);
+            }
+            ',' if !in_quotes => {
+                parts.push(std::mem::take(&mut current));
+            }
+            _ => current.push(c),
+        }
+    }
+    if !current.trim().is_empty() {
+        parts.push(current);
+    }
+    parts
+}
+
+/// Parse a `WWW-Authenticate` header's value into a [`DigestChallenge`],
+/// `None` if it isn't a `Digest` challenge (or is missing the fields a
+/// response can't be computed without).
+pub(crate) fn parse_digest_challenge(header_value: &str) -> Option<DigestChallenge> {
+    let rest = header_value.trim();
+    let rest = rest
+        .strip_prefix("Digest")
+        .or_else(|| rest.strip_prefix("digest"))?
+        .trim();
+
+    let mut fields: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for part in split_digest_params(rest) {
+        if let Some((key, value)) = part.split_once('=') {
+            let key = key.trim().to_ascii_lowercase();
+            let value = value.trim().trim_matches('"').to_string();
+            fields.insert(key, value);
+        }
+    }
+
+    let realm = fields.get("realm")?.clone();
+    let nonce = fields.get("nonce")?.clone();
+    let qop = fields.get("qop").map(|qop| {
+        if qop.split(',').any(|option| option.trim() == "auth") {
+            "auth".to_string()
+        } else {
+            qop.split(',').next().unwrap_or("auth").trim().to_string()
+        }
+    });
+    let opaque = fields.get("opaque").cloned();
+    let algorithm = fields
+        .get("algorithm")
+        .cloned()
+        .unwrap_or_else(|| "MD5".to_string());
+
+    Some(DigestChallenge {
+        realm,
+        nonce,
+        qop,
+        opaque,
+        algorithm,
+    })
+}
+
+fn md5_hex(input: &str) -> String {
+    format!("{:x}", md5::compute(input.as_bytes()))
+}
+
+/// A fresh client nonce for one digest exchange — RFC 7616 doesn't mandate
+/// a particular shape, just that it varies per request when `qop` is in
+/// play, which this achieves with a random 64-bit value hex-encoded.
+fn generate_cnonce() -> String {
+    format!("{:016x}", rand::random::<u64>())
+}
+
+/// Compute the `Authorization: Digest ...` header RFC 7616 says answers
+/// `challenge` for a `method`/`uri` request authenticating as
+/// `username`/`password`.
+///
+/// Only the `MD5` algorithm is implemented (the overwhelmingly common
+/// case, and what every RFC 2617-era server speaks) — a challenge naming
+/// `MD5-sess`, `SHA-256`, or `SHA-512-256` is reported as a typed error
+/// instead of silently producing a response the server will reject.
+pub(crate) fn build_digest_header(
+    method: &str,
+    uri: &str,
+    challenge: &DigestChallenge,
+    username: &str,
+    password: &str,
+) -> NovaResult<String> {
+    if !challenge.algorithm.eq_ignore_ascii_case("MD5") {
+        return Err(NovaError::DigestAuth {
+            message: format!(
+                "unsupported digest algorithm {:?} (only MD5 is supported)",
+                challenge.algorithm
+            ),
+        });
+    }
+
+    let ha1 = md5_hex(&format!("{username}:{}:{password}", challenge.realm));
+    let ha2 = md5_hex(&format!("{method}:{uri}"));
+
+    let mut header = format!(
+        "Digest username=\"{username}\", realm=\"{}\", nonce=\"{}\", uri=\"{uri}\"",
+        challenge.realm, challenge.nonce
+    );
+
+    let response = if let Some(qop) = &challenge.qop {
+        let cnonce = generate_cnonce();
+        let nc = "00000001";
+        let response = md5_hex(&format!(
+            "{ha1}:{}:{nc}:{cnonce}:{qop}:{ha2}",
+            challenge.nonce
+        ));
+        header.push_str(&format!(", qop={qop}, nc={nc}, cnonce=\"{cnonce}\""));
+        response
+    } else {
+        md5_hex(&format!("{ha1}:{}:{ha2}", challenge.nonce))
+    };
+    header.push_str(&format!(", response=\"{response}\""));
+
+    if let Some(opaque) = &challenge.opaque {
+        header.push_str(&format!(", opaque=\"{opaque}\""));
+    }
+
+    Ok(header)
 }
 
 /// Base64-encode a friendly `Authorization: Basic {{username}}:{{password}}`
@@ -592,10 +858,11 @@ mod tests {
 
     #[test]
     fn an_unknown_type_is_an_error_naming_the_valid_ones() {
-        let lines = vec!["type: digest"];
+        let lines = vec!["type: hawk"];
         let err = parse_auth_section(&lines).unwrap_err();
-        assert!(err.contains("digest"), "unexpected error message: {err}");
+        assert!(err.contains("hawk"), "unexpected error message: {err}");
         assert!(err.contains("bearer"), "unexpected error message: {err}");
+        assert!(err.contains("digest"), "unexpected error message: {err}");
     }
 
     #[test]
@@ -737,6 +1004,24 @@ mod tests {
                 client_secret: "{{client_secret}}".to_string(),
                 scope: None,
             },
+            AuthScheme::Oauth2AuthorizationCode {
+                auth_url: "{{auth_url}}".to_string(),
+                token_url: "{{token_url}}".to_string(),
+                client_id: "{{client_id}}".to_string(),
+                client_secret: "{{client_secret}}".to_string(),
+                scope: Some("read write".to_string()),
+            },
+            AuthScheme::Oauth2AuthorizationCode {
+                auth_url: "{{auth_url}}".to_string(),
+                token_url: "{{token_url}}".to_string(),
+                client_id: "{{client_id}}".to_string(),
+                client_secret: "{{client_secret}}".to_string(),
+                scope: None,
+            },
+            AuthScheme::Digest {
+                username: "{{username}}".to_string(),
+                password: "{{password}}".to_string(),
+            },
         ];
 
         for scheme in schemes {
@@ -766,5 +1051,144 @@ mod tests {
             expires_at: Instant::now().checked_sub(Duration::from_secs(1)),
         };
         assert!(!token.is_fresh());
+    }
+
+    #[test]
+    fn parses_a_digest_challenge_with_qop() {
+        let header = r#"Digest realm="testrealm@host.com", qop="auth,auth-int", nonce="dcd98b7102dd2f0e8b11d0f600bfb0c093", opaque="5ccc069c403ebaf9f0171e9517f40e41""#;
+        let challenge = parse_digest_challenge(header).unwrap();
+        assert_eq!(challenge.realm, "testrealm@host.com");
+        assert_eq!(challenge.nonce, "dcd98b7102dd2f0e8b11d0f600bfb0c093");
+        assert_eq!(challenge.qop.as_deref(), Some("auth"));
+        assert_eq!(
+            challenge.opaque.as_deref(),
+            Some("5ccc069c403ebaf9f0171e9517f40e41")
+        );
+        assert_eq!(challenge.algorithm, "MD5");
+    }
+
+    #[test]
+    fn parses_a_digest_challenge_with_no_qop_or_opaque() {
+        let header = r#"Digest realm="testrealm@host.com", nonce="abc123""#;
+        let challenge = parse_digest_challenge(header).unwrap();
+        assert_eq!(challenge.qop, None);
+        assert_eq!(challenge.opaque, None);
+    }
+
+    #[test]
+    fn non_digest_challenges_are_not_parsed() {
+        assert_eq!(parse_digest_challenge("Basic realm=\"x\""), None);
+    }
+
+    // Worked example straight out of RFC 2617 §3.5.
+    #[test]
+    fn builds_the_rfc_2617_worked_example_digest_response() {
+        let challenge = DigestChallenge {
+            realm: "testrealm@host.com".to_string(),
+            nonce: "dcd98b7102dd2f0e8b11d0f600bfb0c093".to_string(),
+            qop: Some("auth".to_string()),
+            opaque: Some("5ccc069c403ebaf9f0171e9517f40e41".to_string()),
+            algorithm: "MD5".to_string(),
+        };
+
+        // RFC 2617's example fixes cnonce=0a4f113b and nc=00000001, which
+        // this implementation doesn't let a caller pin — so this only
+        // checks HA1/HA2 indirectly by recomputing the expected response
+        // with the same fixed cnonce/nc the RFC uses, rather than calling
+        // `build_digest_header` (which generates its own random cnonce).
+        let ha1 = md5_hex("Mufasa:testrealm@host.com:Circle Of Life");
+        let ha2 = md5_hex("GET:/dir/index.html");
+        let expected_response = md5_hex(&format!(
+            "{ha1}:{}:00000001:0a4f113b:{}:{ha2}",
+            challenge.nonce,
+            challenge.qop.as_deref().unwrap()
+        ));
+        assert_eq!(expected_response, "6629fae49393a05397450978507c4ef1");
+    }
+
+    #[test]
+    fn build_digest_header_produces_a_verifiable_response() {
+        let challenge = DigestChallenge {
+            realm: "testrealm@host.com".to_string(),
+            nonce: "dcd98b7102dd2f0e8b11d0f600bfb0c093".to_string(),
+            qop: Some("auth".to_string()),
+            opaque: Some("5ccc069c403ebaf9f0171e9517f40e41".to_string()),
+            algorithm: "MD5".to_string(),
+        };
+
+        let header = build_digest_header(
+            "GET",
+            "/dir/index.html",
+            &challenge,
+            "Mufasa",
+            "Circle Of Life",
+        )
+        .unwrap();
+
+        assert!(header.starts_with("Digest username=\"Mufasa\""));
+        assert!(header.contains("realm=\"testrealm@host.com\""));
+        assert!(header.contains("nonce=\"dcd98b7102dd2f0e8b11d0f600bfb0c093\""));
+        assert!(header.contains("uri=\"/dir/index.html\""));
+        assert!(header.contains("qop=auth"));
+        assert!(header.contains("nc=00000001"));
+        assert!(header.contains("opaque=\"5ccc069c403ebaf9f0171e9517f40e41\""));
+
+        // Extract the cnonce this call generated and confirm the response
+        // it computed matches recomputing it independently — this proves
+        // the function's math is right without hardcoding a cnonce.
+        let cnonce = header
+            .split("cnonce=\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .unwrap();
+        let ha1 = md5_hex("Mufasa:testrealm@host.com:Circle Of Life");
+        let ha2 = md5_hex("GET:/dir/index.html");
+        let expected_response = md5_hex(&format!(
+            "{ha1}:{}:00000001:{cnonce}:auth:{ha2}",
+            challenge.nonce
+        ));
+        assert!(header.contains(&format!("response=\"{expected_response}\"")));
+    }
+
+    #[test]
+    fn build_digest_header_without_qop_uses_the_rfc_2617_fallback() {
+        let challenge = DigestChallenge {
+            realm: "testrealm@host.com".to_string(),
+            nonce: "dcd98b7102dd2f0e8b11d0f600bfb0c093".to_string(),
+            qop: None,
+            opaque: None,
+            algorithm: "MD5".to_string(),
+        };
+
+        let header = build_digest_header(
+            "GET",
+            "/dir/index.html",
+            &challenge,
+            "Mufasa",
+            "Circle Of Life",
+        )
+        .unwrap();
+
+        assert!(!header.contains("qop="));
+        assert!(!header.contains("cnonce="));
+
+        let ha1 = md5_hex("Mufasa:testrealm@host.com:Circle Of Life");
+        let ha2 = md5_hex("GET:/dir/index.html");
+        let expected_response = md5_hex(&format!("{ha1}:{}:{ha2}", challenge.nonce));
+        assert!(header.contains(&format!("response=\"{expected_response}\"")));
+    }
+
+    #[test]
+    fn an_unsupported_digest_algorithm_is_a_typed_error() {
+        let challenge = DigestChallenge {
+            realm: "testrealm@host.com".to_string(),
+            nonce: "dcd98b7102dd2f0e8b11d0f600bfb0c093".to_string(),
+            qop: Some("auth".to_string()),
+            opaque: None,
+            algorithm: "SHA-256".to_string(),
+        };
+
+        let result = build_digest_header("GET", "/", &challenge, "user", "pass");
+        assert!(matches!(result, Err(NovaError::DigestAuth { .. })));
     }
 }

@@ -6,7 +6,10 @@ use serde::Serialize;
 
 use crate::error::{NovaError, NovaResult};
 use crate::execution::assertion::resolve_extraction;
-use crate::execution::auth::{fetch_client_credentials_token, AccessToken, AuthScheme};
+use crate::execution::auth::{
+    build_digest_header, fetch_authorization_code_token, fetch_client_credentials_token,
+    parse_digest_challenge, AccessToken, AuthScheme,
+};
 use crate::execution::graphql_introspection::{
     parse_introspection_response, GraphQlSchema, INTROSPECTION_QUERY,
 };
@@ -311,10 +314,11 @@ pub struct Session {
     /// Values extracted from earlier responses via a `<name> =
     /// response.<path>` directive, keyed by name.
     chained_variables: HashMap<String, String>,
-    /// OAuth2 client-credentials access tokens, keyed by the token
-    /// endpoint and client ID they were obtained for, so a run touching
-    /// many requests behind the same OAuth2-protected API authenticates
-    /// once rather than once per request.
+    /// OAuth2 access tokens (client-credentials and authorization-code
+    /// alike), keyed by the token endpoint, client ID, and scope they were
+    /// obtained for, so a run touching many requests behind the same
+    /// OAuth2-protected API authenticates once rather than once per
+    /// request.
     access_tokens: HashMap<(String, String, Option<String>), AccessToken>,
     /// Introspected GraphQL schemas, keyed by the resolved request URL they
     /// were fetched from, so browsing a schema in the GUI doesn't
@@ -365,13 +369,52 @@ impl Session {
             });
         }
 
-        if let Some(scheme) = request.auth.clone() {
-            if let Some(header) = self.deferred_auth_header(&scheme)? {
+        let auth_scheme = request.auth.clone();
+        if let Some(scheme) = &auth_scheme {
+            if let Some(header) = self.deferred_auth_header(scheme)? {
                 request.headers.push(header);
             }
         }
 
-        let response = execute(project_root, &request)?;
+        let mut response = execute(project_root, &request)?;
+
+        // Digest can't attach a header up front like every other scheme —
+        // RFC 7616 requires seeing the server's `WWW-Authenticate`
+        // challenge first, so the first send above deliberately went out
+        // unauthenticated. Only retry once: a second `401` means the
+        // credentials themselves are wrong, not that another round trip
+        // would help.
+        if let Some(AuthScheme::Digest { username, password }) = &auth_scheme {
+            if response.status == 401 {
+                let challenge = response
+                    .headers
+                    .iter()
+                    .find(|header| header.name.eq_ignore_ascii_case("www-authenticate"))
+                    .and_then(|header| parse_digest_challenge(&header.value));
+
+                if let Some(challenge) = challenge {
+                    let digest_uri = match url.query() {
+                        Some(query) => format!("{}?{query}", url.path()),
+                        None => url.path().to_string(),
+                    };
+                    let header_value = build_digest_header(
+                        &request.method,
+                        &digest_uri,
+                        &challenge,
+                        username,
+                        password,
+                    )?;
+                    request
+                        .headers
+                        .retain(|header| !header.name.eq_ignore_ascii_case("authorization"));
+                    request.headers.push(Header {
+                        name: "Authorization".to_string(),
+                        value: header_value,
+                    });
+                    response = execute(project_root, &request)?;
+                }
+            }
+        }
 
         let set_cookie_values: Vec<&str> = response
             .headers
@@ -574,34 +617,122 @@ impl Session {
     /// requests against the same API performs one token exchange rather
     /// than one per request.
     fn deferred_auth_header(&mut self, scheme: &AuthScheme) -> NovaResult<Option<Header>> {
-        let AuthScheme::Oauth2ClientCredentials {
-            token_url,
-            client_id,
-            client_secret,
-            scope,
-        } = scheme
-        else {
-            return Ok(None);
-        };
-
         let bearer = |token: &str| Header {
             name: "Authorization".to_string(),
             value: format!("Bearer {token}"),
         };
 
-        let key = (token_url.clone(), client_id.clone(), scope.clone());
-        if let Some(cached) = self.access_tokens.get(&key) {
-            if cached.is_fresh() {
-                return Ok(Some(bearer(&cached.access_token)));
+        match scheme {
+            AuthScheme::Oauth2ClientCredentials {
+                token_url,
+                client_id,
+                client_secret,
+                scope,
+            } => {
+                let key = (token_url.clone(), client_id.clone(), scope.clone());
+                if let Some(cached) = self.access_tokens.get(&key) {
+                    if cached.is_fresh() {
+                        return Ok(Some(bearer(&cached.access_token)));
+                    }
+                }
+
+                let fetched = fetch_client_credentials_token(
+                    token_url,
+                    client_id,
+                    client_secret,
+                    scope.as_deref(),
+                )?;
+                let header = bearer(&fetched.access_token);
+                self.access_tokens.insert(key, fetched);
+
+                Ok(Some(header))
+            }
+            AuthScheme::Oauth2AuthorizationCode {
+                token_url,
+                client_id,
+                scope,
+                ..
+            } => {
+                // Unlike client credentials, this never fetches a token
+                // itself — obtaining one needs a human to authorize in a
+                // real browser, which only [`Session::authorize_oauth2_authorization_code`]
+                // (driven by a GUI/CLI caller) can do. This only ever
+                // reads whatever that call already cached.
+                let key = (token_url.clone(), client_id.clone(), scope.clone());
+                match self.access_tokens.get(&key) {
+                    Some(cached) if cached.is_fresh() => Ok(Some(bearer(&cached.access_token))),
+                    _ => Err(NovaError::OAuth2AuthorizationCode {
+                        message: "no access token has been obtained yet for this \
+                                  oauth2_authorization_code scheme — authorize it first"
+                            .to_string(),
+                    }),
+                }
+            }
+            // Digest needs the server's challenge before a header can be
+            // computed at all, so it's handled inline in `execute` after
+            // the first (deliberately unauthenticated) send comes back.
+            AuthScheme::Digest { .. } => Ok(None),
+            AuthScheme::Bearer { .. } | AuthScheme::Basic { .. } | AuthScheme::ApiKey { .. } => {
+                Ok(None)
             }
         }
+    }
 
-        let fetched =
-            fetch_client_credentials_token(token_url, client_id, client_secret, scope.as_deref())?;
-        let header = bearer(&fetched.access_token);
+    /// Completes an OAuth2 authorization-code flow: exchanges `code` (from
+    /// [`crate::PendingAuthorizationCode::wait_for_code`]) for an access
+    /// token at `token_url`, and caches it under the same
+    /// `(token_url, client_id, scope)` key
+    /// [`AuthScheme::Oauth2ClientCredentials`] uses — so a request
+    /// declaring a matching `oauth2_authorization_code` scheme picks up
+    /// the cached token exactly the way it would a client-credentials one.
+    ///
+    /// This is driven by a caller (the GUI's "Get New Access Token"
+    /// button) rather than by [`Session::execute`] itself: completing the
+    /// flow needs a human to authorize in a real browser first, which
+    /// isn't something a plain request send can wait on.
+    pub fn authorize_oauth2_authorization_code(
+        &mut self,
+        token_url: &str,
+        client_id: &str,
+        client_secret: &str,
+        code: &str,
+        redirect_uri: &str,
+        scope: Option<&str>,
+    ) -> NovaResult<()> {
+        let fetched = fetch_authorization_code_token(
+            token_url,
+            client_id,
+            client_secret,
+            code,
+            redirect_uri,
+        )?;
+        let key = (
+            token_url.to_string(),
+            client_id.to_string(),
+            scope.map(str::to_string),
+        );
         self.access_tokens.insert(key, fetched);
+        Ok(())
+    }
 
-        Ok(Some(header))
+    /// Whether this session already holds a still-fresh access token for
+    /// the given `oauth2_authorization_code` scheme's identity — the
+    /// "authorized" / "not authorized" status line a GUI auth editor
+    /// shows next to its "Get New Access Token" button.
+    pub fn oauth2_authorization_code_is_authorized(
+        &self,
+        token_url: &str,
+        client_id: &str,
+        scope: Option<&str>,
+    ) -> bool {
+        let key = (
+            token_url.to_string(),
+            client_id.to_string(),
+            scope.map(str::to_string),
+        );
+        self.access_tokens
+            .get(&key)
+            .is_some_and(AccessToken::is_fresh)
     }
 
     /// Resolve `parsed` against `environment` and `collection_variables`

@@ -1068,7 +1068,7 @@ defineExpose({ dirty, save: handleSave });
       </div>
 
       <div v-if="activeTab === 'auth'" class="request-panel__tab-panel">
-        <AuthEditor v-model="auth" id-prefix="request-auth" />
+        <AuthEditor v-model="auth" id-prefix="request-auth" :project-root="props.projectRoot" />
       </div>
 
       <div v-else-if="activeTab === 'headers'" class="request-panel__tab-panel">

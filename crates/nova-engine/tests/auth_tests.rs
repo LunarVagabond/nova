@@ -872,3 +872,266 @@ fn an_unreachable_token_endpoint_is_a_typed_error() {
         "unexpected error: {err:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Digest authentication (RFC 7616, MD5 only). A request declaring
+// `type: digest` goes out once with no `Authorization` header at all; only
+// on a `401` carrying a `WWW-Authenticate: Digest ...` challenge does
+// `Session::execute` compute a response and retry, exactly once.
+//
+// `MockServer` above only ever answers a fixed status/body with no custom
+// headers, so digest needs its own bespoke server that can send
+// `WWW-Authenticate` and inspect whether the retry actually carried a
+// computed `Authorization` header.
+// ---------------------------------------------------------------------------
+
+/// A mock server for exercising the digest challenge/response dance.
+/// `accepts_authorization` controls whether a request carrying an
+/// `Authorization` header is ever accepted — `false` simulates credentials
+/// the server keeps rejecting, so a test can confirm the retry happens
+/// exactly once rather than looping.
+struct DigestServer {
+    url: String,
+    received: Arc<Mutex<Vec<Received>>>,
+}
+
+impl DigestServer {
+    fn start(accepts_authorization: bool) -> DigestServer {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", server.server_addr());
+        let received = Arc::new(Mutex::new(Vec::new()));
+
+        let thread_received = Arc::clone(&received);
+        thread::spawn(move || {
+            for request in server.incoming_requests() {
+                let headers: Vec<(String, String)> = request
+                    .headers()
+                    .iter()
+                    .map(|h| {
+                        (
+                            h.field.as_str().as_str().to_string(),
+                            h.value.as_str().to_string(),
+                        )
+                    })
+                    .collect();
+                let has_authorization = headers
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case("authorization"));
+
+                thread_received.lock().unwrap().push(Received {
+                    url: request.url().to_string(),
+                    headers,
+                    body: String::new(),
+                });
+
+                if accepts_authorization && has_authorization {
+                    let _ = request
+                        .respond(tiny_http::Response::from_string("ok").with_status_code(200));
+                } else {
+                    let challenge = tiny_http::Header::from_bytes(
+                        &b"WWW-Authenticate"[..],
+                        &b"Digest realm=\"nova\", qop=\"auth\", nonce=\"abc123nonce\", opaque=\"xyzopaque\""[..],
+                    )
+                    .unwrap();
+                    let _ = request.respond(
+                        tiny_http::Response::from_string("unauthorized")
+                            .with_status_code(401)
+                            .with_header(challenge),
+                    );
+                }
+            }
+        });
+
+        DigestServer { url, received }
+    }
+
+    fn count(&self) -> usize {
+        self.received.lock().unwrap().len()
+    }
+
+    fn nth(&self, index: usize) -> Received {
+        self.received.lock().unwrap()[index].clone()
+    }
+}
+
+fn digest_request(name: &str, url: &str) -> TempRequest {
+    TempRequest::new(
+        name,
+        &format!(
+            "[request]\nmethod: GET\nurl: {url}/secret\n\n[auth]\ntype: digest\n\
+             username: {{{{username}}}}\npassword: {{{{password}}}}\n"
+        ),
+    )
+}
+
+#[test]
+fn session_execute_retries_once_with_a_computed_digest_header_after_a_401_challenge() {
+    let server = DigestServer::start(true);
+    let request = digest_request("digest-success", &server.url);
+    let env = env_with(&[("username", "Mufasa"), ("password", "Circle Of Life")]);
+
+    let parsed = request.0.parse().unwrap();
+    let (_, response) = Session::new()
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
+
+    assert_eq!(response.status, 200);
+    assert_eq!(
+        server.count(),
+        2,
+        "expected exactly one unauthenticated attempt and one retry"
+    );
+    assert!(
+        server.nth(0).header("Authorization").is_none(),
+        "the first attempt must not guess at a header before seeing the challenge"
+    );
+
+    let auth_header = server.nth(1).header("Authorization").unwrap().to_string();
+    assert!(auth_header.starts_with("Digest username=\"Mufasa\""));
+    assert!(auth_header.contains("realm=\"nova\""));
+    assert!(auth_header.contains("nonce=\"abc123nonce\""));
+    assert!(auth_header.contains("uri=\"/secret\""));
+    assert!(auth_header.contains("qop=auth"));
+    assert!(auth_header.contains("opaque=\"xyzopaque\""));
+}
+
+#[test]
+fn a_still_rejected_digest_retry_is_not_retried_again() {
+    let server = DigestServer::start(false);
+    let request = digest_request("digest-rejected", &server.url);
+    let env = env_with(&[("username", "wrong"), ("password", "wrong")]);
+
+    let parsed = request.0.parse().unwrap();
+    let (_, response) = Session::new()
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
+
+    assert_eq!(response.status, 401);
+    assert_eq!(
+        server.count(),
+        2,
+        "a second 401 must not trigger a third attempt"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// OAuth2 authorization code (RFC 6749 §4.1). There's no automated way to
+// drive an actual browser through a login page, so these tests cover what
+// the engine is actually responsible for: `resolve()` leaves the scheme
+// untouched, a request declaring it fails clearly when no token has been
+// obtained yet, and once `Session::authorize_oauth2_authorization_code` has
+// cached one (standing in for what the loopback+exchange flow would have
+// produced), it's picked up and reused exactly like a client-credentials
+// token. The loopback listener itself is covered by
+// `oauth2_authorization_code_tests.rs`.
+// ---------------------------------------------------------------------------
+
+fn auth_code_request(name: &str) -> TempRequest {
+    TempRequest::new(
+        name,
+        "[request]\nmethod: GET\nurl: {{base_url}}/me\n\n[auth]\ntype: oauth2_authorization_code\n\
+         auth_url: {{auth_url}}\ntoken_url: {{token_url}}\nclient_id: {{client_id}}\n\
+         client_secret: {{client_secret}}\n",
+    )
+}
+
+fn auth_code_env(api: &MockServer, tokens: &MockServer) -> Environment {
+    env_with(&[
+        ("base_url", &api.url),
+        ("auth_url", "https://example.com/oauth/authorize"),
+        ("token_url", &format!("{}/oauth/token", tokens.url)),
+        ("client_id", "nova-client"),
+        ("client_secret", "super-secret"),
+    ])
+}
+
+#[test]
+fn resolve_leaves_oauth2_authorization_code_unapplied_but_substituted() {
+    let api = MockServer::ok();
+    let tokens = mock_token_endpoint(Some(3600));
+    let request = auth_code_request("auth-code-resolve");
+    let env = auth_code_env(&api, &tokens);
+
+    let resolved = request.0.parse().unwrap().resolve(&env).unwrap();
+
+    assert_eq!(resolved.header("Authorization"), None);
+    assert_eq!(
+        resolved.auth,
+        Some(AuthScheme::Oauth2AuthorizationCode {
+            auth_url: "https://example.com/oauth/authorize".to_string(),
+            token_url: format!("{}/oauth/token", tokens.url),
+            client_id: "nova-client".to_string(),
+            client_secret: "super-secret".to_string(),
+            scope: None,
+        })
+    );
+}
+
+#[test]
+fn a_request_fails_clearly_when_no_authorization_code_token_has_been_obtained_yet() {
+    let api = MockServer::ok();
+    let tokens = mock_token_endpoint(Some(3600));
+    let request = auth_code_request("auth-code-unauthorized");
+    let env = auth_code_env(&api, &tokens);
+
+    let parsed = request.0.parse().unwrap();
+    let err = Session::new()
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap_err();
+
+    assert!(
+        matches!(err, NovaError::OAuth2AuthorizationCode { .. }),
+        "unexpected error: {err:?}"
+    );
+    assert_eq!(
+        api.count(),
+        0,
+        "the real request should never go out without a token"
+    );
+}
+
+#[test]
+fn a_cached_authorization_code_token_is_sent_as_a_bearer_header() {
+    let api = MockServer::ok();
+    let tokens = mock_token_endpoint(Some(3600));
+    let request = auth_code_request("auth-code-cached");
+    let env = auth_code_env(&api, &tokens);
+    let token_url = format!("{}/oauth/token", tokens.url);
+
+    let mut session = Session::new();
+    session
+        .authorize_oauth2_authorization_code(
+            &token_url,
+            "nova-client",
+            "super-secret",
+            "the-auth-code",
+            "http://127.0.0.1:0/callback",
+            None,
+        )
+        .unwrap();
+
+    assert_eq!(tokens.count(), 1);
+    let token_request = tokens.nth(0);
+    let form: Vec<(String, String)> = url::form_urlencoded::parse(token_request.body.as_bytes())
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    assert!(form.contains(&("grant_type".to_string(), "authorization_code".to_string())));
+    assert!(form.contains(&("code".to_string(), "the-auth-code".to_string())));
+    assert!(form.contains(&(
+        "redirect_uri".to_string(),
+        "http://127.0.0.1:0/callback".to_string()
+    )));
+
+    assert!(!session.oauth2_authorization_code_is_authorized("dummy", "dummy", None));
+    assert!(session.oauth2_authorization_code_is_authorized(&token_url, "nova-client", None));
+
+    let parsed = request.0.parse().unwrap();
+    session
+        .resolve_and_execute(&project_root(), &parsed, &env)
+        .unwrap();
+
+    assert_eq!(api.count(), 1);
+    assert_eq!(api.nth(0).header("Authorization"), Some("Bearer token-1"));
+    // The cached token is reused rather than exchanged again.
+    assert_eq!(tokens.count(), 1);
+}

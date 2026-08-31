@@ -224,6 +224,51 @@ export function updateCookie(
 }
 
 /**
+ * Whether the project at `path`'s session already holds a still-fresh
+ * OAuth2 authorization-code access token for the given `tokenUrl` +
+ * `clientId` + `scope` — read-only, never starts the flow itself.
+ */
+export function oauth2AuthorizationStatus(
+  path: string,
+  tokenUrl: string,
+  clientId: string,
+  scope: string | null,
+): Promise<boolean> {
+  return invoke<boolean>("oauth2_authorization_status", {
+    path,
+    tokenUrl,
+    clientId,
+    scope,
+  });
+}
+
+/**
+ * Drives the OAuth2 authorization-code flow for the Auth tab's "Get New
+ * Access Token" button: opens `authUrl` in the system browser, waits for
+ * the redirect back to the engine's local listener, and exchanges the
+ * resulting code for an access token cached on the project's session.
+ * Resolves once authorized (or rejects on error/timeout) — the caller
+ * follows up with `oauth2AuthorizationStatus` to refresh its status line.
+ */
+export function oauth2Authorize(
+  path: string,
+  authUrl: string,
+  tokenUrl: string,
+  clientId: string,
+  clientSecret: string,
+  scope: string | null,
+): Promise<void> {
+  return invoke<void>("oauth2_authorize", {
+    path,
+    authUrl,
+    tokenUrl,
+    clientId,
+    clientSecret,
+    scope,
+  });
+}
+
+/**
  * Diffs the most recent send of the `.nova` file at `requestPath` against
  * the send immediately before it in this project's session history — "did
  * this response change since the last time it ran". Resolves to `null`

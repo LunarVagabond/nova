@@ -7,6 +7,12 @@
   color: var(--color-text-muted);
 }
 
+// The OAuth2 authorization-code editor's "Get New Access Token" failure
+// message, in place of the usual muted status line.
+.auth-editor__error {
+  color: var(--color-danger);
+}
+
 // The Body tab's "keep Content-Type in sync" toggle, sitting alongside the
 // body-type selector it governs.
 .request-panel__body-setting {

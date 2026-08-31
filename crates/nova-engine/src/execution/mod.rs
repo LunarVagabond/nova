@@ -23,6 +23,7 @@ pub mod auth;
 pub mod boundary_values;
 pub mod graphql_introspection;
 pub mod http;
+pub mod oauth2_loopback;
 pub mod script;
 pub mod sse;
 pub mod websocket;

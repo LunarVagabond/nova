@@ -35,6 +35,8 @@ pub fn run() {
             commands::delete_cookie,
             commands::clear_cookies,
             commands::update_cookie,
+            commands::oauth2_authorization_status,
+            commands::oauth2_authorize,
             commands::diff_against_previous_run,
             commands::diff_against_example_response,
             commands::read_request,
