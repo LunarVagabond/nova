@@ -175,6 +175,6 @@ defineExpose({ dirty, save: handleSave });
       Applied to every request resolved against this environment, unless the request sets up
       auth of its own.
     </p>
-    <AuthEditor v-model="auth" id-prefix="environment-auth" />
+    <AuthEditor v-model="auth" id-prefix="environment-auth" :project-root="props.projectRoot" />
   </div>
 </template>

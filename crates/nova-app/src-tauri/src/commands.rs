@@ -11,13 +11,14 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use nova_engine::{
-    diff_responses, evaluate, export_request, export_to_spec, generate_project,
-    graphql_body_to_text, multipart_fields_to_body_text, parse_curl, parse_graphql_body,
-    parse_multipart_fields, write_generated_project, AssertionOutcome, AuthScheme, Collection,
-    ComparableResponse, CookieView, Environment, ExportFormat, GitFileStatus, GitStatusCache,
-    GraphQlBody, Header, InitOptions, InitOutcome, Manifest, MultipartField, NovaProject,
-    OpenProjectOutcome, ParsedCurlRequest, ParsedRequest, ParsedWebSocketRequest, RequestDraft,
-    RequestFile, Response, ResponseDiff, Session, WebSocketDraft, WebSocketExchange,
+    begin_oauth2_authorization_code, diff_responses, evaluate, export_request, export_to_spec,
+    generate_project, graphql_body_to_text, multipart_fields_to_body_text, parse_curl,
+    parse_graphql_body, parse_multipart_fields, write_generated_project, AssertionOutcome,
+    AuthScheme, Collection, ComparableResponse, CookieView, Environment, ExportFormat,
+    GitFileStatus, GitStatusCache, GraphQlBody, Header, InitOptions, InitOutcome, Manifest,
+    MultipartField, NovaProject, OpenProjectOutcome, ParsedCurlRequest, ParsedRequest,
+    ParsedWebSocketRequest, RequestDraft, RequestFile, Response, ResponseDiff, Session,
+    WebSocketDraft, WebSocketExchange, DEFAULT_AUTHORIZATION_TIMEOUT,
 };
 
 use crate::mock_server::{MockServerState, MockServerStatus, DEFAULT_HOST, DEFAULT_PORT};
@@ -430,6 +431,74 @@ pub fn update_cookie(
     Ok(sessions.with_session(&project.root, |session| {
         session.set_cookie_value(&host, &name, &value)
     }))
+}
+
+/// Whether the project at `path`'s session already holds a still-fresh
+/// OAuth2 authorization-code access token for the given `token_url` +
+/// `client_id` + `scope` — the "authorized" / "not authorized" status line
+/// the Auth tab's `oauth2_authorization_code` editor shows. Read-only: this
+/// never starts the flow itself (see [`oauth2_authorize`]).
+#[tauri::command]
+pub fn oauth2_authorization_status(
+    path: String,
+    token_url: String,
+    client_id: String,
+    scope: Option<String>,
+    sessions: tauri::State<SessionStore>,
+) -> Result<bool, String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    Ok(sessions.with_session(&project.root, |session| {
+        session.oauth2_authorization_code_is_authorized(&token_url, &client_id, scope.as_deref())
+    }))
+}
+
+/// Drives the OAuth2 authorization-code flow end to end for the "Get New
+/// Access Token" button: starts the engine's local redirect listener (see
+/// [`nova_engine::begin_oauth2_authorization_code`]), opens `auth_url` in
+/// the user's system browser, blocks (this runs off the main thread, like
+/// every other `tauri::command`, so the UI stays responsive) until the
+/// browser's redirect carries back an authorization code or the flow times
+/// out, and exchanges that code for an access token cached on the project
+/// at `path`'s session.
+///
+/// Returns once authorized; a caller re-checks
+/// [`oauth2_authorization_status`] (or just assumes `Ok(())` means
+/// authorized) to update its status line.
+#[tauri::command]
+pub fn oauth2_authorize(
+    path: String,
+    auth_url: String,
+    token_url: String,
+    client_id: String,
+    client_secret: String,
+    scope: Option<String>,
+    sessions: tauri::State<SessionStore>,
+) -> Result<(), String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+
+    let pending = begin_oauth2_authorization_code(&auth_url, &client_id, scope.as_deref())
+        .map_err(|e| e.to_string())?;
+    let redirect_uri = pending.redirect_uri().to_string();
+
+    tauri_plugin_opener::open_url(pending.authorization_url(), None::<&str>)
+        .map_err(|e| format!("failed to open the system browser: {e}"))?;
+
+    let code = pending
+        .wait_for_code(DEFAULT_AUTHORIZATION_TIMEOUT)
+        .map_err(|e| e.to_string())?;
+
+    sessions
+        .with_session(&project.root, |session| {
+            session.authorize_oauth2_authorization_code(
+                &token_url,
+                &client_id,
+                &client_secret,
+                &code,
+                &redirect_uri,
+                scope.as_deref(),
+            )
+        })
+        .map_err(|e| e.to_string())
 }
 
 /// Resolves `request_path`'s parsed request, method, and full URL the same

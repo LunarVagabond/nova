@@ -192,6 +192,45 @@ scope: read write
 caches it for the rest of the run (keyed by token endpoint + client ID,
 respecting the endpoint's advertised lifetime). `scope` is optional.
 
+```text
+[auth]
+type: oauth2_authorization_code
+auth_url: {{auth_url}}
+token_url: {{token_url}}
+client_id: {{client_id}}
+client_secret: {{client_secret}}
+scope: read write
+```
+
+`oauth2_authorization_code` is the OAuth2 grant that needs a human to log in
+through a browser (RFC 6749 §4.1) rather than a client secret alone. Because
+of that, a plain send can't complete it on its own the way
+`oauth2_client_credentials` does — a caller has to authorize up front (in the
+desktop app, the Auth tab's "Get New Access Token" button; the CLI has no
+equivalent yet), which opens `auth_url` in the system browser, briefly runs a
+local redirect listener to catch the authorization code, and exchanges it for
+an access token. That token is cached the same way a client-credentials
+token is (by token endpoint, client ID, and scope) and reused by any request
+declaring a matching `oauth2_authorization_code` scheme until it expires. A
+request sent before anything has authorized it fails with a clear error
+rather than hanging or silently going out unauthenticated. `scope` is
+optional.
+
+```text
+[auth]
+type: digest
+username: {{username}}
+password: {{password}}
+```
+
+`digest` is HTTP Digest authentication (RFC 7616), MD5 only. A request
+declaring it goes out once with no `Authorization` header; only if the
+server answers `401` with a `WWW-Authenticate: Digest` challenge is a
+response computed from the challenge and the request retried once with it.
+A digest challenge advertising a different algorithm (`MD5-sess`, `SHA-256`,
+`SHA-512-256`) is reported as an error rather than silently producing a
+response the server will reject.
+
 An environment's own `auth:` block (see below) can supply a default scheme
 that a request doesn't declare one itself; a request's own `[auth]` always
 wins, and an environment default never overwrites a header the request set

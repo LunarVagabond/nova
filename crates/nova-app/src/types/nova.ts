@@ -46,7 +46,16 @@ export type AuthScheme =
       client_id: string;
       client_secret: string;
       scope?: string | null;
-    };
+    }
+  | {
+      type: "oauth2_authorization_code";
+      auth_url: string;
+      token_url: string;
+      client_id: string;
+      client_secret: string;
+      scope?: string | null;
+    }
+  | { type: "digest"; username: string; password: string };
 
 /** Every `AuthScheme` tag, plus the "no auth at all" case the UI needs. */
 export type AuthSchemeType = AuthScheme["type"];

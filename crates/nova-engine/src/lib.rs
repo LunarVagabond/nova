@@ -33,6 +33,9 @@ pub use execution::assertion::{
 };
 pub use execution::auth::{encode_basic_auth, ApiKeyLocation, AuthScheme};
 pub use execution::http::{execute, save_example_response, Response};
+pub use execution::oauth2_loopback::{
+    begin_oauth2_authorization_code, PendingAuthorizationCode, DEFAULT_AUTHORIZATION_TIMEOUT,
+};
 pub use execution::script::{
     resolve_script_path, run_post_response, run_pre_request, PreRequestOverrides, ScriptSection,
     SCRIPTS_DIR_NAME,

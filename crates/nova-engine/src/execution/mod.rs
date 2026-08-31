@@ -16,6 +16,7 @@
 pub mod assertion;
 pub mod auth;
 pub mod http;
+pub mod oauth2_loopback;
 pub mod script;
 pub mod sse;
 pub mod websocket;
