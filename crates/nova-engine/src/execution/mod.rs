@@ -15,8 +15,13 @@
 //!
 //! [`boundary_values`] is a peer of the above but doesn't send anything
 //! itself: it's the built-in library of named boundary-value generators
-//! (empty, very long, negative/zero/huge, unicode, missing) a future sweep
-//! feature can draw values from.
+//! (empty, very long, negative/zero/huge, unicode, missing) [`sweep`] draws
+//! values from.
+//!
+//! [`sweep`] resends a request once per value across one named position
+//! (a query param, a header, or a JSON body field), reporting status/
+//! timing/response-size per variant with anomalies flagged against the
+//! unmodified baseline.
 
 pub mod assertion;
 pub mod auth;
@@ -26,4 +31,5 @@ pub mod http;
 pub mod oauth2_loopback;
 pub mod script;
 pub mod sse;
+pub mod sweep;
 pub mod websocket;

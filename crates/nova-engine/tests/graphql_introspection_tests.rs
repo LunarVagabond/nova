@@ -32,6 +32,7 @@ fn graphql_request(url: String) -> ParsedRequest {
         extractions: vec![],
         script: None,
         example_response: None,
+        sweep: None,
     }
 }
 

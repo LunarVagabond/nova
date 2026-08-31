@@ -50,6 +50,11 @@ pub use execution::script::{
 pub use execution::sse::{
     connect_and_stream, SseEvent, SseExchange, DEFAULT_READ_TIMEOUT as SSE_DEFAULT_READ_TIMEOUT,
 };
+pub use execution::sweep::{
+    apply_value, display_value, parse_position, parse_value_source, resolve_values, run_sweep,
+    SweepAnomaly, SweepConfig, SweepPosition, SweepReport, SweepValueSource, SweepVariantOutcome,
+    TIMING_OUTLIER_FACTOR, TIMING_OUTLIER_MIN_BASELINE_MS,
+};
 pub use execution::websocket::{
     connect_and_exchange, WebSocketExchange, WebSocketReceivedMessage, WebSocketSession,
     DEFAULT_READ_TIMEOUT,

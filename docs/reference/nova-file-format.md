@@ -23,6 +23,7 @@ order:
 | `[settings]` | Per-request authoring preferences (not sent on the wire) |
 | `[assert]` | Test assertions and value extractions |
 | `[script]` | A pre-request and/or post-response script to run |
+| `[sweep]` | A position and a value set for `nova sweep` to resend the request across |
 | `[response <status>]` | A canned example response, used by `nova mock` |
 
 ### `[request]`
@@ -362,6 +363,65 @@ that applies to every request nested under it, not just this one — see
 [Project structure](./project-structure.md#collection-scoped-scripts). A
 collection-level `pre:` runs before this request's own, and a
 collection-level `post:` runs after it, nesting outermost-scope-first.
+
+### `[sweep]`
+
+Names one position in this request and a set of values for `nova sweep`
+(see [cli.md](./cli.md#nova-sweep-request)) to resend the request with, one
+at a time, reporting status/timing/response-size per variant with anomalies
+flagged against the baseline (the unmodified request). Parsing/execution
+live in `crates/nova-engine/src/execution/sweep.rs`.
+
+`position:` names where to substitute each value — a query param, a header,
+or a JSON body field:
+
+```text
+position: param:limit
+position: header:X-Api-Key
+position: body:user.email
+```
+
+A `body:` position only applies to a JSON body; a dotted path
+(`body:user.email`) reaches a nested field, creating intermediate objects
+as needed when a value is set, or removing the key when a value is
+"missing."
+
+Exactly one of the following supplies the values to try (mixing more than
+one, or giving none, is a parse error):
+
+```text
+[sweep]
+position: param:limit
+values: 0, -1, 999999999
+```
+
+```text
+[sweep]
+position: header:X-Api-Key
+values_file: nova/sweeps/api-keys.txt
+```
+
+```text
+[sweep]
+position: body:email
+generator: empty, unicode, missing
+```
+
+- `values:` — a comma-separated inline list of literal values.
+- `values_file:` — a project-root-relative path to a plain text file, one
+  value per line; blank lines and `#`-prefixed comments are skipped. Values
+  containing commas, or too many to comfortably inline, belong here instead
+  of in `values:`.
+- `generator:` — one or more comma-separated built-in boundary-value
+  generator names (`empty`, `very_long`, `negative`, `zero`, `huge`,
+  `unicode`, `missing` — see `crates/nova-engine/src/execution/boundary_values.rs`),
+  or the literal `all` for every one of them. `missing` is different from
+  an empty string: it removes the param/header/body field entirely rather
+  than sending it blank.
+
+A sweep is explicitly bounded to "does this endpoint handle a range of
+inputs sanely" — it is not a security scanner, and doesn't ship payload
+libraries or vulnerability signatures.
 
 ### `[response <status>]`
 

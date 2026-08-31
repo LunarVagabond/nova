@@ -99,6 +99,19 @@ nova test
 This runs the same `[assert]` sections `nova run` evaluates, but treats
 pass/fail as the point rather than a side effect.
 
+Sweeping a range of inputs across one field, to see how an endpoint holds
+up (an empty value, a huge one, a missing one, or your own list):
+
+```bash
+nova sweep nova/collections/users/create.nova
+```
+
+This reads the request's own `[sweep]` section (see the
+[`.nova` file format reference](reference/nova-file-format.md#sweep)) and
+reports each variant's status/timing/response size against the unmodified
+baseline, flagging anomalies (an unexpected server error, a timing outlier,
+or a changed response shape).
+
 ## 5. The optional pre-commit hook
 
 Nova can install a git pre-commit hook that runs `nova check-secrets
