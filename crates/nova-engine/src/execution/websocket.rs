@@ -319,6 +319,17 @@ impl Drop for WebSocketSession {
     }
 }
 
+/// Whichever of "the caller explicitly disconnected" or "the connection
+/// closed on its own" happens first wins the right to decide whether
+/// `on_close` fires — decided with a single `compare_exchange` on `stop`
+/// rather than a plain load-then-call, since a load-then-call has a gap
+/// between the check and the call that a concurrent `disconnect()` can land
+/// in. This matters in exactly the case
+/// `session_disconnect_does_not_invoke_on_close` exercises: a server that
+/// closes essentially immediately races against the caller's own
+/// `disconnect()`, and under enough scheduling jitter (a loaded CI runner,
+/// say) the naive check-then-act version could lose that race and fire
+/// `on_close` anyway, even though `disconnect()` was already called.
 fn run_reader_loop<M, C>(
     socket: &Arc<Mutex<WebSocket<MaybeTlsStream<TcpStream>>>>,
     stop: &Arc<AtomicBool>,
@@ -360,7 +371,10 @@ fn run_reader_loop<M, C>(
                 if let Ok(mut guard) = socket.lock() {
                     let _ = guard.close(None);
                 }
-                if !stop.load(Ordering::Relaxed) {
+                if stop
+                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
                     if let Some(on_close) = on_close.take() {
                         on_close();
                     }
@@ -380,7 +394,10 @@ fn run_reader_loop<M, C>(
                 continue;
             }
             Err(tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed) => {
-                if !stop.load(Ordering::Relaxed) {
+                if stop
+                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
                     if let Some(on_close) = on_close.take() {
                         on_close();
                     }
@@ -388,7 +405,10 @@ fn run_reader_loop<M, C>(
                 return;
             }
             Err(_) => {
-                if !stop.load(Ordering::Relaxed) {
+                if stop
+                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
                     if let Some(on_close) = on_close.take() {
                         on_close();
                     }
