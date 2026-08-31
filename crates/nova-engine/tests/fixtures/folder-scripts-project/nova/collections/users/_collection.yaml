@@ -1,0 +1,3 @@
+scripts:
+  pre: inner-pre.py
+  post: inner-post.py

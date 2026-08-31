@@ -28,7 +28,7 @@ use crate::request::{Header, ParsedRequest, QueryParam};
 /// either a bare name (resolved against the project's `nova/scripts/`
 /// directory) or an explicit path relative to the project root — see
 /// [`resolve_script_path`].
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScriptSection {
     pub pre: Option<String>,
     pub post: Option<String>,

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::error::{NovaError, NovaResult};
+use crate::execution::script::ScriptSection;
 use crate::project::collection_variables::load_collection_variables;
 use crate::request::RequestFile;
 
@@ -25,6 +26,11 @@ pub struct Collection {
     /// Scoping is per-directory, not inherited by children — see
     /// [`crate::CollectionVariables`] for why.
     pub variables: HashMap<String, String>,
+    /// This directory's own pre-request/post-response script association,
+    /// from the same `_collection.yaml` file — `None` when it declares
+    /// none. Unlike `variables`, this scope *is* inherited by descendants
+    /// — see [`Collection::scoped_scripts_for`].
+    pub scripts: Option<ScriptSection>,
 }
 
 impl Collection {
@@ -50,6 +56,40 @@ impl Collection {
         self.children
             .iter()
             .find_map(|child| child.containing(request_path))
+    }
+
+    /// The chain of collection-level `[script]` scopes that apply to a
+    /// request at `request_path`, ordered outermost (this collection, or
+    /// whichever ancestor is furthest from the request) to innermost (the
+    /// collection directly containing it) — the same order a pre-request
+    /// script from each scope should run in, per the nesting rule in #155:
+    /// an outer scope's pre-request script runs before an inner one's,
+    /// which runs before the request's own. A caller running the
+    /// corresponding post-response scripts unwinds this list in reverse.
+    ///
+    /// Only scopes that actually declare a `scripts:` block are included;
+    /// a directory with none contributes nothing. Returns an empty `Vec`
+    /// if `request_path` isn't found under this collection at all.
+    pub fn scoped_scripts_for(&self, request_path: &Path) -> Vec<ScriptSection> {
+        let mut scopes = Vec::new();
+        let mut current = self;
+        loop {
+            if let Some(scripts) = &current.scripts {
+                scopes.push(scripts.clone());
+            }
+            if current.requests.iter().any(|r| r.path == request_path) {
+                break;
+            }
+            match current
+                .children
+                .iter()
+                .find(|child| child.containing(request_path).is_some())
+            {
+                Some(child) => current = child,
+                None => return Vec::new(),
+            }
+        }
+        scopes
     }
 }
 
@@ -104,14 +144,15 @@ fn load_collection_dir(dir: &Path) -> NovaResult<Collection> {
         }
     }
 
-    let variables = load_collection_variables(dir)?.variables;
+    let collection_variables = load_collection_variables(dir)?;
 
     Ok(Collection {
         name,
         path: dir.to_path_buf(),
         children,
         requests,
-        variables,
+        variables: collection_variables.variables,
+        scripts: collection_variables.scripts,
     })
 }
 
@@ -172,6 +213,7 @@ pub fn create_collection(parent_dir: &Path, name: &str) -> NovaResult<Collection
         children: Vec::new(),
         requests: Vec::new(),
         variables: HashMap::new(),
+        scripts: None,
     })
 }
 

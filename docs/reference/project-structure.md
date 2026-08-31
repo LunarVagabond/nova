@@ -138,6 +138,29 @@ extractions, `[script]` `post:` hooks), then the active environment's own
 already define — see `NovaProject::effective_collection_variables` and
 `Session::resolve_and_execute_in_collection`.
 
+### Collection-scoped scripts
+
+The same `_collection.yaml` file can also carry a `scripts:` block —
+a pre-request and/or post-response script (see [`[script]`](./nova-file-format.md#script))
+that applies to every request nested under that directory, including
+subcollections (unlike `variables:` above, which is per-directory only):
+
+```yaml
+scripts:
+  pre: sign-request
+  post: log-response
+```
+
+Unlike variables, scopes nest rather than override: every ancestor
+directory's `scripts:` block that names a `pre:`/`post:` runs, alongside
+the request's own `[script]` section if it declares one. Run order is
+outermost-first for `pre:` (the collections root's script runs, then each
+subdirectory's down to the one directly containing the request, then the
+request's own) and the reverse for `post:` (the request's own runs first,
+then each enclosing directory's, outward to the root) — the same nesting
+a `try`/`finally` wrapping another `try`/`finally` would produce. See
+`Collection::scoped_scripts_for`.
+
 ## Validation
 
 `nova validate` (CLI and desktop app, same engine call — `validate.rs`)

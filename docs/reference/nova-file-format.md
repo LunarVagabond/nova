@@ -313,6 +313,12 @@ There is no sandboxing beyond the OS process: running a script from a
 cloned project is the same trust decision as running that project's
 Makefile or pre-commit hooks.
 
+A collection directory can also carry its own `[script]`-style association
+that applies to every request nested under it, not just this one — see
+[Project structure](./project-structure.md#collection-scoped-scripts). A
+collection-level `pre:` runs before this request's own, and a
+collection-level `post:` runs after it, nesting outermost-scope-first.
+
 ### `[response <status>]`
 
 An example response, used only by `nova mock` — never sent or received by

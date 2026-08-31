@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{NovaError, NovaResult};
+use crate::execution::script::ScriptSection;
 
 /// The file name a collection-scoped variables file is always given,
 /// directly inside a collection directory (i.e. a directory under the
@@ -33,6 +34,14 @@ pub struct CollectionVariables {
     #[serde(default)]
     pub variables: HashMap<String, String>,
 
+    /// A pre-request/post-response script association scoped to every
+    /// request nested under this directory (not just the ones directly
+    /// inside it, unlike `variables` above) — see
+    /// [`crate::project::collection::Collection::scoped_scripts_for`] for
+    /// how nested scopes combine and the run-order this produces.
+    #[serde(default)]
+    pub scripts: Option<ScriptSection>,
+
     /// Where this file was loaded from, for diagnostics and "open in
     /// editor" style GUI actions. Not part of the YAML shape, but still
     /// sent to frontends when serialized. Mirrors
@@ -50,6 +59,8 @@ pub struct CollectionVariables {
 struct CollectionVariablesYaml {
     #[serde(default)]
     variables: HashMap<String, String>,
+    #[serde(default)]
+    scripts: Option<ScriptSection>,
 }
 
 impl CollectionVariables {
@@ -58,6 +69,7 @@ impl CollectionVariables {
     fn empty(dir: &Path) -> CollectionVariables {
         CollectionVariables {
             variables: HashMap::new(),
+            scripts: None,
             path: dir.join(COLLECTION_VARIABLES_FILE_NAME),
         }
     }
@@ -68,6 +80,7 @@ impl CollectionVariables {
     pub fn to_yaml_string(&self) -> Result<String, String> {
         let yaml = CollectionVariablesYaml {
             variables: self.variables.clone(),
+            scripts: self.scripts.clone(),
         };
         serde_yaml::to_string(&yaml).map_err(|source| source.to_string())
     }
@@ -141,6 +154,7 @@ pub fn create_collection_variables(dir: &Path) -> NovaResult<CollectionVariables
 
     let variables = CollectionVariables {
         variables: HashMap::new(),
+        scripts: None,
         path,
     };
     variables.write()?;
@@ -201,6 +215,7 @@ mod tests {
     fn to_yaml_string_omits_the_runtime_only_path_field() {
         let variables = CollectionVariables {
             variables: HashMap::new(),
+            scripts: None,
             path: PathBuf::from("/somewhere/on/disk/_collection.yaml"),
         };
 

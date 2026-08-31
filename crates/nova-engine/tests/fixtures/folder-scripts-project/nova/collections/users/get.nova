@@ -1,0 +1,7 @@
+[request]
+method: GET
+url: {{base_url}}/users
+
+[script]
+pre: own-pre.py
+post: own-post.py

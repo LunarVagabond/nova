@@ -170,6 +170,7 @@ pub fn send_request(
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
 
     let collection_variables = project.effective_collection_variables(path);
+    let scoped_scripts = project.scoped_scripts(path);
 
     sessions.with_session(&project.root, |session| {
         session
@@ -178,6 +179,7 @@ pub fn send_request(
                 &parsed,
                 &resolved_environment,
                 &collection_variables,
+                &scoped_scripts,
             )
             .map(|(_resolved, response)| response)
             .map_err(|e| e.to_string())
@@ -1206,12 +1208,14 @@ fn run_one_test(
 ) -> Result<(usize, usize, TestRequestResult), String> {
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
     let collection_variables = project.effective_collection_variables(&request_file.path);
+    let scoped_scripts = project.scoped_scripts(&request_file.path);
     let (resolved, response) = session
         .resolve_and_execute_in_collection(
             &project.root,
             &parsed,
             environment,
             &collection_variables,
+            &scoped_scripts,
         )
         .map_err(|e| e.to_string())?;
 
