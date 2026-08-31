@@ -153,12 +153,31 @@ export interface ResponseHeader {
   value: string;
 }
 
+/**
+ * Mirrors `nova_engine::execution::http::ResponseTiming` — the phase
+ * breakdown backing the response pane's Timeline tab (#165).
+ *
+ * `ureq` (the HTTP client `nova-engine` uses) doesn't expose DNS lookup /
+ * TCP connect / TLS handshake as separate, hookable phases, so those aren't
+ * split out here. Only two phases are genuinely measured:
+ * `time_to_first_byte_ms` bundles DNS + connect + TLS + sending the request
+ * + waiting on the server (everything up through the response head
+ * arriving), and `content_download_ms` is the time spent reading the body
+ * afterward. `time_to_first_byte_ms + content_download_ms` equals the
+ * response's `elapsed_ms`.
+ */
+export interface ResponseTiming {
+  time_to_first_byte_ms: number;
+  content_download_ms: number;
+}
+
 /** Mirrors `nova_engine::execute::Response`. */
 export interface RequestResponse {
   status: number;
   headers: ResponseHeader[];
   body: string;
   elapsed_ms: number;
+  timing: ResponseTiming;
 }
 
 /** Mirrors `nova_engine::Header`. */

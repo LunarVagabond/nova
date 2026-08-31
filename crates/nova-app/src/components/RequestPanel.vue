@@ -58,6 +58,7 @@ import Icon from "./Icon.vue";
 import KeyValueEditor from "./KeyValueEditor.vue";
 import MultipartEditor from "./MultipartEditor.vue";
 import ResponseDiffView from "./ResponseDiffView.vue";
+import ResponseTimelineView from "./ResponseTimelineView.vue";
 import { useResizablePane } from "../composables/useResizablePane";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
@@ -107,7 +108,7 @@ const scriptPost = ref("");
 type FieldTab = "auth" | "headers" | "params" | "body" | "scripts" | "tests";
 const activeTab = ref<FieldTab>("auth");
 
-type ResponseTab = "headers" | "raw" | "preview" | "diff";
+type ResponseTab = "headers" | "raw" | "preview" | "diff" | "timeline";
 const activeResponseTab = ref<ResponseTab>("preview");
 
 // Driven by the Content-Type header (and whether there's any body text at
@@ -1299,6 +1300,16 @@ defineExpose({ dirty, save: handleSave });
           >
             Diff
           </button>
+          <button
+            type="button"
+            role="tab"
+            class="request-panel__tab"
+            :class="{ 'request-panel__tab--active': activeResponseTab === 'timeline' }"
+            :aria-selected="activeResponseTab === 'timeline'"
+            @click="activeResponseTab = 'timeline'"
+          >
+            Timeline
+          </button>
         </div>
 
         <div v-if="activeResponseTab === 'headers'" class="request-panel__tab-panel">
@@ -1332,7 +1343,7 @@ defineExpose({ dirty, save: handleSave });
           <p v-else class="response-pane__hint">Empty body.</p>
         </div>
 
-        <div v-else class="request-panel__tab-panel">
+        <div v-else-if="activeResponseTab === 'diff'" class="request-panel__tab-panel">
           <div class="response-diff__toggle">
             <button
               type="button"
@@ -1361,6 +1372,10 @@ defineExpose({ dirty, save: handleSave });
             This request has no saved <code>[response]</code> example to compare against.
           </p>
           <ResponseDiffView v-else :diff="diffResult" />
+        </div>
+
+        <div v-else class="request-panel__tab-panel">
+          <ResponseTimelineView :timing="response.timing" />
         </div>
       </template>
 

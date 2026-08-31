@@ -855,6 +855,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use crate::execution::http::ResponseTiming;
 
     #[test]
     fn stores_and_replays_a_cookie_for_the_same_host() {
@@ -1227,6 +1228,10 @@ mod tests {
             headers: Vec::new(),
             body: String::new(),
             elapsed_ms: 1,
+            timing: ResponseTiming {
+                time_to_first_byte_ms: 1,
+                content_download_ms: 0,
+            },
         }
     }
 
