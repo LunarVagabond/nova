@@ -14,10 +14,10 @@ use nova_engine::{
     diff_responses, evaluate, export_to_spec, generate_project, graphql_body_to_text,
     multipart_fields_to_body_text, parse_curl, parse_graphql_body, parse_multipart_fields,
     write_generated_project, AssertionOutcome, AuthScheme, Collection, ComparableResponse,
-    Environment, GitFileStatus, GitStatusCache, GraphQlBody, Header, InitOptions, InitOutcome,
-    Manifest, MultipartField, NovaProject, OpenProjectOutcome, ParsedCurlRequest, ParsedRequest,
-    ParsedWebSocketRequest, RequestDraft, RequestFile, Response, ResponseDiff, Session,
-    WebSocketDraft, WebSocketExchange,
+    CookieView, Environment, GitFileStatus, GitStatusCache, GraphQlBody, Header, InitOptions,
+    InitOutcome, Manifest, MultipartField, NovaProject, OpenProjectOutcome, ParsedCurlRequest,
+    ParsedRequest, ParsedWebSocketRequest, RequestDraft, RequestFile, Response, ResponseDiff,
+    Session, WebSocketDraft, WebSocketExchange,
 };
 
 use crate::mock_server::{MockServerState, MockServerStatus, DEFAULT_HOST, DEFAULT_PORT};
@@ -258,6 +258,61 @@ pub fn reopen_history_entry(
             response: entry.response.clone(),
         })
     })
+}
+
+/// The project at `path`'s currently-stored session cookies — see
+/// [`nova_engine::Session::cookies`]. Empty (not an error) for a project
+/// nothing has set a cookie in yet this session.
+#[tauri::command]
+pub fn get_cookies(
+    path: String,
+    sessions: tauri::State<SessionStore>,
+) -> Result<Vec<CookieView>, String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    Ok(sessions.with_session(&project.root, |session| session.cookies()))
+}
+
+/// Deletes one stored cookie (identified by `host` + `name`) from the
+/// project at `path`'s session — see [`nova_engine::Session::remove_cookie`].
+/// Returns whether a matching cookie was actually found and removed; not
+/// finding one isn't treated as an error.
+#[tauri::command]
+pub fn delete_cookie(
+    path: String,
+    host: String,
+    name: String,
+    sessions: tauri::State<SessionStore>,
+) -> Result<bool, String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    Ok(sessions.with_session(&project.root, |session| session.remove_cookie(&host, &name)))
+}
+
+/// Deletes every stored cookie from the project at `path`'s session — see
+/// [`nova_engine::Session::clear_cookies`].
+#[tauri::command]
+pub fn clear_cookies(path: String, sessions: tauri::State<SessionStore>) -> Result<(), String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    sessions.with_session(&project.root, |session| session.clear_cookies());
+    Ok(())
+}
+
+/// Edits the value of one stored cookie (identified by `host` + `name`) in
+/// the project at `path`'s session, leaving its other attributes
+/// (path/domain/secure/expiry) untouched — see
+/// [`nova_engine::Session::set_cookie_value`]. Returns whether a matching
+/// cookie was found to edit.
+#[tauri::command]
+pub fn update_cookie(
+    path: String,
+    host: String,
+    name: String,
+    value: String,
+    sessions: tauri::State<SessionStore>,
+) -> Result<bool, String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    Ok(sessions.with_session(&project.root, |session| {
+        session.set_cookie_value(&host, &name, &value)
+    }))
 }
 
 /// Resolves `request_path`'s parsed request, method, and full URL the same

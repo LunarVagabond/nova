@@ -10,6 +10,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import type {
   AuthScheme,
   Collection,
+  CookieView,
   GitStatusMap,
   GraphQlBody,
   HistoryDetail,
@@ -93,6 +94,38 @@ export function getHistory(path: string): Promise<HistorySummary[]> {
 /** Reopens one past history entry from the project at `path` by the `id` `getHistory` handed out for it. */
 export function reopenHistoryEntry(path: string, id: number): Promise<HistoryDetail> {
   return invoke<HistoryDetail>("reopen_history_entry", { path, id });
+}
+
+/**
+ * The project at `path`'s currently-stored session cookies — empty (not an
+ * error) if nothing has set a cookie in this project yet this session.
+ * Cookies live only for the life of the app session, the same as history.
+ */
+export function getCookies(path: string): Promise<CookieView[]> {
+  return invoke<CookieView[]>("get_cookies", { path });
+}
+
+/** Deletes one stored cookie (identified by `host` + `name`) from the project at `path`'s session. */
+export function deleteCookie(path: string, host: string, name: string): Promise<boolean> {
+  return invoke<boolean>("delete_cookie", { path, host, name });
+}
+
+/** Deletes every stored cookie from the project at `path`'s session. */
+export function clearCookies(path: string): Promise<void> {
+  return invoke<void>("clear_cookies", { path });
+}
+
+/**
+ * Edits the value of one stored cookie (identified by `host` + `name`) in
+ * the project at `path`'s session, leaving its other attributes untouched.
+ */
+export function updateCookie(
+  path: string,
+  host: string,
+  name: string,
+  value: string,
+): Promise<boolean> {
+  return invoke<boolean>("update_cookie", { path, host, name, value });
 }
 
 /**
