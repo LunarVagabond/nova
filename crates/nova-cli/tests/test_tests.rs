@@ -86,6 +86,70 @@ fn exits_zero_when_every_assertion_passes() {
 }
 
 #[test]
+fn runs_each_requests_assertions_once_per_row_in_a_data_file() {
+    let dir = temp_project_dir("data-json");
+    let nova_dir = dir.join("nova");
+    fs::create_dir_all(nova_dir.join("collections")).unwrap();
+    fs::create_dir_all(nova_dir.join("envs")).unwrap();
+
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let addr = server.server_addr();
+    let base_url = format!("http://{addr}");
+    let handle = thread::spawn(move || {
+        for _ in 0..2 {
+            let request = server.recv().unwrap();
+            request
+                .respond(tiny_http::Response::from_string(r#"{"ok": true}"#).with_status_code(200))
+                .unwrap();
+        }
+    });
+
+    fs::write(
+        nova_dir.join("nova.yaml"),
+        "version: 1\nproject:\n  name: cli-test\n",
+    )
+    .unwrap();
+    fs::write(
+        nova_dir.join("envs/test.yaml"),
+        format!("name: test\nvariables:\n  base_url: {base_url}\n"),
+    )
+    .unwrap();
+    fs::write(
+        nova_dir.join("collections/user.nova"),
+        "[request]\nmethod: GET\nurl: {{base_url}}/users/{{user_id}}\n\n[assert]\nstatus == 200\n",
+    )
+    .unwrap();
+
+    let data_path = dir.join("users.json");
+    fs::write(&data_path, r#"[{"user_id": "1"}, {"user_id": "2"}]"#).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nova"))
+        .args([
+            "test",
+            nova_dir.join("collections/user.nova").to_str().unwrap(),
+            "--environment",
+            "test",
+            "--data",
+            data_path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    handle.join().unwrap();
+    fs::remove_dir_all(&dir).unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "stdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(stdout.contains("[iteration 0]"));
+    assert!(stdout.contains("[iteration 1]"));
+    assert!(stdout.contains("2 passed, 0 failed"));
+}
+
+#[test]
 fn exits_nonzero_when_an_assertion_fails() {
     let (base_url, handle) = mock_server();
     let dir = temp_project_dir("failing");

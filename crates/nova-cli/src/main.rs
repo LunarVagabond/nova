@@ -25,7 +25,14 @@ fn main() {
             request,
             environment,
             save_example,
-        }) => commands::run::run(&request, environment.as_deref(), json, save_example),
+            data,
+        }) => commands::run::run(
+            &request,
+            environment.as_deref(),
+            json,
+            save_example,
+            data.as_deref(),
+        ),
         Some(Command::Ws {
             request,
             environment,
@@ -37,9 +44,11 @@ fn main() {
             environment,
             timeout_secs,
         }) => commands::sse::run(&request, environment.as_deref(), timeout_secs),
-        Some(Command::Test { path, environment }) => {
-            commands::test::run(&path, environment.as_deref(), json)
-        }
+        Some(Command::Test {
+            path,
+            environment,
+            data,
+        }) => commands::test::run(&path, environment.as_deref(), json, data.as_deref()),
         Some(Command::Generate { input, output }) => commands::generate::run(&input, &output),
         Some(Command::Export { path, output }) => commands::export::run(&path, output.as_deref()),
         Some(Command::ExportRequest {

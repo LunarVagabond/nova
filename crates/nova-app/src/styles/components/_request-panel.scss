@@ -1028,6 +1028,11 @@ $variables-drawer-width: 18rem;
   word-break: break-all;
 }
 
+.ws-panel__transcript-text--binary {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
 .ws-panel__transcript-time {
   flex-shrink: 0;
   color: var(--color-text-muted);

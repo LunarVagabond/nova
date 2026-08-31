@@ -97,6 +97,14 @@ pub enum Command {
         /// so running a directory saves an example for each one.
         #[arg(long)]
         save_example: bool,
+
+        /// Run each request once per row/object in this CSV or JSON file,
+        /// with that iteration's columns/fields available as
+        /// `{{variable}}`s layered on top of the active environment for
+        /// just that one send. A CSV file's first row is its column
+        /// headers; a JSON file is a flat array of objects.
+        #[arg(long)]
+        data: Option<PathBuf>,
     },
 
     /// Open a WebSocket connection declared by a `.nova` file (`protocol:
@@ -146,6 +154,11 @@ pub enum Command {
 
         #[arg(long)]
         environment: Option<String>,
+
+        /// Run each request once per row/object in this CSV or JSON file —
+        /// see `run`'s `--data` for the exact behavior.
+        #[arg(long)]
+        data: Option<PathBuf>,
     },
 
     /// Generate a Nova project from an OpenAPI 3.x spec (YAML or JSON) or a

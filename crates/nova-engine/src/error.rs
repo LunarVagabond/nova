@@ -112,6 +112,12 @@ pub enum NovaError {
     #[error("failed to parse Postman collection: {message}")]
     PostmanParse { message: String },
 
+    #[error("failed to parse data file at {path}: {message}")]
+    DataFileParse { path: PathBuf, message: String },
+
+    #[error("unsupported data file extension at {0} (expected .csv or .json)")]
+    UnsupportedDataFileFormat(PathBuf),
+
     #[error("invalid collection name {name:?}: {reason}")]
     InvalidCollectionName { name: String, reason: String },
 

@@ -38,6 +38,8 @@ pub fn run() {
             commands::create_websocket_request,
             commands::connect_websocket_session,
             commands::send_websocket_session_message,
+            commands::send_websocket_session_binary_file,
+            commands::save_binary_frame,
             commands::disconnect_websocket_session,
             commands::websocket_session_status,
             commands::parse_multipart_body,

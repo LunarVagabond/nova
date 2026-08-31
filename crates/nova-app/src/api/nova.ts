@@ -265,9 +265,18 @@ export function connectWebSocketSession(requestPath: string, environment: string
   return invoke<void>("connect_websocket_session", { requestPath, environment });
 }
 
-/** Sends `text` on the currently-open interactive WebSocket session. */
+/** Sends `text` as a text frame on the currently-open interactive WebSocket session. */
 export function sendWebSocketSessionMessage(text: string): Promise<void> {
   return invoke<void>("send_websocket_session_message", { text });
+}
+
+/**
+ * Sends a file's raw bytes, resolved relative to the open session's
+ * project root, as a single binary frame on the currently-open interactive
+ * WebSocket session.
+ */
+export function sendWebSocketSessionBinaryFile(filePath: string): Promise<void> {
+  return invoke<void>("send_websocket_session_binary_file", { filePath });
 }
 
 /** Closes the currently-open interactive WebSocket session, if any. */
@@ -565,6 +574,21 @@ export async function pickExportDestination(): Promise<string | null> {
     filters: [{ name: "OpenAPI spec (YAML)", extensions: ["yaml", "yml"] }],
   });
   return selected ?? null;
+}
+
+/**
+ * Opens the native save-file picker defaulting to `defaultName`, and
+ * returns the chosen destination path (or null if cancelled) — for the
+ * WebSocket transcript's "save this binary frame" action.
+ */
+export async function pickBinaryFrameDestination(defaultName: string): Promise<string | null> {
+  const selected = await save({ defaultPath: defaultName });
+  return selected ?? null;
+}
+
+/** Decodes a base64-encoded binary WebSocket frame and writes it to `outputPath`. */
+export function saveBinaryFrame(dataBase64: string, outputPath: string): Promise<void> {
+  return invoke<void>("save_binary_frame", { dataBase64, outputPath });
 }
 
 /**
