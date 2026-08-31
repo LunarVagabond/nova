@@ -77,6 +77,14 @@ Execute a single `.nova` file, or every request under a directory.
   any) was already there. Running a directory saves one for every request
   in it. See [nova-file-format.md](./nova-file-format.md#response-status)
   for what that section is and how `nova mock` uses it.
+- `--data <file.csv|file.json>` — run each request once per row/object in
+  this file, with that iteration's columns/fields available as
+  `{{variable}}`s layered on top of the active environment for just that
+  one send (an iteration value wins over a same-named environment one). A
+  CSV file's first row is its column headers; a JSON file is a flat array
+  of objects. With `--save-example`, only the last iteration's response
+  ends up saved, since each iteration writes the same `[response <status>]`
+  section in turn.
 
 ## `nova test [path]`
 
@@ -85,6 +93,9 @@ same assertion engine `nova run` uses, just treated as a test suite rather
 than one-off execution.
 
 - `--environment <name>`
+- `--data <file.csv|file.json>` — run each request's assertions once per
+  row/object in this file, the same as `nova run`'s `--data`. `passed`/
+  `failed` totals across every iteration.
 
 ## `nova ws <request>`
 

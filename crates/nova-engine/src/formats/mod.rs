@@ -8,9 +8,11 @@
 //! produce into an actual project directory on disk. [`export`] goes the
 //! opposite direction from `curl`: rendering an already-resolved request
 //! as a `curl` command or code snippet, for handing to someone who doesn't
-//! have Nova installed.
+//! have Nova installed. [`data`] reads a CSV/JSON data file into a
+//! data-driven run's per-iteration variables.
 
 pub mod curl;
+pub mod data;
 pub mod export;
 pub mod generate;
 pub mod openapi;
