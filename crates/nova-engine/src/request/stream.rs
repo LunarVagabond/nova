@@ -215,7 +215,8 @@ pub(super) fn parse_nova_websocket(contents: &str) -> Result<ParsedWebSocketRequ
                 | Section::Body
                 | Section::Assert
                 | Section::Response
-                | Section::Script,
+                | Section::Script
+                | Section::Sweep,
             ) => {}
         }
     }
@@ -380,7 +381,8 @@ pub(super) fn parse_nova_sse(contents: &str) -> Result<ParsedSseRequest, String>
                 | Section::Assert
                 | Section::Response
                 | Section::Messages
-                | Section::Script,
+                | Section::Script
+                | Section::Sweep,
             ) => {}
         }
     }

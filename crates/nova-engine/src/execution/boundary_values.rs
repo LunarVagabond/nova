@@ -21,13 +21,16 @@
 
 use std::fmt;
 
+use serde::Serialize;
+
 /// A named built-in boundary-value generator.
 ///
 /// Each variant represents one common "unhappy path" input a developer
 /// would otherwise have to hand-write into a values file: an empty string,
 /// an excessively long one, a negative/zero/huge number, a string with
 /// multi-byte/non-ASCII content, or the field being absent entirely.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BoundaryGenerator {
     /// An empty string (`""`).
     Empty,

@@ -19,6 +19,7 @@ nova validate [path]             # validate manifest/environments/requests
 
 nova run <request>               # execute a single .nova file, or a directory of them
 nova test [path]                 # run requests as assertions/tests
+nova sweep <request>              # resend a request once per value across one position
 nova ws <request>                # open a WebSocket connection declared by a .nova file
 nova sse <request>                # open an SSE connection declared by a .nova file
 
@@ -96,6 +97,39 @@ than one-off execution.
 - `--data <file.csv|file.json>` — run each request's assertions once per
   row/object in this file, the same as `nova run`'s `--data`. `passed`/
   `failed` totals across every iteration.
+
+## `nova sweep <request>`
+
+Resend a request once per value across one position — a query param, a
+header, or a JSON body field — reporting status/elapsed time/response size
+per variant against the unmodified baseline (variant zero), with anomalies
+flagged: an unexpected 5xx (baseline succeeded, variant returned >= 500), a
+timing outlier (a variant taking a lot longer than the baseline), or the
+response's JSON shape changing at the top level. See
+[nova-file-format.md](./nova-file-format.md#sweep) for the `.nova` `[sweep]`
+section this reads by default, and #138 for the full design rationale
+(bounded scope — "does my API handle this range of inputs sanely," not a
+vulnerability scanner).
+
+- `--environment <name>`
+- `--position <spec>` — override the request's own `[sweep]` position (a
+  `param:<name>`, `header:<name>`, or `body:<dotted.path>` spec).
+- `--values <a,b,c>` / `--values-file <path>` / `--generator <names|all>` —
+  override the request's own `[sweep]` values with, respectively, an inline
+  comma-separated list, a project-root-relative values file (one value per
+  line), or one or more built-in boundary-value generator names (`empty`,
+  `very_long`, `negative`, `zero`, `huge`, `unicode`, `missing`), or `all`
+  for every one of them.
+
+  Giving any of `--position`/`--values`/`--values-file`/`--generator`
+  replaces the request's `[sweep]` section entirely for that run — a
+  partial override isn't supported. A request with no `[sweep]` section at
+  all needs both `--position` and one of the value-source flags.
+
+Exits non-zero if any variant is flagged with an anomaly, or if the request
+can't be parsed/resolved/sent at all. `--json` prints the full report
+(baseline, each variant's value/status/elapsed time/size/anomalies, and an
+`anomaly_count` total) instead of a summary line per variant.
 
 ## `nova ws <request>`
 

@@ -20,11 +20,11 @@ pub struct Cli {
     pub path: PathBuf,
 
     /// Print machine-readable JSON instead of human-formatted text.
-    /// Supported by `inspect`/`open`, `validate`, `run`, and `test`; the
-    /// JSON shape reuses `nova-engine`'s own `Serialize` types rather than
-    /// a CLI-specific schema. On failure, a JSON error object is printed
-    /// to stderr instead of the usual `error: ...` line; the exit code is
-    /// unchanged either way.
+    /// Supported by `inspect`/`open`, `validate`, `run`, `test`, and
+    /// `sweep`; the JSON shape reuses `nova-engine`'s own `Serialize`
+    /// types rather than a CLI-specific schema. On failure, a JSON error
+    /// object is printed to stderr instead of the usual `error: ...`
+    /// line; the exit code is unchanged either way.
     #[arg(long, global = true)]
     pub json: bool,
 }
@@ -159,6 +159,46 @@ pub enum Command {
         /// see `run`'s `--data` for the exact behavior.
         #[arg(long)]
         data: Option<PathBuf>,
+    },
+
+    /// Resend a request once per value across one position (a query param,
+    /// a header, or a JSON body field), reporting status/timing/response-
+    /// size per variant with anomalies flagged against the unmodified
+    /// baseline (variant zero).
+    ///
+    /// Reads the request's own `[sweep]` section by default. `--position`
+    /// and one of `--values`/`--values-file`/`--generator` override (or,
+    /// for a request with no `[sweep]` section at all, fully supply) what
+    /// to sweep — useful for a one-off sweep without editing the file.
+    Sweep {
+        /// Path to a `.nova` file.
+        request: PathBuf,
+
+        #[arg(long)]
+        environment: Option<String>,
+
+        /// Override the request's own `[sweep]` position — a
+        /// `param:<name>`, `header:<name>`, or `body:<dotted.path>` spec.
+        #[arg(long)]
+        position: Option<String>,
+
+        /// Override the request's own `[sweep]` values with this
+        /// comma-separated inline list.
+        #[arg(long)]
+        values: Option<String>,
+
+        /// Override the request's own `[sweep]` values with this
+        /// project-root-relative values file (one value per line, `#`
+        /// comments and blank lines skipped).
+        #[arg(long = "values-file")]
+        values_file: Option<PathBuf>,
+
+        /// Override the request's own `[sweep]` values with one or more
+        /// comma-separated built-in generator names (`empty`, `very_long`,
+        /// `negative`, `zero`, `huge`, `unicode`, `missing`), or `all` for
+        /// every one of them.
+        #[arg(long)]
+        generator: Option<String>,
     },
 
     /// Generate a Nova project from an OpenAPI 3.x spec (YAML or JSON) or a

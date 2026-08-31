@@ -145,6 +145,10 @@ impl RequestFile {
             })
         };
 
+        let (existing_example_response, existing_sweep) = existing
+            .map(|p| (p.example_response, p.sweep))
+            .unwrap_or((None, None));
+
         let parsed = ParsedRequest {
             method: draft.method.clone(),
             url: draft.url.clone(),
@@ -156,7 +160,8 @@ impl RequestFile {
             assertions,
             extractions,
             script,
-            example_response: existing.and_then(|p| p.example_response),
+            example_response: existing_example_response,
+            sweep: existing_sweep,
         };
 
         let text = parsed

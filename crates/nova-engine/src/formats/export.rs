@@ -169,6 +169,7 @@ mod tests {
             extractions: Vec::new(),
             script: None,
             example_response: None,
+            sweep: None,
         }
     }
 

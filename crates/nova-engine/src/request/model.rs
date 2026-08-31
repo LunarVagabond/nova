@@ -256,6 +256,12 @@ pub struct ParsedRequest {
     pub script: Option<crate::execution::script::ScriptSection>,
 
     pub example_response: Option<ExampleResponse>,
+
+    /// The request's `[sweep]` section, if any — names one position in
+    /// this request (a query param, a header, or a JSON body field) and a
+    /// set of values to resend the request with, one at a time. See
+    /// [`crate::execution::sweep`].
+    pub sweep: Option<crate::execution::sweep::SweepConfig>,
 }
 
 /// The default for `[settings]`' `sync_content_type` — and so the

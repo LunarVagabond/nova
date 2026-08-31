@@ -9,6 +9,7 @@ pub mod mock;
 pub mod new;
 pub mod run;
 pub mod sse;
+pub mod sweep;
 pub mod test;
 pub mod validate;
 pub mod websocket;

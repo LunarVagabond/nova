@@ -210,6 +210,15 @@ pub enum NovaError {
          executable):\n\n{script}"
     )]
     HooksPathOverridden { hooks_path: String, script: String },
+
+    #[error("invalid [sweep] configuration: {message}")]
+    SweepConfigInvalid { message: String },
+
+    #[error("sweep values file not found at {path} (looked relative to the project root)")]
+    SweepValuesFileNotFound { path: PathBuf },
+
+    #[error("sweep position {position:?} could not be applied to this request: {reason}")]
+    SweepPositionNotApplicable { position: String, reason: String },
 }
 
 pub type NovaResult<T> = Result<T, NovaError>;
