@@ -64,9 +64,11 @@ release bundle with `make build-app`.
   whole jar; also in-memory and per-session, resetting along with
   `HistoryPanel.vue`'s history when the app restarts;
   `ResponseDiffView.vue` renders a structured response diff (see
-  below) for the response pane's Diff tab; `Modal.vue` is the shared
-  in-app dialog component — used instead of `window.prompt`/
-  `window.confirm`, which are unreliable inside Tauri's webview.
+  below) for the response pane's Diff tab; `ResponseTimelineView.vue` renders
+  the captured timing breakdown (see below) for the response pane's Timeline
+  tab; `Modal.vue` is the shared in-app dialog component — used instead of
+  `window.prompt`/`window.confirm`, which are unreliable inside Tauri's
+  webview.
 
 ### WebSocket requests
 
@@ -166,6 +168,37 @@ commands; the GUI only renders the resulting `ResponseDiff`. Since a
 request" is identified by matching method and fully-resolved URL rather
 than the source file — see `resolved_identity` in `commands.rs` for the
 documented edge cases this trades off.
+
+### Response timing
+
+The response pane's Timeline tab shows a coarse timing breakdown for the
+most recent send, captured by `nova-engine`'s `execute()`
+(`crates/nova-engine/src/execution/http.rs`) as a `ResponseTiming` alongside
+the existing `elapsed_ms`.
+
+Only two phases are shown, and that's a deliberate, honest scope decision
+rather than an oversight: `ureq` (the HTTP client `nova-engine` uses to send
+requests) doesn't expose DNS lookup, TCP connect, or TLS handshake as
+separate, hookable phases — its connection-establishment code is entirely
+private with no callback or tracing API, and `ureq`'s `Request::call`/
+`send_string`/`send_bytes` don't return until the full response status line
+and headers have already been read. That rules out a browser-devtools-style
+DNS / connect / TLS / request-sent / TTFB / download breakdown without
+forking or replacing `ureq`'s transport layer outright, which is out of
+scope. What's captured instead, and genuinely measured (never estimated or
+fabricated):
+
+- **Waiting (TTFB)** — from just before the request is sent to the moment
+  the response status line and headers arrive. This one span bundles DNS
+  lookup, TCP connect, TLS handshake, sending the request, and waiting on
+  the server; `ureq` gives no way to see the boundaries between them.
+- **Content download** — time spent reading the response body after the
+  head has arrived.
+
+`time_to_first_byte_ms + content_download_ms` equals `elapsed_ms`. The
+Timeline tab (`ResponseTimelineView.vue`) renders both as a two-segment bar
+plus a legend, and states the DNS/connect/TLS limitation inline so it isn't
+mistaken for a browser devtools-level breakdown.
 
 ## The enforced boundary
 

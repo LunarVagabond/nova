@@ -431,6 +431,7 @@ fn describe_resolved(resolved: &Resolved) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::execution::http::ResponseTiming;
 
     fn response(status: u16, body: &str, elapsed_ms: u128) -> Response {
         Response {
@@ -438,6 +439,10 @@ mod tests {
             headers: vec![],
             body: body.to_string(),
             elapsed_ms,
+            timing: ResponseTiming {
+                time_to_first_byte_ms: elapsed_ms,
+                content_download_ms: 0,
+            },
         }
     }
 
