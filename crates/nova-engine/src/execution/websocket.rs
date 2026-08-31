@@ -1,5 +1,5 @@
-//! Connect to a WebSocket endpoint, send its declared text messages, and
-//! collect whatever text messages come back — the WebSocket counterpart to
+//! Connect to a WebSocket endpoint, send its declared messages, and
+//! collect whatever comes back — the WebSocket counterpart to
 //! [`crate::execution::http::execute`].
 //!
 //! Kept behind the same request/session shape as HTTP execution (a parsed,
@@ -10,16 +10,26 @@
 //! design (see `execute.rs`'s use of `ureq`) rather than introducing an
 //! async runtime.
 //!
-//! First-pass scope: text messages only. Binary frames, and ping/pong
-//! keepalive tuning are out of scope — see the module's tests for what is
-//! covered.
+//! Text and binary frames are both in scope: a text message is sent/
+//! received as plain text, and a [`crate::request::WebSocketMessage::BinaryFile`]
+//! reads its bytes from disk (project-root-relative, same escape check as
+//! an HTTP binary body — see [`crate::execution::http::resolve_project_file_path`])
+//! and sends them as a single binary frame. A received binary frame is
+//! reported as [`WebSocketReceivedMessage::Binary`] (base64-encoded bytes
+//! plus a length) rather than attempting to render arbitrary bytes as
+//! text — a caller that wants to inspect or persist it decodes that
+//! itself. Ping/pong keepalive tuning is still out of scope — see the
+//! module's tests for what is covered.
 
 use std::net::TcpStream;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use serde::Serialize;
 use tungstenite::client::IntoClientRequest;
 use tungstenite::http::{HeaderName, HeaderValue};
@@ -27,7 +37,8 @@ use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
 
 use crate::error::{NovaError, NovaResult};
-use crate::request::ParsedWebSocketRequest;
+use crate::execution::http::resolve_project_file_path;
+use crate::request::{ParsedWebSocketRequest, WebSocketMessage};
 
 /// How often the interactive [`WebSocketSession`]'s background reader
 /// thread's blocking read wakes up on its own even with nothing new to
@@ -41,32 +52,50 @@ const SESSION_POLL_INTERVAL: Duration = Duration::from_millis(200);
 /// otherwise hang a caller forever.
 pub const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// One message received over a WebSocket connection — the counterpart to
+/// [`crate::request::WebSocketMessage`] for what comes back rather than
+/// what's sent.
+///
+/// A binary frame's bytes are base64-encoded (JSON has no native byte
+/// string) rather than rendered as text — arbitrary bytes rarely mean
+/// anything as text, so a caller (the desktop app's transcript) shows a
+/// length/preview and offers to save the decoded bytes to disk instead of
+/// guessing at a text rendering.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WebSocketReceivedMessage {
+    Text { text: String },
+    Binary { data_base64: String, len: usize },
+}
+
 /// The result of connecting to a WebSocket endpoint, sending every message
-/// `request` declares (in order), and collecting whatever text messages
-/// came back before the read timeout elapsed or the server closed the
-/// connection.
+/// `request` declares (in order), and collecting whatever came back before
+/// the read timeout elapsed or the server closed the connection.
 #[derive(Debug, Clone, Serialize)]
 pub struct WebSocketExchange {
-    /// Every text message sent, in the order it went out.
-    pub sent: Vec<String>,
-    /// Every text message received, in the order it arrived. A binary,
-    /// ping, or pong frame is silently skipped rather than collected here
-    /// — out of scope for this first pass.
-    pub received: Vec<String>,
+    /// Every message sent, in the order it went out.
+    pub sent: Vec<WebSocketMessage>,
+    /// Every message received, in the order it arrived. A ping/pong frame
+    /// is silently skipped rather than collected here.
+    pub received: Vec<WebSocketReceivedMessage>,
     pub elapsed_ms: u128,
 }
 
 /// Connect to `request`'s URL (already resolved — see
 /// [`ParsedWebSocketRequest::resolve`]), send each of its `messages` in
-/// order, then read back whatever text messages the server sends until
-/// `read_timeout` elapses without a new one, or the server closes the
-/// connection.
+/// order — a [`WebSocketMessage::BinaryFile`]'s bytes are read from disk,
+/// resolved relative to `project_root` — then read back whatever the
+/// server sends until `read_timeout` elapses without a new message, or the
+/// server closes the connection.
 ///
 /// A connection failure (bad handshake, refused connection, non-`ws(s)://`
 /// URL) is a typed [`NovaError::RequestExecution`], matching how
-/// [`crate::execution::http::execute`] reports a transport failure.
+/// [`crate::execution::http::execute`] reports a transport failure — as is
+/// a `BinaryFile` message naming a file that doesn't resolve to somewhere
+/// genuinely inside `project_root`.
 pub fn connect_and_exchange(
     request: &ParsedWebSocketRequest,
+    project_root: &Path,
     read_timeout: Duration,
 ) -> NovaResult<WebSocketExchange> {
     let client_request = build_client_request(request)?;
@@ -80,22 +109,34 @@ pub fn connect_and_exchange(
     set_read_timeout(socket.get_ref(), Some(read_timeout));
 
     let mut sent = Vec::with_capacity(request.messages.len());
-    for text in &request.messages {
+    for message in &request.messages {
+        let frame = match message {
+            WebSocketMessage::Text { text } => Message::text(text.clone()),
+            WebSocketMessage::BinaryFile { path } => {
+                Message::Binary(read_binary_message_file(project_root, path)?.into())
+            }
+        };
         socket
-            .send(Message::text(text.clone()))
+            .send(frame)
             .map_err(|source| NovaError::RequestExecution {
                 message: format!("failed to send WebSocket message: {source}"),
             })?;
-        sent.push(text.clone());
+        sent.push(message.clone());
     }
 
     let mut received = Vec::new();
     loop {
         match socket.read() {
-            Ok(Message::Text(text)) => received.push(text.to_string()),
+            Ok(Message::Text(text)) => received.push(WebSocketReceivedMessage::Text {
+                text: text.to_string(),
+            }),
+            Ok(Message::Binary(bytes)) => received.push(WebSocketReceivedMessage::Binary {
+                data_base64: BASE64.encode(&bytes),
+                len: bytes.len(),
+            }),
             Ok(Message::Close(_)) => break,
-            // Binary/ping/pong frames aren't collected in this first pass
-            // — keep reading for a text message or the connection closing.
+            // Ping/pong frames aren't surfaced — keep reading for a
+            // text/binary message or the connection closing.
             Ok(_) => continue,
             Err(tungstenite::Error::Io(io_error))
                 if matches!(
@@ -122,6 +163,19 @@ pub fn connect_and_exchange(
         received,
         elapsed_ms: elapsed.as_millis(),
     })
+}
+
+/// Read a [`WebSocketMessage::BinaryFile`]'s bytes from disk, resolved
+/// relative to `project_root` — the WebSocket counterpart to
+/// [`crate::execution::http`]'s own binary-body/multipart-file-attachment
+/// reads, reusing the same [`resolve_project_file_path`] escape check.
+fn read_binary_message_file(project_root: &Path, file_path: &str) -> NovaResult<Vec<u8>> {
+    let resolved = resolve_project_file_path(project_root, file_path).ok_or_else(|| {
+        NovaError::BinaryFileNotFound {
+            path: std::path::PathBuf::from(file_path),
+        }
+    })?;
+    std::fs::read(&resolved).map_err(|_| NovaError::BinaryFileNotFound { path: resolved })
 }
 
 /// A live, interactive WebSocket connection: unlike [`connect_and_exchange`]
@@ -152,13 +206,18 @@ pub struct WebSocketSession {
     socket: Arc<Mutex<WebSocket<MaybeTlsStream<TcpStream>>>>,
     stop: Arc<AtomicBool>,
     reader_thread: Option<JoinHandle<()>>,
+    /// Kept for [`WebSocketSession::send_binary_file`] to resolve a
+    /// project-relative path against, the same way [`connect_and_exchange`]
+    /// takes `project_root` directly since it isn't a long-lived object
+    /// that can just remember it.
+    project_root: std::path::PathBuf,
 }
 
 impl WebSocketSession {
     /// Connect to `request`'s URL (already resolved) and start a background
-    /// reader thread that calls `on_message` with each text message's
-    /// content as it arrives, in order, until the connection is closed
-    /// (from either end) or [`WebSocketSession::disconnect`] is called.
+    /// reader thread that calls `on_message` with each message as it
+    /// arrives, in order, until the connection is closed (from either end)
+    /// or [`WebSocketSession::disconnect`] is called.
     ///
     /// `on_close` is called at most once, only when the connection ends on
     /// its own (the server closed it, or a read failed) rather than via an
@@ -166,11 +225,12 @@ impl WebSocketSession {
     /// an unexpected disconnect without polling.
     pub fn connect<M, C>(
         request: &ParsedWebSocketRequest,
+        project_root: &Path,
         on_message: M,
         on_close: C,
     ) -> NovaResult<Self>
     where
-        M: Fn(String) + Send + 'static,
+        M: Fn(WebSocketReceivedMessage) + Send + 'static,
         C: FnOnce() + Send + 'static,
     {
         let client_request = build_client_request(request)?;
@@ -195,6 +255,7 @@ impl WebSocketSession {
             socket,
             stop,
             reader_thread: Some(reader_thread),
+            project_root: project_root.to_path_buf(),
         })
     }
 
@@ -202,7 +263,19 @@ impl WebSocketSession {
     /// lock the background reader thread polls with, so this blocks for at
     /// most about [`SESSION_POLL_INTERVAL`] waiting for the reader's
     /// current (short-timeout) read to return.
-    pub fn send(&self, text: &str) -> NovaResult<()> {
+    pub fn send_text(&self, text: &str) -> NovaResult<()> {
+        self.send_frame(Message::text(text.to_string()))
+    }
+
+    /// Send a file's raw bytes, resolved relative to the project root this
+    /// session connected under, as a single binary frame — the interactive
+    /// counterpart to a declared [`WebSocketMessage::BinaryFile`].
+    pub fn send_binary_file(&self, file_path: &str) -> NovaResult<()> {
+        let bytes = read_binary_message_file(&self.project_root, file_path)?;
+        self.send_frame(Message::Binary(bytes.into()))
+    }
+
+    fn send_frame(&self, frame: Message) -> NovaResult<()> {
         let mut socket = self
             .socket
             .lock()
@@ -210,7 +283,7 @@ impl WebSocketSession {
                 message: "WebSocket session's connection lock was poisoned".to_string(),
             })?;
         socket
-            .send(Message::text(text.to_string()))
+            .send(frame)
             .map_err(|source| NovaError::RequestExecution {
                 message: format!("failed to send WebSocket message: {source}"),
             })
@@ -252,7 +325,7 @@ fn run_reader_loop<M, C>(
     on_message: M,
     on_close: C,
 ) where
-    M: Fn(String) + Send + 'static,
+    M: Fn(WebSocketReceivedMessage) + Send + 'static,
     C: FnOnce() + Send + 'static,
 {
     let mut on_close = Some(on_close);
@@ -269,7 +342,13 @@ fn run_reader_loop<M, C>(
         drop(guard);
 
         match outcome {
-            Ok(Message::Text(text)) => on_message(text.to_string()),
+            Ok(Message::Text(text)) => on_message(WebSocketReceivedMessage::Text {
+                text: text.to_string(),
+            }),
+            Ok(Message::Binary(bytes)) => on_message(WebSocketReceivedMessage::Binary {
+                data_base64: BASE64.encode(&bytes),
+                len: bytes.len(),
+            }),
             Ok(Message::Close(_)) => {
                 // Complete the close handshake by sending our own close
                 // frame back (mirrors `connect_and_exchange`'s own
@@ -288,8 +367,7 @@ fn run_reader_loop<M, C>(
                 }
                 return;
             }
-            // Binary/ping/pong frames aren't surfaced to `on_message` in
-            // this pass, matching `connect_and_exchange`'s own scope.
+            // Ping/pong frames aren't surfaced to `on_message`.
             Ok(_) => continue,
             Err(tungstenite::Error::Io(io_error))
                 if matches!(
@@ -389,10 +467,42 @@ mod tests {
     use super::*;
     use crate::request::Header;
 
+    /// A scratch directory under the OS temp dir, unique per call, cleaned
+    /// up when dropped — used as `project_root` for tests that resolve a
+    /// `WebSocketMessage::BinaryFile` against a real file on disk.
+    struct TempDir(std::path::PathBuf);
+
+    impl TempDir {
+        fn new(label: &str) -> TempDir {
+            let path = std::env::temp_dir().join(format!(
+                "nova-engine-test-ws-{label}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(&path).unwrap();
+            TempDir(path)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// No test here actually needs to resolve a file — a fixed, real
+    /// directory is enough as `project_root` for the text-only cases.
+    fn no_project_root() -> std::path::PathBuf {
+        std::env::temp_dir()
+    }
+
     /// Starts a minimal local WebSocket server on an OS-assigned port that
-    /// echoes every text message it receives back to the client, closing
-    /// once the client closes (or after `expected_messages` echoes,
-    /// whichever comes first) — enough to exercise
+    /// echoes every text/binary message it receives back to the client,
+    /// closing once the client closes (or after `expected_messages`
+    /// echoes, whichever comes first) — enough to exercise
     /// [`connect_and_exchange`] without hitting a real external service.
     fn echo_server(expected_messages: usize) -> (String, thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -407,6 +517,9 @@ mod tests {
                 match socket.read() {
                     Ok(Message::Text(text)) => {
                         socket.send(Message::text(text.to_string())).unwrap();
+                    }
+                    Ok(Message::Binary(bytes)) => {
+                        socket.send(Message::Binary(bytes)).unwrap();
                     }
                     Ok(Message::Close(_)) | Err(_) => break,
                     Ok(_) => continue,
@@ -427,7 +540,7 @@ mod tests {
     fn ws_request(
         url: String,
         headers: Vec<Header>,
-        messages: Vec<String>,
+        messages: Vec<WebSocketMessage>,
     ) -> ParsedWebSocketRequest {
         ParsedWebSocketRequest {
             url,
@@ -436,22 +549,32 @@ mod tests {
         }
     }
 
+    fn text(s: &str) -> WebSocketMessage {
+        WebSocketMessage::Text {
+            text: s.to_string(),
+        }
+    }
+
     #[test]
     fn sends_messages_and_collects_echoed_responses() {
         let (url, handle) = echo_server(2);
 
-        let request = ws_request(url, vec![], vec!["hello".to_string(), "world".to_string()]);
+        let request = ws_request(url, vec![], vec![text("hello"), text("world")]);
 
-        let exchange =
-            connect_and_exchange(&request, Duration::from_secs(2)).expect("exchange succeeds");
+        let exchange = connect_and_exchange(&request, &no_project_root(), Duration::from_secs(2))
+            .expect("exchange succeeds");
 
-        assert_eq!(
-            exchange.sent,
-            vec!["hello".to_string(), "world".to_string()]
-        );
+        assert_eq!(exchange.sent, vec![text("hello"), text("world")]);
         assert_eq!(
             exchange.received,
-            vec!["hello".to_string(), "world".to_string()]
+            vec![
+                WebSocketReceivedMessage::Text {
+                    text: "hello".to_string()
+                },
+                WebSocketReceivedMessage::Text {
+                    text: "world".to_string()
+                },
+            ]
         );
 
         handle.join().unwrap();
@@ -464,7 +587,8 @@ mod tests {
         let request = ws_request(url, vec![], vec![]);
 
         let exchange =
-            connect_and_exchange(&request, Duration::from_millis(200)).expect("exchange succeeds");
+            connect_and_exchange(&request, &no_project_root(), Duration::from_millis(200))
+                .expect("exchange succeeds");
 
         assert!(exchange.sent.is_empty());
         assert!(exchange.received.is_empty());
@@ -476,7 +600,8 @@ mod tests {
     fn refuses_a_url_that_is_not_ws_or_wss() {
         let request = ws_request("http://127.0.0.1:1/".to_string(), vec![], vec![]);
 
-        let err = connect_and_exchange(&request, Duration::from_millis(200)).unwrap_err();
+        let err = connect_and_exchange(&request, &no_project_root(), Duration::from_millis(200))
+            .unwrap_err();
 
         assert!(
             matches!(&err, NovaError::RequestExecution { message } if message.contains("ws://")),
@@ -485,20 +610,124 @@ mod tests {
     }
 
     #[test]
+    fn sends_a_binary_file_message_and_receives_the_echoed_bytes() {
+        let (url, handle) = echo_server(1);
+        let temp = TempDir::new("binary-file");
+        std::fs::write(temp.0.join("payload.bin"), [0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
+
+        let request = ws_request(
+            url,
+            vec![],
+            vec![WebSocketMessage::BinaryFile {
+                path: "payload.bin".to_string(),
+            }],
+        );
+
+        let exchange = connect_and_exchange(&request, &temp.0, Duration::from_secs(2))
+            .expect("exchange succeeds");
+
+        assert_eq!(
+            exchange.sent,
+            vec![WebSocketMessage::BinaryFile {
+                path: "payload.bin".to_string()
+            }]
+        );
+        match &exchange.received[..] {
+            [WebSocketReceivedMessage::Binary { data_base64, len }] => {
+                assert_eq!(*len, 4);
+                assert_eq!(
+                    BASE64.decode(data_base64).unwrap(),
+                    vec![0xDE, 0xAD, 0xBE, 0xEF]
+                );
+            }
+            other => panic!("expected one echoed binary message, got {other:?}"),
+        }
+
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn a_binary_file_message_naming_a_path_outside_the_project_is_a_typed_error() {
+        // A real listener, so the failure being asserted is genuinely the
+        // file-path escape check rather than just "nothing was listening".
+        let (url, handle) = echo_server(0);
+        let temp = TempDir::new("binary-file-escape");
+
+        let request = ws_request(
+            url,
+            vec![],
+            vec![WebSocketMessage::BinaryFile {
+                path: "../../etc/passwd".to_string(),
+            }],
+        );
+
+        let err = connect_and_exchange(&request, &temp.0, Duration::from_millis(200)).unwrap_err();
+        assert!(
+            matches!(err, NovaError::BinaryFileNotFound { .. }),
+            "unexpected error: {err:?}"
+        );
+
+        handle.join().unwrap();
+    }
+
+    #[test]
     fn session_sends_and_receives_an_echoed_message() {
         let (url, handle) = echo_server(1);
         let request = ws_request(url, vec![], vec![]);
 
-        let (tx, rx) = std::sync::mpsc::channel::<String>();
-        let session =
-            WebSocketSession::connect(&request, move |text| tx.send(text).unwrap(), || {})
-                .expect("session connects");
+        let (tx, rx) = std::sync::mpsc::channel::<WebSocketReceivedMessage>();
+        let session = WebSocketSession::connect(
+            &request,
+            &no_project_root(),
+            move |message| tx.send(message).unwrap(),
+            || {},
+        )
+        .expect("session connects");
 
-        session.send("hello").expect("send succeeds");
+        session.send_text("hello").expect("send succeeds");
         let received = rx
             .recv_timeout(Duration::from_secs(2))
             .expect("echoed message arrives");
-        assert_eq!(received, "hello");
+        assert_eq!(
+            received,
+            WebSocketReceivedMessage::Text {
+                text: "hello".to_string()
+            }
+        );
+
+        session.disconnect();
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn session_sends_a_binary_file_and_receives_the_echoed_bytes() {
+        let (url, handle) = echo_server(1);
+        let temp = TempDir::new("session-binary-file");
+        std::fs::write(temp.0.join("payload.bin"), [1, 2, 3]).unwrap();
+        let request = ws_request(url, vec![], vec![]);
+
+        let (tx, rx) = std::sync::mpsc::channel::<WebSocketReceivedMessage>();
+        let session = WebSocketSession::connect(
+            &request,
+            &temp.0,
+            move |message| tx.send(message).unwrap(),
+            || {},
+        )
+        .expect("session connects");
+
+        session
+            .send_binary_file("payload.bin")
+            .expect("send succeeds");
+        let received = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("echoed message arrives");
+        match received {
+            WebSocketReceivedMessage::Binary { data_base64, len } => {
+                assert_eq!(len, 3);
+                assert_eq!(BASE64.decode(data_base64).unwrap(), vec![1, 2, 3]);
+            }
+            other => panic!("expected a binary message, got {other:?}"),
+        }
 
         session.disconnect();
         handle.join().unwrap();
@@ -513,7 +742,8 @@ mod tests {
         let closed_flag = Arc::clone(&closed);
         let session = WebSocketSession::connect(
             &request,
-            |_text| {},
+            &no_project_root(),
+            |_message| {},
             move || {
                 closed_flag.store(true, Ordering::Relaxed);
             },
@@ -534,7 +764,8 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel::<()>();
         let session = WebSocketSession::connect(
             &request,
-            |_text| {},
+            &no_project_root(),
+            |_message| {},
             move || {
                 let _ = tx.send(());
             },
@@ -558,7 +789,8 @@ mod tests {
         // fast rather than hang.
         let request = ws_request("ws://127.0.0.1:1/".to_string(), vec![], vec![]);
 
-        let err = connect_and_exchange(&request, Duration::from_millis(200)).unwrap_err();
+        let err = connect_and_exchange(&request, &no_project_root(), Duration::from_millis(200))
+            .unwrap_err();
 
         assert!(
             matches!(err, NovaError::RequestExecution { .. }),

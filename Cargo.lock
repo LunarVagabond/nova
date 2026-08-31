@@ -2327,6 +2327,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 name = "nova-app"
 version = "0.0.1"
 dependencies = [
+ "base64 0.22.1",
  "nova-engine",
  "serde",
  "serde_json",

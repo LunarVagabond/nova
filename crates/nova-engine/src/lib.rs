@@ -41,7 +41,8 @@ pub use execution::sse::{
     connect_and_stream, SseEvent, SseExchange, DEFAULT_READ_TIMEOUT as SSE_DEFAULT_READ_TIMEOUT,
 };
 pub use execution::websocket::{
-    connect_and_exchange, WebSocketExchange, WebSocketSession, DEFAULT_READ_TIMEOUT,
+    connect_and_exchange, WebSocketExchange, WebSocketReceivedMessage, WebSocketSession,
+    DEFAULT_READ_TIMEOUT,
 };
 pub use formats::curl::{parse_curl, ParsedCurlRequest};
 pub use formats::data::load_data_iterations;
@@ -76,7 +77,7 @@ pub use request::{
     delete_request, duplicate_request, graphql_body_to_text, multipart_fields_to_body_text,
     parse_graphql_body, parse_multipart_fields, rename_request, ExampleResponse, GraphQlBody,
     Header, MultipartField, ParsedRequest, ParsedSseRequest, ParsedWebSocketRequest, QueryParam,
-    RequestBody, RequestDraft, RequestFile, WebSocketDraft,
+    RequestBody, RequestDraft, RequestFile, WebSocketDraft, WebSocketMessage,
 };
 pub use session::{CookieView, HistoryEntry, Session, HISTORY_CAP};
 pub use xml::{XmlElement, XmlNode};

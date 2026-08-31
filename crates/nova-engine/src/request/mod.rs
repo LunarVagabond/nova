@@ -28,7 +28,7 @@ pub use graphql::{graphql_body_to_text, parse_graphql_body, GraphQlBody};
 pub use model::{ExampleResponse, Header, ParsedRequest, QueryParam, RequestBody, RequestDraft};
 pub use multipart::{multipart_fields_to_body_text, parse_multipart_fields, MultipartField};
 pub use operations::{delete_request, duplicate_request, rename_request};
-pub use stream::{ParsedSseRequest, ParsedWebSocketRequest, WebSocketDraft};
+pub use stream::{ParsedSseRequest, ParsedWebSocketRequest, WebSocketDraft, WebSocketMessage};
 
 pub(crate) use file::detect_method_and_protocol;
 pub(crate) use resolve::substitute;

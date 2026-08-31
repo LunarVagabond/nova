@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use nova_engine::{
     connect_and_exchange, Collection, Header, NovaError, NovaProject, RequestFile, WebSocketDraft,
+    WebSocketMessage, WebSocketReceivedMessage,
 };
 use tungstenite::Message;
 
@@ -130,22 +131,43 @@ fn discovers_resolves_and_exchanges_messages_with_a_websocket_request() {
 
     assert_eq!(
         resolved.messages,
-        vec!["hello".to_string(), "world".to_string()]
+        vec![
+            WebSocketMessage::Text {
+                text: "hello".to_string()
+            },
+            WebSocketMessage::Text {
+                text: "world".to_string()
+            },
+        ]
     );
     assert_eq!(resolved.headers[0].value, "Bearer dev-token");
 
     let (url, auth_rx, handle) = echo_server(resolved.messages.len());
     resolved.url = format!("{url}/echo");
 
-    let exchange = connect_and_exchange(&resolved, Duration::from_secs(2)).unwrap();
+    let exchange = connect_and_exchange(&resolved, &project.root, Duration::from_secs(2)).unwrap();
 
     assert_eq!(
         exchange.sent,
-        vec!["hello".to_string(), "world".to_string()]
+        vec![
+            WebSocketMessage::Text {
+                text: "hello".to_string()
+            },
+            WebSocketMessage::Text {
+                text: "world".to_string()
+            },
+        ]
     );
     assert_eq!(
         exchange.received,
-        vec!["hello".to_string(), "world".to_string()]
+        vec![
+            WebSocketReceivedMessage::Text {
+                text: "hello".to_string()
+            },
+            WebSocketReceivedMessage::Text {
+                text: "world".to_string()
+            },
+        ]
     );
 
     let captured_auth = auth_rx.recv().unwrap();
@@ -222,7 +244,14 @@ fn write_websocket_round_trips_url_headers_and_messages() {
             name: "Authorization".to_string(),
             value: "Bearer {{auth_token}}".to_string(),
         }],
-        messages: vec!["subscribe".to_string(), "ping".to_string()],
+        messages: vec![
+            WebSocketMessage::Text {
+                text: "subscribe".to_string(),
+            },
+            WebSocketMessage::BinaryFile {
+                path: "payload.bin".to_string(),
+            },
+        ],
     };
     created.write_websocket(&draft).unwrap();
 
@@ -283,7 +312,8 @@ fn connection_refused_is_a_typed_error() {
     // Nothing is listening on this port.
     resolved.url = "ws://127.0.0.1:1/".to_string();
 
-    let err = connect_and_exchange(&resolved, Duration::from_millis(200)).unwrap_err();
+    let err =
+        connect_and_exchange(&resolved, &project.root, Duration::from_millis(200)).unwrap_err();
 
     assert!(
         matches!(err, NovaError::RequestExecution { .. }),
