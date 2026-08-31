@@ -297,7 +297,10 @@ fn write_rejects_a_malformed_assert_text_line() {
     draft.assert_text = "this is not a valid directive".to_string();
 
     let err = request_file.write(&draft).unwrap_err();
-    assert!(matches!(err, nova_engine::NovaError::RequestSerialize { .. }));
+    assert!(matches!(
+        err,
+        nova_engine::NovaError::RequestSerialize { .. }
+    ));
 }
 
 /// A draft's `script_pre`/`script_post` round-trip through save the same

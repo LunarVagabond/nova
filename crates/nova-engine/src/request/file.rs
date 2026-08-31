@@ -128,13 +128,13 @@ impl RequestFile {
             }
         })?;
 
-        let (assertions, extractions) =
-            crate::execution::assertion::parse_directives(&draft.assert_text).map_err(
-                |message| NovaError::RequestSerialize {
-                    path: self.path.clone(),
-                    message,
-                },
-            )?;
+        let (assertions, extractions) = crate::execution::assertion::parse_directives(
+            &draft.assert_text,
+        )
+        .map_err(|message| NovaError::RequestSerialize {
+            path: self.path.clone(),
+            message,
+        })?;
 
         let script = if draft.script_pre.is_none() && draft.script_post.is_none() {
             None
