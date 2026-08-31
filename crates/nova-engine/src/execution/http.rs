@@ -21,6 +21,44 @@ pub struct Response {
     pub headers: Vec<Header>,
     pub body: String,
     pub elapsed_ms: u128,
+    pub timing: ResponseTiming,
+}
+
+/// A coarse phase breakdown of [`Response::elapsed_ms`], backing `nova-app`'s
+/// response-pane Timeline tab (#165).
+///
+/// The ticket's wishlist was a browser-devtools-style DNS / TCP connect /
+/// TLS handshake / request sent / waiting (TTFB) / content download
+/// breakdown. `ureq` 2.x (see `Cargo.toml`) doesn't support that: its
+/// connection-establishment code (`connect`/`connect_socket`/`connect_host`
+/// in `ureq::stream`/`ureq::unit`) is entirely private with no callback,
+/// tracing, or hook API, and there's no lower-level escape hatch — `ureq`'s
+/// `Request::call`/`send_string`/`send_bytes` etc. are the only entry
+/// points, and they don't return until DNS, connect, TLS, and sending the
+/// request are already done *and* the response status line and headers have
+/// been read. So DNS/connect/TLS/request-sent/TTFB can't be measured
+/// separately without forking or replacing `ureq`'s transport layer
+/// entirely, which is out of scope here.
+///
+/// What genuinely is measurable with `ureq`'s public API, and is what this
+/// struct captures instead:
+///
+/// - `time_to_first_byte_ms`: wall-clock time from just before the request
+///   is sent to the moment the response status line and headers have been
+///   received (when `call()`/`send_string()`/etc. return). This bundles DNS
+///   lookup, TCP connect, TLS handshake, sending the request, and waiting on
+///   the server into one number — real phases exist inside it, but `ureq`
+///   gives no way to see the boundaries between them.
+/// - `content_download_ms`: wall-clock time spent reading the response body
+///   after the head has arrived (`Response::into_string`).
+///
+/// `time_to_first_byte_ms + content_download_ms` equals `elapsed_ms` (up to
+/// sub-millisecond rounding). Nothing here is estimated or fabricated: both
+/// numbers are real `Instant`-based measurements of what `ureq` actually did.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResponseTiming {
+    pub time_to_first_byte_ms: u128,
+    pub content_download_ms: u128,
 }
 
 /// Sent on every request unless the request's own `[headers]` already set
@@ -68,11 +106,16 @@ pub fn execute(project_root: &Path, request: &ParsedRequest) -> NovaResult<Respo
 
     let started = Instant::now();
     let result = send(project_root, req, &request.body)?;
-    let elapsed = started.elapsed();
+    // `send()` (via `ureq::Request::call`/`send_string`/etc.) doesn't return
+    // until the response status line and headers have been read — DNS,
+    // connect, TLS, sending the request, and waiting on the server are all
+    // folded into this one span. See `ResponseTiming`'s doc comment for why
+    // that's as fine-grained as `ureq` lets this get.
+    let time_to_first_byte = started.elapsed();
 
     match result {
-        Ok(response) => build_response(response, elapsed),
-        Err(ureq::Error::Status(_, response)) => build_response(response, elapsed),
+        Ok(response) => build_response(response, time_to_first_byte),
+        Err(ureq::Error::Status(_, response)) => build_response(response, time_to_first_byte),
         Err(ureq::Error::Transport(transport)) => Err(NovaError::RequestExecution {
             message: transport.to_string(),
         }),
@@ -246,7 +289,7 @@ pub(crate) fn resolve_project_file_path(project_root: &Path, file_path: &str) ->
     Some(canonical_target)
 }
 
-fn build_response(response: ureq::Response, elapsed: Duration) -> NovaResult<Response> {
+fn build_response(response: ureq::Response, time_to_first_byte: Duration) -> NovaResult<Response> {
     let status = response.status();
 
     // A header name can repeat (most notably Set-Cookie, one per cookie) —
@@ -267,16 +310,22 @@ fn build_response(response: ureq::Response, elapsed: Duration) -> NovaResult<Res
         }
     }
 
+    let download_started = Instant::now();
     let body = response
         .into_string()
         .map_err(|source| NovaError::RequestExecution {
             message: format!("failed to read response body: {source}"),
         })?;
+    let content_download = download_started.elapsed();
 
     Ok(Response {
         status,
         headers,
         body,
-        elapsed_ms: elapsed.as_millis(),
+        elapsed_ms: (time_to_first_byte + content_download).as_millis(),
+        timing: ResponseTiming {
+            time_to_first_byte_ms: time_to_first_byte.as_millis(),
+            content_download_ms: content_download.as_millis(),
+        },
     })
 }
