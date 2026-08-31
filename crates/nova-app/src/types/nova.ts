@@ -54,6 +54,8 @@ export type AuthSchemeType = AuthScheme["type"];
 export interface NovaEnvironment {
   name: string;
   variables: Record<string, string>;
+  /** Names of `variables` flagged as secret — masked behind a reveal toggle in the environment editor. */
+  secrets: string[];
   auth: AuthScheme | null;
   path: string;
 }

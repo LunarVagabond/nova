@@ -115,6 +115,7 @@ fn env_with(vars: &[(&str, &str)]) -> Environment {
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect(),
+        secrets: Vec::new(),
         auth: None,
         path: Default::default(),
     }

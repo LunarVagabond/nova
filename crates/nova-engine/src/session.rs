@@ -591,6 +591,7 @@ impl Session {
         Environment {
             name: environment.name.clone(),
             variables,
+            secrets: environment.secrets.clone(),
             auth: environment.auth.clone(),
             path: environment.path.clone(),
         }
@@ -772,6 +773,7 @@ mod tests {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
+            secrets: Vec::new(),
             auth: None,
             path: PathBuf::from("local.yaml"),
         }

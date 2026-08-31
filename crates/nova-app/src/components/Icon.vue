@@ -27,7 +27,10 @@ const props = defineProps<{
     | "moon"
     | "monitor"
     | "sidebar"
-    | "cookie";
+    | "cookie"
+    | "eye"
+    | "eye-off"
+    | "lock";
 }>();
 </script>
 
@@ -146,6 +149,22 @@ const props = defineProps<{
         d="M20.5 12.5A8.5 8.5 0 1 1 11.5 3.5c0 1.4 1.1 2.5 2.5 2.5s2.5 1.1 2.5 2.5 1.1 2.5 2.5 2.5 2 .6 2 1.5z"
       />
       <path d="M9 12a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM13.5 17a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM9.5 16.5h.01" />
+    </template>
+
+    <template v-else-if="name === 'eye'">
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="2.75" />
+    </template>
+
+    <template v-else-if="name === 'eye-off'">
+      <path
+        d="M3.5 3.5l17 17M6.4 6.6C3.9 8.3 2.5 12 2.5 12S6 18.5 12 18.5c1.7 0 3.2-.5 4.4-1.1M10.6 10.6a2.75 2.75 0 0 0 3.9 3.9M9.9 5.6A9.4 9.4 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a15.5 15.5 0 0 1-2.7 3.5"
+      />
+    </template>
+
+    <template v-else-if="name === 'lock'">
+      <rect x="5" y="11" width="14" height="9" rx="1.5" />
+      <path d="M8 11V7.5a4 4 0 0 1 8 0V11" />
     </template>
   </svg>
 </template>

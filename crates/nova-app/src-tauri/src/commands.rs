@@ -406,6 +406,7 @@ fn resolved_identity(
     let effective_environment = Environment {
         name: resolved_environment.name.clone(),
         variables,
+        secrets: resolved_environment.secrets.clone(),
         auth: resolved_environment.auth.clone(),
         path: resolved_environment.path.clone(),
     };
@@ -635,6 +636,7 @@ fn resolve_websocket_request(
     let effective_environment = Environment {
         name: resolved_environment.name.clone(),
         variables,
+        secrets: resolved_environment.secrets.clone(),
         auth: resolved_environment.auth.clone(),
         path: resolved_environment.path.clone(),
     };
@@ -916,11 +918,16 @@ pub fn create_environment(
     Ok(environment)
 }
 
-/// Write an edited environment's name/variables/default auth scheme back
-/// to the file at `environment_path`, replacing whatever was there. If
-/// `name` differs from `previous_name` and this was the project's default
-/// environment, the manifest's `defaults.environment` follows the rename
-/// too — see [`nova_engine::NovaProject::save_environment`].
+/// Write an edited environment's name/variables/secret flags/default auth
+/// scheme back to the file at `environment_path`, replacing whatever was
+/// there. If `name` differs from `previous_name` and this was the
+/// project's default environment, the manifest's `defaults.environment`
+/// follows the rename too — see [`nova_engine::NovaProject::save_environment`].
+// One argument per editable `Environment` field (plus the rename/lookup
+// bookkeeping and the shared git-status cache) — a thin Tauri command
+// wrapper like the rest of this file, not logic worth extracting into its
+// own request struct just to dodge the argument count.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn save_environment(
     project_root: String,
@@ -928,6 +935,7 @@ pub fn save_environment(
     previous_name: String,
     name: String,
     variables: HashMap<String, String>,
+    secrets: Vec<String>,
     auth: Option<AuthScheme>,
     cache: tauri::State<GitStatusCache>,
 ) -> Result<(), String> {
@@ -936,6 +944,7 @@ pub fn save_environment(
     let environment = Environment {
         name,
         variables,
+        secrets,
         auth,
         path: std::path::PathBuf::from(&environment_path),
     };

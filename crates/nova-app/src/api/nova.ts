@@ -387,16 +387,21 @@ export function createEnvironment(environmentsDir: string, name: string): Promis
 }
 
 /**
- * Writes an edited environment's name/variables/default auth scheme back
- * to the file at `environmentPath`, replacing whatever was there. If the
- * name changed and this was the project's default environment,
- * `projectRoot`'s manifest is updated to follow the rename.
+ * Writes an edited environment's name/variables/secret flags/default auth
+ * scheme back to the file at `environmentPath`, replacing whatever was
+ * there. If the name changed and this was the project's default
+ * environment, `projectRoot`'s manifest is updated to follow the rename.
  */
 export function saveEnvironment(
   projectRoot: string,
   environmentPath: string,
   previousName: string,
-  environment: { name: string; variables: Record<string, string>; auth: AuthScheme | null },
+  environment: {
+    name: string;
+    variables: Record<string, string>;
+    secrets: string[];
+    auth: AuthScheme | null;
+  },
 ): Promise<void> {
   return invoke<void>("save_environment", {
     projectRoot,
@@ -404,6 +409,7 @@ export function saveEnvironment(
     previousName,
     name: environment.name,
     variables: environment.variables,
+    secrets: environment.secrets,
     auth: environment.auth,
   });
 }

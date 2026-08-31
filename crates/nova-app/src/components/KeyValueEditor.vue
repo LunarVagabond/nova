@@ -2,9 +2,15 @@
 // Editable list of name/value rows — shared by the request panel's headers
 // and query-param editors. Emits the whole updated array on every change;
 // callers own what the array actually means (header vs. query param).
+import { reactive } from "vue";
+
 import Icon from "./Icon.vue";
 
-type Row = { name: string; value: string };
+// `secret` only means anything when `mode` is `"variables"` — an
+// environment variable flagged secret gets its value masked behind a
+// reveal toggle in the environment editor (headers/params rows never set
+// or read it).
+type Row = { name: string; value: string; secret?: boolean };
 
 // Common HTTP header names offered as autocomplete suggestions when
 // `mode` is "headers". Not exhaustive — just a reasonable common set;
@@ -30,7 +36,7 @@ const props = defineProps<{
   modelValue: Row[];
   namePlaceholder?: string;
   valuePlaceholder?: string;
-  mode?: "headers" | "params";
+  mode?: "headers" | "params" | "variables";
 }>();
 
 const emit = defineEmits<{
@@ -52,6 +58,23 @@ function removeRow(index: number) {
     props.modelValue.filter((_, i) => i !== index),
   );
 }
+
+function toggleSecret(index: number) {
+  const next = props.modelValue.map((row, i) =>
+    i === index ? { ...row, secret: !row.secret } : row,
+  );
+  revealed[index] = false;
+  emit("update:modelValue", next);
+}
+
+// Whether a masked row's value is currently shown in plain text — purely
+// local, ephemeral UI state (like any password field's reveal toggle), not
+// part of the row data and never persisted.
+const revealed = reactive<Record<number, boolean>>({});
+
+function toggleRevealed(index: number) {
+  revealed[index] = !revealed[index];
+}
 </script>
 
 <template>
@@ -70,11 +93,30 @@ function removeRow(index: number) {
       />
       <input
         class="kv-editor__input"
-        type="text"
+        :type="mode === 'variables' && row.secret && !revealed[index] ? 'password' : 'text'"
         :placeholder="valuePlaceholder ?? 'Value'"
         :value="row.value"
         @input="update(index, 'value', ($event.target as HTMLInputElement).value)"
       />
+      <button
+        v-if="mode === 'variables' && row.secret"
+        type="button"
+        class="kv-editor__reveal"
+        :title="revealed[index] ? 'Hide value' : 'Reveal value'"
+        @click="toggleRevealed(index)"
+      >
+        <Icon :name="revealed[index] ? 'eye-off' : 'eye'" />
+      </button>
+      <button
+        v-if="mode === 'variables'"
+        type="button"
+        class="kv-editor__secret-toggle"
+        :class="{ 'kv-editor__secret-toggle--active': row.secret }"
+        :title="row.secret ? 'Unmark as secret' : 'Mark as secret'"
+        @click="toggleSecret(index)"
+      >
+        <Icon name="lock" />
+      </button>
       <button
         type="button"
         class="kv-editor__remove"

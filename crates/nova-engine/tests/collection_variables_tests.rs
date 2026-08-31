@@ -155,6 +155,7 @@ fn resolve_only(
     let effective = nova_engine::Environment {
         name: environment.name.clone(),
         variables,
+        secrets: environment.secrets.clone(),
         auth: environment.auth.clone(),
         path: environment.path.clone(),
     };

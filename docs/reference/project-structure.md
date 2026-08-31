@@ -73,7 +73,7 @@ environments:
 ## Environments
 
 An environment file is a flat `name` + `variables:` map, plus an optional
-default `auth:` scheme:
+`secrets:` list and an optional default `auth:` scheme:
 
 ```yaml
 name: local
@@ -82,10 +82,21 @@ variables:
   base_url: http://localhost:8080
   token: dev-token-123
 
+secrets:
+  - token
+
 auth:
   type: bearer
   token: "{{token}}"
 ```
+
+`secrets` names which entries in `variables` hold sensitive values. It's a
+display-only flag: nova-engine just carries the list through parsing and
+serialization, and the desktop app's environment editor renders a flagged
+variable's value masked behind a reveal toggle rather than in plain text.
+An environment file with no `secrets:` key (every file written before this
+existed, or one with nothing flagged) loads with an empty list, so existing
+files keep working unchanged.
 
 `nova init` gitignores a new project's `envs/` directory by default, since
 environment files commonly hold local secrets. Where a secret should live
