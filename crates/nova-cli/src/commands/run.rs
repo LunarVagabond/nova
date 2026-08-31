@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use nova_engine::{
-    save_example_response, Collection, Environment, NovaProject, RequestFile, Session,
-};
+use nova_engine::{save_example_response, Environment, NovaProject, RequestFile, Session};
 
 use crate::discovery::{requests_at, resolve_environment};
 
@@ -50,13 +48,7 @@ pub fn run(
     let mut results = Vec::new();
 
     for request_file in requests {
-        match run_one(
-            &project.root,
-            request_file,
-            &environment,
-            &project.collections,
-            &mut session,
-        ) {
+        match run_one(&project, request_file, &environment, &mut session) {
             Ok((resolved, response)) => {
                 if save_example {
                     if let Err(source) = save_example_response(request_file, &response) {
@@ -108,20 +100,16 @@ pub fn run(
 }
 
 fn run_one(
-    project_root: &Path,
+    project: &NovaProject,
     request_file: &RequestFile,
     environment: &Environment,
-    collections: &Collection,
     session: &mut Session,
 ) -> Result<(nova_engine::ParsedRequest, nova_engine::Response), String> {
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
-    let collection_variables = collections
-        .containing(&request_file.path)
-        .map(|collection| collection.variables.clone())
-        .unwrap_or_default();
+    let collection_variables = project.effective_collection_variables(&request_file.path);
     session
         .resolve_and_execute_in_collection(
-            project_root,
+            &project.root,
             &parsed,
             environment,
             &collection_variables,

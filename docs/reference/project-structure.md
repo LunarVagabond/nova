@@ -22,6 +22,7 @@ my-project/
     ├── envs/
     │   ├── local.yaml
     │   └── staging.yaml
+    ├── globals.yaml
     └── scripts/
         └── sign-request.py
 ```
@@ -104,6 +105,38 @@ long-term beyond a gitignored environment file is still open — see
 `nova check-secrets` / `nova install-hook` below for what exists today.
 External secret-provider integration is a still-open idea, tracked as a
 GitHub issue rather than documented here.
+
+## Global variables
+
+`globals.yaml` (path not configurable), directly inside `nova/`, is
+optional and holds variables that apply project-wide, independent of the
+active environment or which collection a request lives in:
+
+```yaml
+variables:
+  api_version: v2
+  default_timeout: "30"
+```
+
+Missing entirely is the same as an empty `variables:` map — nothing has
+to opt in. See `crates/nova-engine/src/project/globals.rs`.
+
+A collection can also hold its own variables, scoped to requests directly
+inside that directory (not inherited by subcollections), in a
+`_collection.yaml` file next to its requests:
+
+```yaml
+variables:
+  base_path: /api/v1
+```
+
+**Variable resolution precedence**, lowest to highest: `globals.yaml`,
+then the owning collection's `_collection.yaml`, then any variable a
+running session has extracted from an earlier response (`[assert]`
+extractions, `[script]` `post:` hooks), then the active environment's own
+`variables:`. Each layer only fills in names the layers above it don't
+already define — see `NovaProject::effective_collection_variables` and
+`Session::resolve_and_execute_in_collection`.
 
 ## Validation
 

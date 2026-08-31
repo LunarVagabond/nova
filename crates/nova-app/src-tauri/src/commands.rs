@@ -169,11 +169,7 @@ pub fn send_request(
     };
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
 
-    let collection_variables = project
-        .collections
-        .containing(path)
-        .map(|collection| collection.variables.clone())
-        .unwrap_or_default();
+    let collection_variables = project.effective_collection_variables(path);
 
     sessions.with_session(&project.root, |session| {
         session
@@ -242,11 +238,7 @@ pub fn export_request_as(
     };
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
 
-    let collection_variables = project
-        .collections
-        .containing(path)
-        .map(|collection| collection.variables.clone())
-        .unwrap_or_default();
+    let collection_variables = project.effective_collection_variables(path);
 
     let resolved = sessions
         .with_session(&project.root, |session| {
@@ -295,11 +287,7 @@ pub fn get_resolved_variables(
             .ok_or_else(|| "project has no default environment".to_string())?,
     };
 
-    let collection_variables = project
-        .collections
-        .containing(path)
-        .map(|collection| collection.variables.clone())
-        .unwrap_or_default();
+    let collection_variables = project.effective_collection_variables(path);
 
     let variables = sessions.with_session(&project.root, |session| {
         session.resolved_variables(&resolved_environment, &collection_variables)
@@ -482,11 +470,7 @@ fn resolved_identity(
     };
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
 
-    let collection_variables = project
-        .collections
-        .containing(path)
-        .map(|collection| collection.variables.clone())
-        .unwrap_or_default();
+    let collection_variables = project.effective_collection_variables(path);
 
     // Mirrors `nova_engine::Session`'s own environment/collection-variable
     // merge, minus session-chained variables (not visible from here — see
@@ -711,11 +695,7 @@ fn resolve_websocket_request(
     };
     let parsed = request_file.parse_websocket().map_err(|e| e.to_string())?;
 
-    let collection_variables = project
-        .collections
-        .containing(path)
-        .map(|collection| collection.variables.clone())
-        .unwrap_or_default();
+    let collection_variables = project.effective_collection_variables(path);
 
     // Mirrors `resolved_identity`'s environment/collection-variable merge
     // (an environment-declared variable always wins over a same-named
@@ -1189,13 +1169,7 @@ pub fn run_tests(path: String, environment: Option<String>) -> Result<TestRunRes
     let mut results = Vec::with_capacity(requests.len());
 
     for request_file in requests {
-        match run_one_test(
-            &project.root,
-            request_file,
-            &resolved_environment,
-            &project.collections,
-            &mut session,
-        ) {
+        match run_one_test(&project, request_file, &resolved_environment, &mut session) {
             Ok((passed, failed, result)) => {
                 total_passed += passed;
                 total_failed += failed;
@@ -1225,20 +1199,16 @@ pub fn run_tests(path: String, environment: Option<String>) -> Result<TestRunRes
 /// body of [`run_tests`], split out so the loop above stays readable.
 /// Mirrors `nova-cli`'s `test_one` helper.
 fn run_one_test(
-    project_root: &std::path::Path,
+    project: &NovaProject,
     request_file: &RequestFile,
     environment: &Environment,
-    collections: &Collection,
     session: &mut Session,
 ) -> Result<(usize, usize, TestRequestResult), String> {
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
-    let collection_variables = collections
-        .containing(&request_file.path)
-        .map(|collection| collection.variables.clone())
-        .unwrap_or_default();
+    let collection_variables = project.effective_collection_variables(&request_file.path);
     let (resolved, response) = session
         .resolve_and_execute_in_collection(
-            project_root,
+            &project.root,
             &parsed,
             environment,
             &collection_variables,

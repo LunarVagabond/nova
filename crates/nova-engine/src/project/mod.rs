@@ -11,10 +11,12 @@
 pub mod collection;
 pub mod collection_variables;
 pub mod environment;
+pub mod globals;
 pub mod init;
 pub mod manifest;
 pub mod validate;
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -23,6 +25,7 @@ use serde::Serialize;
 use crate::error::{NovaError, NovaResult};
 use crate::project::collection::{load_collections, Collection};
 use crate::project::environment::{load_environments, Environment};
+use crate::project::globals::{load_global_variables, GlobalVariables};
 use crate::project::manifest::Manifest;
 
 /// The manifest file name the engine looks for inside a project directory.
@@ -47,6 +50,10 @@ pub struct NovaProject {
     /// each [`Collection`]'s own `path` already is.
     pub environments_dir: PathBuf,
     pub collections: Collection,
+    /// Project-wide variables loaded from `globals.yaml` at the project
+    /// root, if present — see [`globals::GlobalVariables`]. Empty (not
+    /// missing) when no such file exists.
+    pub globals: GlobalVariables,
 }
 
 impl NovaProject {
@@ -82,18 +89,41 @@ impl NovaProject {
         let collections_dir = root.join(&manifest.collections.path);
         let collections = load_collections(&collections_dir)?;
 
+        let globals = load_global_variables(&root)?;
+
         Ok(NovaProject {
             root,
             manifest,
             environments,
             environments_dir,
             collections,
+            globals,
         })
     }
 
     /// Look up an environment by name.
     pub fn environment(&self, name: &str) -> Option<&Environment> {
         self.environments.iter().find(|e| e.name == name)
+    }
+
+    /// The variable map a request at `request_path` should resolve its
+    /// collection-level `{{variable}}`s against: this project's
+    /// [`globals`](Self::globals), overridden by the variables of whichever
+    /// collection directly contains it (see
+    /// [`Collection::containing`]/[`Collection::variables`]).
+    ///
+    /// This is the lowest-precedence layer in the chain
+    /// [`crate::Session::resolve_and_execute_in_collection`] builds on top
+    /// of — a same-named collection variable always wins over a global
+    /// one, and the session's own chained/environment variables win over
+    /// both — so callers pass the result of this straight in as
+    /// `collection_variables` without needing to know globals exist.
+    pub fn effective_collection_variables(&self, request_path: &Path) -> HashMap<String, String> {
+        let mut variables = self.globals.variables.clone();
+        if let Some(collection) = self.collections.containing(request_path) {
+            variables.extend(collection.variables.clone());
+        }
+        variables
     }
 
     /// The environment to use when none is explicitly requested:

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use nova_engine::{evaluate, Collection, Environment, NovaProject, RequestFile, Session};
+use nova_engine::{evaluate, Environment, NovaProject, RequestFile, Session};
 
 use crate::discovery::{requests_at, resolve_environment};
 
@@ -36,14 +36,7 @@ pub fn run(path: &Path, environment: Option<&str>, json: bool) -> Result<(), Str
     let mut results = Vec::new();
 
     for request_file in requests {
-        match test_one(
-            &project.root,
-            request_file,
-            &environment,
-            &project.collections,
-            &mut session,
-            json,
-        ) {
+        match test_one(&project, request_file, &environment, &mut session, json) {
             Ok((summary, detail)) => {
                 total_passed += summary.passed;
                 total_failed += summary.failed;
@@ -88,21 +81,17 @@ pub fn run(path: &Path, environment: Option<&str>, json: bool) -> Result<(), Str
 }
 
 fn test_one(
-    project_root: &Path,
+    project: &NovaProject,
     request_file: &RequestFile,
     environment: &Environment,
-    collections: &Collection,
     session: &mut Session,
     json: bool,
 ) -> Result<(TestSummary, serde_json::Value), String> {
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
-    let collection_variables = collections
-        .containing(&request_file.path)
-        .map(|collection| collection.variables.clone())
-        .unwrap_or_default();
+    let collection_variables = project.effective_collection_variables(&request_file.path);
     let (resolved, response) = session
         .resolve_and_execute_in_collection(
-            project_root,
+            &project.root,
             &parsed,
             environment,
             &collection_variables,
