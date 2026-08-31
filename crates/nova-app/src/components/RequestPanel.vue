@@ -33,10 +33,12 @@ import {
   BODY_TYPE_OPTIONS,
   detectBodyType,
   languageForContentType,
+  parseBinaryBodyPath,
   randomBoundary,
   RAW_LANGUAGE_CONTENT_TYPES,
   RAW_LANGUAGE_LABELS,
   RAW_LANGUAGE_OPTIONS,
+  serializeBinaryBodyPath,
   type BodyType,
   type RawLanguage,
 } from "../lib/bodyType";
@@ -45,6 +47,7 @@ import { parseQueryString, serializeQuery, splitUrlAndQuery } from "../lib/query
 import { beautifyJson } from "../lib/jsonFormat";
 import { formatXml } from "../lib/xmlFormat";
 import AuthEditor from "./AuthEditor.vue";
+import BinaryEditor from "./BinaryEditor.vue";
 import CodeEditor, { type EditorLanguage } from "./CodeEditor.vue";
 import Icon from "./Icon.vue";
 import KeyValueEditor from "./KeyValueEditor.vue";
@@ -139,6 +142,10 @@ function handleBodyTypeChange(next: BodyType) {
     graphqlVariablesError.value = null;
   } else if (next === "raw") {
     rawLanguage.value = "text";
+  } else if (next === "binary") {
+    // Whatever text the body held under its previous type has no meaning
+    // as a file reference — start empty until a file is chosen.
+    bodyText.value = "";
   }
 
   if (!syncContentType.value) return;
@@ -350,6 +357,20 @@ const formFields = computed<QueryParam[]>({
   },
   set(rows) {
     bodyText.value = serializeQuery(rows);
+  },
+});
+
+// A structured view of the Body tab's `binary` body type — unlike
+// multipart/GraphQL, the `@file: <path>` marker line (see
+// `nova_engine::RequestBody::from_text`/`to_body_text`) is simple enough to
+// parse/serialize with plain JS rather than an async engine round-trip, so
+// this is a synchronous computed get/set like `formFields` above.
+const binaryFilePath = computed<string | null>({
+  get() {
+    return parseBinaryBodyPath(bodyText.value);
+  },
+  set(filePath) {
+    bodyText.value = filePath === null ? "" : serializeBinaryBodyPath(filePath);
   },
 });
 
@@ -1002,6 +1023,11 @@ defineExpose({ dirty, save: handleSave });
           </p>
           <MultipartEditor v-model="multipartFields" :project-root="projectRoot" />
         </template>
+        <BinaryEditor
+          v-else-if="bodyType === 'binary'"
+          v-model="binaryFilePath"
+          :project-root="projectRoot"
+        />
         <div v-else-if="bodyType === 'graphql'" class="request-panel__graphql">
           <div class="request-panel__graphql-pane">
             <span class="request-panel__graphql-label">Query</span>

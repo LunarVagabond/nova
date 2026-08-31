@@ -194,6 +194,13 @@ pub(super) fn substitute_body(
                 })
                 .collect::<NovaResult<Vec<_>>>()?,
         ),
+        // The file path itself may reference a variable (e.g.
+        // `{{fixtures_dir}}/payload.bin`), the same as a `Multipart`
+        // field's `file_path` above — but unlike a text body, the file's
+        // own bytes are never substituted into: they're read as opaque
+        // binary data at send time, not text a `{{variable}}` could
+        // meaningfully appear inside.
+        RequestBody::Binary(file_path) => RequestBody::Binary(substitute(file_path, environment)?),
     })
 }
 

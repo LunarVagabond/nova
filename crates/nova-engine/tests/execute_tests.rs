@@ -445,6 +445,106 @@ fn a_multipart_file_path_that_escapes_the_project_root_is_rejected_rather_than_r
 }
 
 #[test]
+fn sends_a_binary_body_read_from_disk() {
+    let (url, rx) = mock_server_capturing_request();
+
+    let project = NovaProject::discover(&fixture("binary-project")).unwrap();
+    let request_file = project
+        .collections
+        .requests
+        .iter()
+        .find(|r| r.name == "upload")
+        .expect("upload.nova fixture request");
+    let parsed = request_file.parse().unwrap();
+    let mut resolved = parsed.resolve(&project.environments[0]).unwrap();
+    resolved.url = url;
+
+    execute(&project.root, &resolved).unwrap();
+
+    let (content_type, body) = rx.recv().unwrap();
+    assert_eq!(content_type.as_deref(), Some("application/octet-stream"));
+    assert_eq!(body, "hello binary payload");
+}
+
+#[test]
+fn a_missing_binary_body_file_is_a_typed_error() {
+    let request = ParsedRequest {
+        method: "PUT".to_string(),
+        url: "http://127.0.0.1:1/files/42".to_string(),
+        query: vec![],
+        headers: vec![],
+        body: RequestBody::Binary("does/not/exist.bin".to_string()),
+        auth: None,
+        sync_content_type: true,
+        assertions: vec![],
+        extractions: vec![],
+        script: None,
+        example_response: None,
+    };
+
+    let err = execute(&project_root(), &request).unwrap_err();
+
+    assert!(
+        matches!(&err, NovaError::BinaryFileNotFound { .. }),
+        "unexpected error: {err:?}"
+    );
+}
+
+fn binary_request(file_path: &str) -> ParsedRequest {
+    ParsedRequest {
+        method: "PUT".to_string(),
+        url: "http://127.0.0.1:1/files/42".to_string(),
+        query: vec![],
+        headers: vec![],
+        body: RequestBody::Binary(file_path.to_string()),
+        auth: None,
+        sync_content_type: true,
+        assertions: vec![],
+        extractions: vec![],
+        script: None,
+        example_response: None,
+    }
+}
+
+#[test]
+fn an_absolute_binary_body_file_path_is_rejected_rather_than_read() {
+    let temp = TempDir::new("binary-absolute");
+    let secret = temp.0.join("secret.bin");
+    std::fs::write(&secret, "top secret").unwrap();
+
+    let project_root = temp.0.join("project");
+    std::fs::create_dir_all(&project_root).unwrap();
+
+    let request = binary_request(secret.to_str().unwrap());
+
+    let err = execute(&project_root, &request).unwrap_err();
+
+    assert!(
+        matches!(&err, NovaError::BinaryFileNotFound { .. }),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn a_binary_body_file_path_that_escapes_the_project_root_is_rejected_rather_than_read() {
+    let temp = TempDir::new("binary-escape");
+    let secret = temp.0.join("secret.bin");
+    std::fs::write(&secret, "top secret").unwrap();
+
+    let project_root = temp.0.join("project");
+    std::fs::create_dir_all(&project_root).unwrap();
+
+    let request = binary_request("../secret.bin");
+
+    let err = execute(&project_root, &request).unwrap_err();
+
+    assert!(
+        matches!(&err, NovaError::BinaryFileNotFound { .. }),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
 fn network_failure_is_a_typed_error() {
     // Nothing is listening on this port; connection should be refused
     // immediately rather than hanging.

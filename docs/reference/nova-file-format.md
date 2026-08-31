@@ -18,7 +18,7 @@ order:
 | `[request]` | HTTP method and URL (required) |
 | `[params]` | Query parameters |
 | `[headers]` | Request headers |
-| `[body]` | Request body (raw text, or `multipart/form-data`) |
+| `[body]` | Request body (raw text, `multipart/form-data`, or a raw binary file) |
 | `[auth]` | A structured authentication scheme |
 | `[settings]` | Per-request authoring preferences (not sent on the wire) |
 | `[assert]` | Test assertions and value extractions |
@@ -102,6 +102,24 @@ Content-Location: {{attachments_dir}}/photo.png
 The desktop app's structured multipart editor (`MultipartEditor.vue`) reads
 and writes this same format; there's no separate "attachment" concept at the
 file level.
+
+A raw binary body — a file's bytes sent as the *entire* request payload,
+rather than one part of a `multipart/form-data` body (e.g. `PUT /files/{id}`
+with `Content-Type: application/octet-stream`) — is declared with a single
+`@file:` line naming the file, resolved relative to the project root and,
+like a multipart field's `Content-Location`, itself run through
+`{{variable}}` substitution:
+
+```text
+[headers]
+Content-Type: application/octet-stream
+
+[body]
+@file: {{attachments_dir}}/payload.bin
+```
+
+The file's contents are never inlined — they're read from disk at send
+time, the same as a multipart file attachment.
 
 A GraphQL body (`Content-Type: application/graphql+json`) uses its own tiny
 nested format inside `[body]`: a raw query/mutation/subscription document,
@@ -369,7 +387,8 @@ in until the connection closes or a read timeout elapses.
 ## Variable substitution
 
 Any `{{name}}` in any section — URL, params, headers, body, auth fields,
-even a multipart part's `Content-Location` — is resolved against the active
+even a multipart part's `Content-Location` or a binary body's `@file:`
+path — is resolved against the active
 environment's `variables:` (see
 [`nova.yaml` and environments](./project-structure.md)) plus any values
 extracted by earlier requests' `[assert]` sections in the same run.

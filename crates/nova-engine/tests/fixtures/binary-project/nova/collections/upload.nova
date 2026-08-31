@@ -1,0 +1,9 @@
+[request]
+method: PUT
+url: {{base_url}}/files/42
+
+[headers]
+Content-Type: application/octet-stream
+
+[body]
+@file: attachments/payload.bin
