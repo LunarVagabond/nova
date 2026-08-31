@@ -143,6 +143,16 @@ pub enum NovaError {
     #[error("collection variables not found at {0}")]
     CollectionVariablesNotFound(PathBuf),
 
+    #[error("failed to parse global variables at {path}")]
+    GlobalVariablesParse {
+        path: PathBuf,
+        #[source]
+        source: serde_yaml::Error,
+    },
+
+    #[error("failed to serialize global variables for {path}: {message}")]
+    GlobalVariablesSerialize { path: PathBuf, message: String },
+
     #[error("{0} already exists — refusing to overwrite an existing Nova project")]
     ProjectAlreadyExists(PathBuf),
 

@@ -60,6 +60,7 @@ pub use project::collection_variables::{
     CollectionVariables, COLLECTION_VARIABLES_FILE_NAME,
 };
 pub use project::environment::{create_environment, delete_environment, Environment};
+pub use project::globals::{load_global_variables, GlobalVariables, GLOBALS_FILE_NAME};
 pub use project::init::{
     default_project_name, init_project, install_secret_check_hook, scaffold_project,
     GitignoreOutcome, HookOutcome, InitOptions, InitOutcome, ScaffoldedProject, GITIGNORE_ENTRY,

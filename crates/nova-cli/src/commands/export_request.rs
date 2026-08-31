@@ -12,11 +12,7 @@ pub fn run(request: &Path, environment: Option<&str>, format: ExportFormat) -> R
     let request_file = request_at(&project.collections, request)?;
 
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
-    let collection_variables = project
-        .collections
-        .containing(&request_file.path)
-        .map(|collection| collection.variables.clone())
-        .unwrap_or_default();
+    let collection_variables = project.effective_collection_variables(&request_file.path);
 
     let session = Session::new();
     let resolved = session
