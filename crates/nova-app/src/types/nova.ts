@@ -280,6 +280,13 @@ export interface ParsedCurlRequest {
 }
 
 /**
+ * Mirrors `nova_engine::ExportFormat` — the target [`exportRequestAs`]
+ * renders a resolved request as. Values match the engine's
+ * `#[serde(rename_all = "snake_case")]` wire format.
+ */
+export type ExportFormat = "curl" | "fetch";
+
+/**
  * Mirrors `nova_engine::AssertionOutcome` — one `[assert]` line's result.
  * `failure` is set only when `passed` is false: what was expected vs. what
  * was actually found, specific enough to act on.
