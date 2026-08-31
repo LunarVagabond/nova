@@ -188,6 +188,43 @@ pub fn send_request(
     })
 }
 
+/// The full variable map `request_path`'s `{{name}}` placeholders would
+/// resolve against right now, without sending anything — collection
+/// variables, this project's session-chained (extracted) variables, and
+/// `environment`'s (or the project's default environment's) own variables,
+/// merged with the same precedence [`send_request`] uses. Powers the
+/// request panel's read-only variables drawer.
+#[tauri::command]
+pub fn get_resolved_variables(
+    request_path: String,
+    environment: Option<String>,
+    sessions: tauri::State<SessionStore>,
+) -> Result<HashMap<String, String>, String> {
+    let path = std::path::Path::new(&request_path);
+    let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
+
+    let resolved_environment = match environment {
+        Some(name) => project
+            .environment(&name)
+            .cloned()
+            .ok_or_else(|| format!("unknown environment '{name}'"))?,
+        None => project
+            .default_environment()
+            .cloned()
+            .ok_or_else(|| "project has no default environment".to_string())?,
+    };
+
+    let collection_variables = project
+        .collections
+        .containing(path)
+        .map(|collection| collection.variables.clone())
+        .unwrap_or_default();
+
+    Ok(sessions.with_session(&project.root, |session| {
+        session.resolved_variables(&resolved_environment, &collection_variables)
+    }))
+}
+
 /// One [`nova_engine::HistoryEntry`] reduced to what a history list needs to
 /// display — method/status/timing/timestamp plus the URL — leaving the full
 /// request/response detail to [`reopen_history_entry`], which a click on a
