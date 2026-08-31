@@ -104,6 +104,7 @@ fn pre_request_script_signs_the_request_and_post_response_script_extracts_a_vari
             &sign_request,
             &environment,
             &HashMap::new(),
+            &[],
         )
         .unwrap();
     assert_eq!(response.status, 200);
@@ -121,6 +122,7 @@ fn pre_request_script_signs_the_request_and_post_response_script_extracts_a_vari
             &echo_request,
             &environment,
             &HashMap::new(),
+            &[],
         )
         .unwrap();
 
@@ -150,11 +152,79 @@ fn a_script_with_an_unmapped_extension_is_a_typed_interpreter_error() {
     let environment = env_with_base_url("http://127.0.0.1:1".to_string());
 
     let err = session
-        .resolve_and_execute_in_collection(&project.root, &request, &environment, &HashMap::new())
+        .resolve_and_execute_in_collection(
+            &project.root,
+            &request,
+            &environment,
+            &HashMap::new(),
+            &[],
+        )
         .unwrap_err();
 
     assert!(
         matches!(err, NovaError::ScriptInterpreterNotFound { .. }),
         "expected a ScriptInterpreterNotFound error, got {err:?}"
     );
+}
+
+/// Collection-scoped `[script]` nesting (#155): the `folder-scripts-project`
+/// fixture has a script association on the collections root (outer), one
+/// on `users/` (inner), and the request itself declares its own — all
+/// three should run for `users/get.nova`, in the documented order: outer
+/// pre, then inner pre, then the request's own pre; and, after the
+/// response, the request's own post first, then inner, then outer.
+#[test]
+fn collection_scoped_scripts_nest_outer_to_inner_on_pre_and_unwind_on_post() {
+    let project = NovaProject::discover(&fixture("folder-scripts-project")).unwrap();
+    let request = find_request(&project, "users", "get").parse().unwrap();
+
+    let scoped_scripts = project.scoped_scripts(&find_request(&project, "users", "get").path);
+    assert_eq!(
+        scoped_scripts.len(),
+        2,
+        "expected exactly the root and users/ scopes, got {scoped_scripts:?}"
+    );
+
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let addr = server.server_addr();
+    let url = format!("http://{addr}");
+    let (tx, rx) = mpsc::channel();
+
+    let handle = thread::spawn(move || {
+        let incoming = server.recv().unwrap();
+        tx.send(header_value(&incoming, "X-Order")).unwrap();
+        incoming
+            .respond(tiny_http::Response::from_string("{}"))
+            .unwrap();
+    });
+
+    let mut session = Session::new();
+    let environment = env_with_base_url(url);
+
+    let (_, response) = session
+        .resolve_and_execute_in_collection(
+            &project.root,
+            &request,
+            &environment,
+            &HashMap::new(),
+            &scoped_scripts,
+        )
+        .unwrap();
+    assert_eq!(response.status, 200);
+
+    let order = rx.recv().unwrap();
+    assert_eq!(
+        order,
+        Some("OIR".to_string()),
+        "pre-request scripts should have run outer (collections root) -> inner (users/) -> the request's own"
+    );
+
+    let chained = session.resolved_variables(&environment, &HashMap::new());
+    assert_eq!(
+        chained.get("post_order"),
+        Some(&"outer".to_string()),
+        "post-response scripts should unwind own -> inner -> outer, so outer's extraction (running last) wins"
+    );
+
+    handle.join().unwrap();
 }

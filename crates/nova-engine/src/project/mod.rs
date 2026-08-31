@@ -126,6 +126,18 @@ impl NovaProject {
         variables
     }
 
+    /// The chain of collection-scoped `[script]` scopes that apply to a
+    /// request at `request_path` — see
+    /// [`Collection::scoped_scripts_for`] for the ordering (outermost
+    /// first) and how a caller runs pre/post around the request's own
+    /// `[script]` section on top of it.
+    pub fn scoped_scripts(
+        &self,
+        request_path: &Path,
+    ) -> Vec<crate::execution::script::ScriptSection> {
+        self.collections.scoped_scripts_for(request_path)
+    }
+
     /// The environment to use when none is explicitly requested:
     /// `defaults.environment` from the manifest, if set and present.
     pub fn default_environment(&self) -> Option<&Environment> {

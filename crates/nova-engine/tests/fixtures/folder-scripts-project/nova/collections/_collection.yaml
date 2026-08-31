@@ -1,0 +1,3 @@
+scripts:
+  pre: outer-pre.py
+  post: outer-post.py

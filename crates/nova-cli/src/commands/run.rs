@@ -107,12 +107,14 @@ fn run_one(
 ) -> Result<(nova_engine::ParsedRequest, nova_engine::Response), String> {
     let parsed = request_file.parse().map_err(|e| e.to_string())?;
     let collection_variables = project.effective_collection_variables(&request_file.path);
+    let scoped_scripts = project.scoped_scripts(&request_file.path);
     session
         .resolve_and_execute_in_collection(
             &project.root,
             &parsed,
             environment,
             &collection_variables,
+            &scoped_scripts,
         )
         .map_err(|e| e.to_string())
 }

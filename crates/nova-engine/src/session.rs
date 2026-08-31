@@ -462,14 +462,24 @@ impl Session {
         parsed: &ParsedRequest,
         environment: &Environment,
     ) -> NovaResult<(ParsedRequest, Response)> {
-        self.resolve_and_execute_in_collection(project_root, parsed, environment, &HashMap::new())
+        self.resolve_and_execute_in_collection(
+            project_root,
+            parsed,
+            environment,
+            &HashMap::new(),
+            &[],
+        )
     }
 
     /// Like [`Session::resolve_and_execute`], but also folds in
     /// `collection_variables` — the values from the request's owning
     /// collection's `_collection.yaml` (see
     /// [`crate::project::collection::Collection::variables`] /
-    /// [`crate::project::collection::Collection::containing`]).
+    /// [`crate::project::collection::Collection::containing`]) — and
+    /// `scoped_scripts`, the collection-level `[script]` scopes that apply
+    /// to this request (see
+    /// [`crate::project::collection::Collection::scoped_scripts_for`]),
+    /// outermost first.
     ///
     /// Precedence, from lowest to highest: collection variables, then this
     /// session's chained variables, then the environment's own variables
@@ -480,25 +490,40 @@ impl Session {
     /// don't need duplicating into every environment file; anything more
     /// specific still overrides them.
     ///
-    /// If the request declares a `[script]` section (see
-    /// [`crate::execution::script`]), its `pre:` script runs after resolution but
-    /// before the request is sent — its header/param/body overrides are
-    /// applied to the resolved request — and its `post:` script runs
-    /// after the response comes back, with whatever variables it extracts
-    /// folded into this session's chained variables alongside (and after,
-    /// so a script's extraction can shadow the same name if both declare
-    /// it) any `[assert]` extractions.
+    /// Every scope in `scoped_scripts` runs its `pre:` script (if any, in
+    /// the order given — outer scopes first), and then the request's own
+    /// `[script]` section (see [`crate::execution::script`]) runs its
+    /// `pre:` last — each one's header/param/body overrides applied to
+    /// the resolved request in turn before the next runs, so an inner
+    /// scope (or the request itself) sees whatever an outer one already
+    /// changed. After the response comes back, the request's own `post:`
+    /// runs first, then `scoped_scripts`' `post:` scripts unwind in
+    /// reverse (innermost scope first, outermost last) — symmetric
+    /// nesting, like a request wrapped in however many collection-level
+    /// scopes contain it. Every script's extracted variables fold into
+    /// this session's chained variables, in the same run order, so a
+    /// later script's (or the request's own) extraction can shadow an
+    /// earlier one's for the same name — alongside (and after) any
+    /// `[assert]` extractions.
     pub fn resolve_and_execute_in_collection(
         &mut self,
         project_root: &Path,
         parsed: &ParsedRequest,
         environment: &Environment,
         collection_variables: &HashMap<String, String>,
+        scoped_scripts: &[crate::execution::script::ScriptSection],
     ) -> NovaResult<(ParsedRequest, Response)> {
         let effective_environment =
             self.environment_with_variables(environment, collection_variables);
         let mut resolved = parsed.resolve(&effective_environment)?;
 
+        for scope in scoped_scripts {
+            if let Some(pre_script) = scope.pre.as_deref() {
+                let overrides =
+                    crate::execution::script::run_pre_request(project_root, pre_script, &resolved)?;
+                overrides.apply(&mut resolved);
+            }
+        }
         if let Some(pre_script) = resolved.script.as_ref().and_then(|s| s.pre.as_deref()) {
             let overrides =
                 crate::execution::script::run_pre_request(project_root, pre_script, &resolved)?;
@@ -512,6 +537,16 @@ impl Session {
             let extracted =
                 crate::execution::script::run_post_response(project_root, post_script, &response)?;
             self.chained_variables.extend(extracted);
+        }
+        for scope in scoped_scripts.iter().rev() {
+            if let Some(post_script) = scope.post.as_deref() {
+                let extracted = crate::execution::script::run_post_response(
+                    project_root,
+                    post_script,
+                    &response,
+                )?;
+                self.chained_variables.extend(extracted);
+            }
         }
 
         Ok((resolved, response))
