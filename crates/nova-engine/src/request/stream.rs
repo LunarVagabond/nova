@@ -462,6 +462,7 @@ mod tests {
         let environment = Environment {
             name: "local".to_string(),
             variables,
+            secrets: Vec::new(),
             auth: None,
             path: PathBuf::from("local.yaml"),
         };
@@ -534,6 +535,7 @@ mod tests {
         let environment = Environment {
             name: "local".to_string(),
             variables,
+            secrets: Vec::new(),
             auth: None,
             path: PathBuf::from("local.yaml"),
         };

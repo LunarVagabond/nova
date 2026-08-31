@@ -17,6 +17,17 @@ pub struct Environment {
     #[serde(default)]
     pub variables: HashMap<String, String>,
 
+    /// Names of variables (from `variables`, above) whose values should be
+    /// treated as sensitive — masked behind a reveal toggle in the desktop
+    /// app's environment editor rather than shown in plain text. Purely a
+    /// display flag: nova-engine never inspects a variable's own name or
+    /// value to guess whether it's secret, it just remembers which names a
+    /// user flagged. Absent from a file entirely (the common case, and
+    /// every environment file written before this field existed) round-trips
+    /// as an empty list, so existing files keep working unchanged.
+    #[serde(default)]
+    pub secrets: Vec<String>,
+
     /// A default authentication scheme applied to every request resolved
     /// against this environment, unless the request declares an `[auth]`
     /// section of its own. Its fields go through the same `{{variable}}`
@@ -41,11 +52,20 @@ struct EnvironmentYaml {
     name: String,
     #[serde(default)]
     variables: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    secrets: Vec<String>,
     #[serde(default)]
     auth: Option<AuthScheme>,
 }
 
 impl Environment {
+    /// Whether `variable_name` is flagged as secret in this environment —
+    /// the only thing nova-engine does with the flag beyond carrying it
+    /// through parsing/serialization. The desktop app's environment editor
+    /// uses this to decide whether to render a variable's value masked.
+    pub fn is_secret(&self, variable_name: &str) -> bool {
+        self.secrets.iter().any(|name| name == variable_name)
+    }
     /// Serialize back to the YAML text an environment file would contain —
     /// the inverse of parsing (see [`load_environments`]). Mirrors
     /// [`crate::project::manifest::Manifest::to_yaml_string`] for `nova.yaml`: a
@@ -55,6 +75,7 @@ impl Environment {
         let yaml = EnvironmentYaml {
             name: self.name.clone(),
             variables: self.variables.clone(),
+            secrets: self.secrets.clone(),
             auth: self.auth.clone(),
         };
         serde_yaml::to_string(&yaml).map_err(|source| source.to_string())
@@ -134,6 +155,7 @@ pub fn create_environment(environments_dir: &Path, name: &str) -> NovaResult<Env
     let environment = Environment {
         name,
         variables: HashMap::new(),
+        secrets: Vec::new(),
         auth: None,
         path,
     };
@@ -233,6 +255,44 @@ mod tests {
 
         assert_eq!(parsed.name, reparsed.name);
         assert_eq!(parsed.variables, reparsed.variables);
+    }
+
+    #[test]
+    fn a_file_with_no_secrets_key_parses_with_an_empty_secrets_list() {
+        let contents =
+            "name: local\n\nvariables:\n  base_url: http://localhost:8080\n  token: abc123\n";
+
+        let environment = parse(contents);
+
+        assert!(environment.secrets.is_empty());
+        assert!(!environment.is_secret("token"));
+    }
+
+    #[test]
+    fn round_trips_a_secrets_list() {
+        let contents = "name: local\n\nvariables:\n  base_url: http://localhost:8080\n  token: abc123\n\nsecrets:\n  - token\n";
+
+        let parsed = parse(contents);
+        assert!(parsed.is_secret("token"));
+        assert!(!parsed.is_secret("base_url"));
+
+        let text = parsed.to_yaml_string().unwrap();
+        let reparsed = parse(&text);
+
+        assert_eq!(reparsed.secrets, vec!["token".to_string()]);
+        assert!(reparsed.is_secret("token"));
+    }
+
+    #[test]
+    fn to_yaml_string_omits_an_empty_secrets_list() {
+        let environment = parse("name: local\nvariables: {}\n");
+
+        let text = environment.to_yaml_string().unwrap();
+
+        assert!(
+            !text.contains("secrets"),
+            "an environment with no secrets shouldn't grow a `secrets:` key: {text}"
+        );
     }
 
     #[test]

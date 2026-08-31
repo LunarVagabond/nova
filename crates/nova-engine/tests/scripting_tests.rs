@@ -20,6 +20,7 @@ fn env_with_base_url(base_url: String) -> Environment {
     Environment {
         name: "local".to_string(),
         variables: HashMap::from([("base_url".to_string(), base_url)]),
+        secrets: Vec::new(),
         auth: None,
         path: PathBuf::new(),
     }

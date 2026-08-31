@@ -48,6 +48,34 @@
   }
 }
 
+// Environment variables' reveal/hide and mark-as-secret toggles — sit
+// between the value input and the remove button, styled like
+// `.kv-editor__remove` (an icon button flush against the row's right edge)
+// rather than a new button pattern.
+.kv-editor__reveal,
+.kv-editor__secret-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: $control-height;
+  height: $control-height;
+  border: none;
+  border-right: 1px solid var(--color-border);
+  background: none;
+  color: var(--color-text-muted);
+  line-height: 1;
+
+  &:hover {
+    color: var(--color-text);
+    background-color: var(--color-bg-hover);
+  }
+}
+
+.kv-editor__secret-toggle--active {
+  color: var(--color-accent);
+}
+
 .kv-editor__remove {
   display: flex;
   align-items: center;
