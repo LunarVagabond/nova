@@ -176,6 +176,24 @@ onBeforeUnmount(() => {
   view.value?.destroy();
 });
 
+// Inserts `text` at the current selection (replacing it if non-empty), or
+// at the end of the document if the editor doesn't have one — used by the
+// GraphQL schema explorer's click-to-insert. Left as the only way a parent
+// reaches into this editor's document; everything else still flows through
+// `modelValue`.
+function insertAtCursor(text: string) {
+  const current = view.value;
+  if (!current) return;
+  const { from, to } = current.state.selection.main;
+  current.dispatch({
+    changes: { from, to, insert: text },
+    selection: { anchor: from + text.length },
+  });
+  current.focus();
+}
+
+defineExpose({ insertAtCursor });
+
 // The editor is the source of truth for its own document while the user
 // types; only push an external `modelValue` change in (e.g. switching to
 // a different request) when it didn't just come from this editor itself.

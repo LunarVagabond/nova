@@ -32,6 +32,10 @@ pub use execution::assertion::{
     evaluate, Assertion, AssertionOutcome, Extraction, Op as AssertionOp, Term as AssertionTerm,
 };
 pub use execution::auth::{encode_basic_auth, ApiKeyLocation, AuthScheme};
+pub use execution::graphql_introspection::{
+    parse_introspection_response, GraphQlArgDef, GraphQlFieldDef, GraphQlSchema, GraphQlTypeDef,
+    INTROSPECTION_QUERY,
+};
 pub use execution::http::{execute, save_example_response, Response};
 pub use execution::oauth2_loopback::{
     begin_oauth2_authorization_code, PendingAuthorizationCode, DEFAULT_AUTHORIZATION_TIMEOUT,

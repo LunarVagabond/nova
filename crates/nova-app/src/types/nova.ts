@@ -195,6 +195,42 @@ export interface GraphQlBody {
   operation_name: string | null;
 }
 
+/** Mirrors `nova_engine::GraphQlArgDef`. */
+export interface GraphQlArgDef {
+  name: string;
+  description: string | null;
+  type_ref: string;
+}
+
+/** Mirrors `nova_engine::GraphQlFieldDef`. */
+export interface GraphQlFieldDef {
+  name: string;
+  description: string | null;
+  args: GraphQlArgDef[];
+  type_ref: string;
+}
+
+/** Mirrors `nova_engine::GraphQlTypeDef`. */
+export interface GraphQlTypeDef {
+  name: string;
+  kind: string;
+  description: string | null;
+  fields: GraphQlFieldDef[];
+}
+
+/**
+ * Mirrors `nova_engine::GraphQlSchema` — the result of introspecting a
+ * GraphQL server, as fetched via `fetchGraphqlSchema`. `query_type`/
+ * `mutation_type`/`subscription_type` name the root operation type (if the
+ * server declares one); look it up in `types` to get its field list.
+ */
+export interface GraphQlSchema {
+  query_type: string | null;
+  mutation_type: string | null;
+  subscription_type: string | null;
+  types: GraphQlTypeDef[];
+}
+
 /**
  * Mirrors `nova_engine::RequestDraft` — a flattened, GUI-editable view of a
  * `.nova` file's method/URL/query/headers/body. The body always comes back

@@ -10,9 +10,12 @@ use crate::execution::auth::{
     build_digest_header, fetch_authorization_code_token, fetch_client_credentials_token,
     parse_digest_challenge, AccessToken, AuthScheme,
 };
+use crate::execution::graphql_introspection::{
+    parse_introspection_response, GraphQlSchema, INTROSPECTION_QUERY,
+};
 use crate::execution::http::{execute, Response};
 use crate::project::environment::Environment;
-use crate::request::{Header, ParsedRequest};
+use crate::request::{GraphQlBody, Header, ParsedRequest, RequestBody};
 
 /// How many [`HistoryEntry`] records a [`Session`] keeps before evicting the
 /// oldest one — a session tracking every send of a long-running GUI session
@@ -317,6 +320,11 @@ pub struct Session {
     /// OAuth2-protected API authenticates once rather than once per
     /// request.
     access_tokens: HashMap<(String, String, Option<String>), AccessToken>,
+    /// Introspected GraphQL schemas, keyed by the resolved request URL they
+    /// were fetched from, so browsing a schema in the GUI doesn't
+    /// re-introspect on every keystroke/tab switch — see
+    /// [`Session::fetch_graphql_schema`].
+    schemas: HashMap<String, GraphQlSchema>,
     /// Every request/response pair sent through this session so far,
     /// oldest first, capped at [`HISTORY_CAP`] — see [`Session::history`].
     history: Vec<HistoryEntry>,
@@ -742,6 +750,49 @@ impl Session {
         let effective_environment =
             self.environment_with_variables(environment, collection_variables);
         parsed.resolve(&effective_environment)
+    }
+
+    /// Introspect the GraphQL schema at `parsed`'s own URL, reusing its
+    /// resolved headers/auth (cookies and OAuth2-client-credentials tokens
+    /// included, the same as [`Session::execute`]) rather than requiring
+    /// separate schema-fetch credentials. The request's own body is
+    /// ignored — the introspection document ([`INTROSPECTION_QUERY`]) is
+    /// sent in its place — and its `[script]` hooks don't run, since
+    /// introspection isn't "the request."
+    ///
+    /// Cached by resolved URL on this session; pass `force_refresh: true`
+    /// to bypass a stale cache entry (e.g. an explicit "Refresh" in the
+    /// GUI) rather than waiting for it to be evicted, since a schema has no
+    /// natural expiry the way an OAuth2 token does.
+    pub fn fetch_graphql_schema(
+        &mut self,
+        project_root: &Path,
+        parsed: &ParsedRequest,
+        environment: &Environment,
+        collection_variables: &HashMap<String, String>,
+        force_refresh: bool,
+    ) -> NovaResult<GraphQlSchema> {
+        let resolved = self.resolve_in_collection(parsed, environment, collection_variables)?;
+
+        if !force_refresh {
+            if let Some(cached) = self.schemas.get(&resolved.url) {
+                return Ok(cached.clone());
+            }
+        }
+
+        let mut introspection_request = resolved.clone();
+        introspection_request.method = "POST".to_string();
+        introspection_request.body = RequestBody::Graphql(GraphQlBody {
+            query: INTROSPECTION_QUERY.to_string(),
+            variables: None,
+            operation_name: None,
+        });
+
+        let response = self.execute(project_root, &introspection_request)?;
+        let schema = parse_introspection_response(&response.body)?;
+
+        self.schemas.insert(resolved.url, schema.clone());
+        Ok(schema)
     }
 
     /// The full variable map [`Session::resolve_and_execute_in_collection`]

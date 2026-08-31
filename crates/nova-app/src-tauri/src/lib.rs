@@ -18,6 +18,7 @@ pub fn run() {
             commands::validate_project,
             commands::git_status,
             commands::send_request,
+            commands::fetch_graphql_schema,
             commands::save_response_as_example,
             commands::export_request_as,
             commands::get_resolved_variables,

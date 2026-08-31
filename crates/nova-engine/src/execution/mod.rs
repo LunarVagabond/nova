@@ -15,6 +15,7 @@
 
 pub mod assertion;
 pub mod auth;
+pub mod graphql_introspection;
 pub mod http;
 pub mod oauth2_loopback;
 pub mod script;

@@ -63,6 +63,9 @@ pub enum NovaError {
     #[error("failed to execute request: {message}")]
     RequestExecution { message: String },
 
+    #[error("GraphQL schema introspection failed: {message}")]
+    GraphQlIntrospection { message: String },
+
     #[error(
         "multipart field {field:?} references a file at {path} that doesn't exist \
          (looked relative to the project root)"

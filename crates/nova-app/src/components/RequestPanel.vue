@@ -5,6 +5,7 @@ import {
   diffAgainstExampleResponse,
   diffAgainstPreviousRun,
   exportRequestAs,
+  fetchGraphqlSchema,
   getResolvedVariables,
   parseCurlCommand,
   parseGraphqlBody,
@@ -20,6 +21,7 @@ import type {
   AuthScheme,
   ExportFormat,
   GraphQlBody,
+  GraphQlSchema,
   MultipartField,
   QueryParam,
   RequestDraft,
@@ -51,6 +53,7 @@ import { formatXml } from "../lib/xmlFormat";
 import AuthEditor from "./AuthEditor.vue";
 import BinaryEditor from "./BinaryEditor.vue";
 import CodeEditor, { type EditorLanguage } from "./CodeEditor.vue";
+import GraphQlSchemaExplorer from "./GraphQlSchemaExplorer.vue";
 import Icon from "./Icon.vue";
 import KeyValueEditor from "./KeyValueEditor.vue";
 import MultipartEditor from "./MultipartEditor.vue";
@@ -285,6 +288,38 @@ watch([graphqlQuery, graphqlVariablesText], async ([query, variablesText]) => {
     // Mirrors the multipart watcher above — nothing sensible to show here.
   }
 });
+
+// The GraphQL schema explorer (#158) — introspected on demand (never
+// automatically, since it's a real network call) against this request's
+// own URL/headers/auth, and cached per-project by nova-engine, so
+// switching tabs or reopening this request doesn't re-fetch until
+// "Refresh" is used. Reset whenever the request itself changes (see
+// `load()`) so a schema fetched for one endpoint never lingers as if it
+// described another.
+const graphqlSchema = ref<GraphQlSchema | null>(null);
+const graphqlSchemaLoading = ref(false);
+const graphqlSchemaError = ref<string | null>(null);
+const graphqlQueryEditorRef = ref<InstanceType<typeof CodeEditor> | null>(null);
+
+async function handleFetchGraphqlSchema(forceRefresh: boolean) {
+  graphqlSchemaLoading.value = true;
+  graphqlSchemaError.value = null;
+  try {
+    graphqlSchema.value = await fetchGraphqlSchema(
+      props.request.path,
+      props.selectedEnvironment,
+      forceRefresh,
+    );
+  } catch (e) {
+    graphqlSchemaError.value = String(e);
+  } finally {
+    graphqlSchemaLoading.value = false;
+  }
+}
+
+function handleInsertGraphqlField(text: string) {
+  graphqlQueryEditorRef.value?.insertAtCursor(text);
+}
 
 const saving = ref(false);
 const saveError = ref<string | null>(null);
@@ -616,6 +651,8 @@ async function load() {
   saveError.value = null;
   diffResult.value = null;
   diffError.value = null;
+  graphqlSchema.value = null;
+  graphqlSchemaError.value = null;
   try {
     const draft = await readRequest(props.request.path);
     // `url:` isn't supposed to carry its own query string, but nothing on
@@ -1100,9 +1137,16 @@ defineExpose({ dirty, save: handleSave });
           :project-root="projectRoot"
         />
         <div v-else-if="bodyType === 'graphql'" class="request-panel__graphql">
+          <GraphQlSchemaExplorer
+            :schema="graphqlSchema"
+            :loading="graphqlSchemaLoading"
+            :error="graphqlSchemaError"
+            @refresh="handleFetchGraphqlSchema(graphqlSchema !== null)"
+            @insert="handleInsertGraphqlField"
+          />
           <div class="request-panel__graphql-pane">
             <span class="request-panel__graphql-label">Query</span>
-            <CodeEditor v-model="graphqlQuery" language="text" />
+            <CodeEditor ref="graphqlQueryEditorRef" v-model="graphqlQuery" language="text" />
           </div>
           <div class="request-panel__graphql-pane">
             <span class="request-panel__graphql-label">Variables</span>
