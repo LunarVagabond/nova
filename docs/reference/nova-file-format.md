@@ -149,6 +149,11 @@ Both markers are optional. On the wire this is assembled into the standard
 `{"query", "variables", "operationName"}` JSON envelope GraphQL servers
 expect; `variables` defaults to an empty object when omitted.
 
+The desktop app can also introspect a GraphQL request's live schema, using
+the request's own resolved URL/headers/auth — see
+[the GUI reference](./gui.md#graphql-schema-explorer). This doesn't change
+anything about the file format above; it's a read-only browsing aid.
+
 ### `[auth]`
 
 Structured auth, as an alternative to a literal `Authorization` header.

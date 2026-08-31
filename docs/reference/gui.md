@@ -135,6 +135,29 @@ session and stops listening for its events; closing the tab that opened a
 still-live session disconnects it too, so a stray connection doesn't
 outlive the tab that owns it.
 
+### GraphQL schema explorer
+
+A request whose Body tab is set to `graphql` shows a schema explorer column
+next to the query/variables editors. "Fetch schema" runs the standard
+GraphQL introspection query against the request's own URL, reusing its
+resolved headers/auth (cookies and OAuth2-client-credentials tokens
+included) exactly the way sending the request itself would —
+`fetch_graphql_schema` (`nova_engine::Session::fetch_graphql_schema`). The
+result is cached per project by resolved URL, so switching tabs or
+reopening the request doesn't re-fetch; "Refresh" bypasses that cache
+explicitly. Introspection never runs automatically, since it's a real
+network call.
+
+The tree lists whichever of Query/Mutation/Subscription the schema declares,
+each expandable to its fields with a type signature next to the name and a
+hover tooltip for its description/arguments. Clicking a field inserts it
+into the query editor at the cursor — its arguments as empty placeholders,
+and an empty `{ }` selection-set body when the field's return type is itself
+an object, so nested fields can be picked the same way. This depends on the
+target server allowing introspection; a server with it disabled (or
+authentication the request doesn't carry) surfaces as an inline error in the
+explorer rather than an empty tree.
+
 ### Response diffing
 
 The response pane's Diff tab compares a request's most recent send against

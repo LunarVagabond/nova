@@ -359,7 +359,7 @@
 // makes better use of the panel's width than a tall stack would.
 .request-panel__graphql {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(200px, 240px) 1fr 1fr;
   gap: $spacing-md;
 }
 
