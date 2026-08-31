@@ -44,6 +44,7 @@ import RequestPanel from "./components/RequestPanel.vue";
 import WebSocketPanel from "./components/WebSocketPanel.vue";
 import EnvironmentPanel from "./components/EnvironmentPanel.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
+import CookiesPanel from "./components/CookiesPanel.vue";
 import EmptyState from "./components/EmptyState.vue";
 import Modal from "./components/Modal.vue";
 import Icon from "./components/Icon.vue";
@@ -106,7 +107,7 @@ const mockServerError = ref<string | null>(null);
 // inferred from `managedEnvironment`/`openTabs.length`) so there's always a
 // way back to "project" — e.g. a sidebar/header nav action — instead of it
 // only being reachable as an implicit fallback.
-type MainView = "request" | "environment" | "project" | "history";
+type MainView = "request" | "environment" | "project" | "history" | "cookies";
 const mainView = ref<MainView>("project");
 
 const error = ref<string | null>(null);
@@ -332,6 +333,17 @@ async function showHistory() {
     environmentPanelDirty.value = false;
   }
   mainView.value = "history";
+}
+
+/** Shows the current project's session cookie jar — edits there save immediately, so no dirty-discard check is needed to leave it. */
+async function showCookies() {
+  if (mainView.value === "cookies") return;
+  if (mainView.value === "environment") {
+    if (!(await confirmDiscard(environmentPanelDirty.value))) return;
+    managedEnvironment.value = null;
+    environmentPanelDirty.value = false;
+  }
+  mainView.value = "cookies";
 }
 
 /** Recursively looks for a request at `path` anywhere in `collection`'s tree. */
@@ -912,6 +924,7 @@ async function handleToggleMockServer() {
       :selected-environment="selectedEnvironment"
       :showing-project-settings="mainView === 'project'"
       :showing-history="mainView === 'history'"
+      :showing-cookies="mainView === 'cookies'"
       :running-tests="runningTests"
       :mock-server-status="mockServer"
       :mock-server-busy="mockServerBusy"
@@ -921,6 +934,7 @@ async function handleToggleMockServer() {
       @switch-project="handleOpen"
       @project-settings="showProjectSettings"
       @show-history="showHistory"
+      @show-cookies="showCookies"
       @run-tests="handleRunTests"
       @import-export="openImportExport"
       @toggle-mock-server="handleToggleMockServer"
@@ -993,7 +1007,10 @@ async function handleToggleMockServer() {
 
       <div
         class="app-shell__content"
-        :class="{ 'app-shell__content--flush': mainView === 'request' || mainView === 'history' }"
+        :class="{
+          'app-shell__content--flush':
+            mainView === 'request' || mainView === 'history' || mainView === 'cookies',
+        }"
       >
         <template v-for="tab in openTabs" :key="tab.path">
           <WebSocketPanel
@@ -1037,6 +1054,11 @@ async function handleToggleMockServer() {
           v-else-if="project && mainView === 'history'"
           :project-root="project.root"
           :active="mainView === 'history'"
+        />
+        <CookiesPanel
+          v-else-if="project && mainView === 'cookies'"
+          :project-root="project.root"
+          :active="mainView === 'cookies'"
         />
         <EmptyState v-else-if="!project" :error="error" @open="handleOpen" />
       </div>

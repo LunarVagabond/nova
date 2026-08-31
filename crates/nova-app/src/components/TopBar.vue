@@ -14,6 +14,7 @@ defineProps<{
   selectedEnvironment: string | null;
   showingProjectSettings: boolean;
   showingHistory: boolean;
+  showingCookies: boolean;
   runningTests: boolean;
   mockServerStatus: MockServerStatus;
   mockServerBusy: boolean;
@@ -26,6 +27,7 @@ const emit = defineEmits<{
   (e: "switchProject"): void;
   (e: "projectSettings"): void;
   (e: "showHistory"): void;
+  (e: "showCookies"): void;
   (e: "runTests"): void;
   (e: "importExport"): void;
   (e: "toggleMockServer"): void;
@@ -143,6 +145,17 @@ const THEME_LABEL: Record<ThemePreference, string> = {
       @click="emit('showHistory')"
     >
       <Icon name="history" />
+    </button>
+
+    <button
+      v-if="projectName"
+      type="button"
+      class="icon-button icon-button--outline"
+      :class="{ 'icon-button--active': showingCookies }"
+      title="Cookie jar"
+      @click="emit('showCookies')"
+    >
+      <Icon name="cookie" />
     </button>
 
     <button

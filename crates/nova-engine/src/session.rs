@@ -73,6 +73,47 @@ impl StoredCookie {
     }
 }
 
+/// One stored cookie, flattened for display/editing outside the engine —
+/// see [`Session::cookies`]. Only ever built from cookies
+/// [`StoredCookie::is_expired`] says are still live, so a caller never has
+/// to re-check expiry itself.
+#[derive(Debug, Clone, Serialize)]
+pub struct CookieView {
+    /// The host this cookie is filed under (see [`CookieJar::by_host`]) —
+    /// not necessarily the same as `domain` below, since a cookie with no
+    /// `Domain` attribute is filed under the exact host it was set from.
+    pub host: String,
+    pub name: String,
+    pub value: String,
+    /// Defaults to `/` — see [`StoredCookie::path`].
+    pub path: String,
+    pub secure: bool,
+    /// From the cookie's `Domain` attribute, if any — see
+    /// [`StoredCookie::domain`].
+    pub domain: Option<String>,
+    /// Milliseconds since the Unix epoch, matching
+    /// [`HistoryEntry::sent_at_ms`]'s convention — `None` means the cookie
+    /// has no expiry and lasts for the life of the session.
+    pub expires_at_ms: Option<u128>,
+}
+
+fn cookie_view(host: &str, cookie: &StoredCookie) -> CookieView {
+    CookieView {
+        host: host.to_string(),
+        name: cookie.name.clone(),
+        value: cookie.value.clone(),
+        path: cookie.path.clone(),
+        secure: cookie.secure,
+        domain: cookie.domain.clone(),
+        expires_at_ms: cookie.expires_at.map(|expires_at| {
+            expires_at
+                .duration_since(UNIX_EPOCH)
+                .map(|duration| duration.as_millis())
+                .unwrap_or(0)
+        }),
+    }
+}
+
 /// Cookies collected from `Set-Cookie` responses, scoped by host.
 #[derive(Debug, Clone, Default)]
 struct CookieJar {
@@ -131,6 +172,57 @@ impl CookieJar {
             entry.retain(|existing| existing.name != cookie.name);
             entry.push(cookie);
         }
+    }
+
+    /// Every currently-live cookie across every host, sorted by host then
+    /// name for a stable display order — see [`Session::cookies`].
+    fn entries(&self) -> Vec<CookieView> {
+        let mut entries: Vec<CookieView> = self
+            .by_host
+            .iter()
+            .flat_map(|(host, cookies)| {
+                cookies
+                    .iter()
+                    .filter(|cookie| !cookie.is_expired())
+                    .map(move |cookie| cookie_view(host, cookie))
+            })
+            .collect();
+        entries.sort_by(|a, b| (&a.host, &a.name).cmp(&(&b.host, &b.name)));
+        entries
+    }
+
+    /// Removes the cookie named `name` stored for `host`. Returns whether a
+    /// cookie was actually found and removed.
+    fn remove(&mut self, host: &str, name: &str) -> bool {
+        let Some(cookies) = self.by_host.get_mut(host) else {
+            return false;
+        };
+        let before = cookies.len();
+        cookies.retain(|cookie| cookie.name != name);
+        let removed = cookies.len() != before;
+        if cookies.is_empty() {
+            self.by_host.remove(host);
+        }
+        removed
+    }
+
+    /// Removes every stored cookie, for every host.
+    fn clear(&mut self) {
+        self.by_host.clear();
+    }
+
+    /// Edits the value of the cookie named `name` stored for `host` in
+    /// place, leaving its other attributes (path/domain/secure/expiry)
+    /// untouched. Returns whether a matching cookie was found to edit.
+    fn set_value(&mut self, host: &str, name: &str, value: &str) -> bool {
+        let Some(cookies) = self.by_host.get_mut(host) else {
+            return false;
+        };
+        let Some(cookie) = cookies.iter_mut().find(|cookie| cookie.name == name) else {
+            return false;
+        };
+        cookie.value = value.to_string();
+        true
     }
 }
 
@@ -300,6 +392,35 @@ impl Session {
         self.history.iter().find(|entry| entry.id == id)
     }
 
+    /// This session's currently-stored cookies, across every host, sorted by
+    /// host then name for a stable display order. Already-expired cookies
+    /// (never replayed by [`Session::execute`] — see
+    /// [`StoredCookie::is_expired`]) are left out, so this always matches
+    /// what would actually be sent on the next request.
+    pub fn cookies(&self) -> Vec<CookieView> {
+        self.jar.entries()
+    }
+
+    /// Removes the cookie named `name` stored for `host` from this
+    /// session. Returns whether a cookie was actually found and removed —
+    /// useful to know for a caller, but not worth failing over, so this
+    /// never returns an error.
+    pub fn remove_cookie(&mut self, host: &str, name: &str) -> bool {
+        self.jar.remove(host, name)
+    }
+
+    /// Removes every cookie this session has stored, for every host.
+    pub fn clear_cookies(&mut self) {
+        self.jar.clear();
+    }
+
+    /// Edits the value of the cookie named `name` stored for `host` in
+    /// place, leaving its other attributes (path/domain/secure/expiry)
+    /// untouched. Returns whether a matching cookie was found to edit.
+    pub fn set_cookie_value(&mut self, host: &str, name: &str, value: &str) -> bool {
+        self.jar.set_value(host, name, value)
+    }
+
     fn record_history(&mut self, request: &ParsedRequest, response: &Response) {
         let sent_at_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -438,6 +559,25 @@ impl Session {
         self.access_tokens.insert(key, fetched);
 
         Ok(Some(header))
+    }
+
+    /// The full variable map [`Session::resolve_and_execute_in_collection`]
+    /// would substitute `{{name}}` placeholders against right now:
+    /// `collection_variables` overridden by this session's chained
+    /// (extracted) variables, overridden in turn by `environment`'s own
+    /// declared variables — the same precedence documented on that method.
+    ///
+    /// Read-only and does nothing else (no execution, no mutation of this
+    /// session) — a GUI "variables drawer" uses this to show what a
+    /// request's placeholders will actually resolve to without sending
+    /// anything.
+    pub fn resolved_variables(
+        &self,
+        environment: &Environment,
+        collection_variables: &HashMap<String, String>,
+    ) -> HashMap<String, String> {
+        self.environment_with_variables(environment, collection_variables)
+            .variables
     }
 
     fn environment_with_variables(
@@ -682,6 +822,140 @@ mod tests {
             effective.variables.get("token").map(String::as_str),
             Some("chained-token")
         );
+    }
+
+    #[test]
+    fn resolved_variables_matches_what_execution_would_merge() {
+        let mut session = Session::new();
+        session
+            .chained_variables
+            .insert("token".to_string(), "chained-token".to_string());
+        let environment = environment(&[("base_url", "https://example.com")]);
+        let collection_variables = HashMap::from([("base_path".to_string(), "/api".to_string())]);
+
+        let resolved = session.resolved_variables(&environment, &collection_variables);
+
+        assert_eq!(
+            resolved.get("base_url").map(String::as_str),
+            Some("https://example.com")
+        );
+        assert_eq!(resolved.get("base_path").map(String::as_str), Some("/api"));
+        assert_eq!(
+            resolved.get("token").map(String::as_str),
+            Some("chained-token")
+        );
+    }
+
+    #[test]
+    fn cookies_lists_every_stored_cookie_sorted_by_host_then_name() {
+        let mut session = Session::new();
+        session
+            .jar
+            .store(&url::Url::parse("http://b.example/").unwrap(), &["z=1"]);
+        session
+            .jar
+            .store(&url::Url::parse("http://a.example/").unwrap(), &["b=1"]);
+        session
+            .jar
+            .store(&url::Url::parse("http://a.example/").unwrap(), &["a=1"]);
+
+        let cookies = session.cookies();
+        let keys: Vec<(String, String)> = cookies
+            .iter()
+            .map(|c| (c.host.clone(), c.name.clone()))
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                ("a.example".to_string(), "a".to_string()),
+                ("a.example".to_string(), "b".to_string()),
+                ("b.example".to_string(), "z".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn cookies_leaves_out_an_already_expired_cookie() {
+        let mut session = Session::new();
+        session.jar.store(
+            &url::Url::parse("http://example.com/").unwrap(),
+            &["session_id=abc; Max-Age=0"],
+        );
+
+        assert!(session.cookies().is_empty());
+    }
+
+    #[test]
+    fn remove_cookie_deletes_only_the_named_cookie_for_that_host() {
+        let mut session = Session::new();
+        session.jar.store(
+            &url::Url::parse("http://example.com/").unwrap(),
+            &["a=1", "b=2"],
+        );
+
+        assert!(session.remove_cookie("example.com", "a"));
+
+        let remaining: Vec<String> = session.cookies().into_iter().map(|c| c.name).collect();
+        assert_eq!(remaining, vec!["b".to_string()]);
+    }
+
+    #[test]
+    fn remove_cookie_returns_false_when_nothing_matches() {
+        let mut session = Session::new();
+        session
+            .jar
+            .store(&url::Url::parse("http://example.com/").unwrap(), &["a=1"]);
+
+        assert!(!session.remove_cookie("example.com", "missing"));
+        assert!(!session.remove_cookie("other.example", "a"));
+        assert_eq!(session.cookies().len(), 1);
+    }
+
+    #[test]
+    fn clear_cookies_removes_every_cookie_for_every_host() {
+        let mut session = Session::new();
+        session
+            .jar
+            .store(&url::Url::parse("http://a.example/").unwrap(), &["a=1"]);
+        session
+            .jar
+            .store(&url::Url::parse("http://b.example/").unwrap(), &["b=1"]);
+
+        session.clear_cookies();
+
+        assert!(session.cookies().is_empty());
+    }
+
+    #[test]
+    fn set_cookie_value_edits_the_value_in_place() {
+        let mut session = Session::new();
+        session.jar.store(
+            &url::Url::parse("http://example.com/").unwrap(),
+            &["session_id=old; Path=/admin; Secure"],
+        );
+
+        assert!(session.set_cookie_value("example.com", "session_id", "new"));
+
+        let cookie = session
+            .cookies()
+            .into_iter()
+            .find(|c| c.name == "session_id")
+            .unwrap();
+        assert_eq!(cookie.value, "new");
+        // Other attributes are left untouched by the edit.
+        assert_eq!(cookie.path, "/admin");
+        assert!(cookie.secure);
+    }
+
+    #[test]
+    fn set_cookie_value_returns_false_when_nothing_matches() {
+        let mut session = Session::new();
+        session
+            .jar
+            .store(&url::Url::parse("http://example.com/").unwrap(), &["a=1"]);
+
+        assert!(!session.set_cookie_value("example.com", "missing", "x"));
+        assert!(!session.set_cookie_value("other.example", "a", "x"));
     }
 
     #[test]

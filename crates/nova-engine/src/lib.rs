@@ -75,5 +75,5 @@ pub use request::{
     Header, MultipartField, ParsedRequest, ParsedSseRequest, ParsedWebSocketRequest, QueryParam,
     RequestBody, RequestDraft, RequestFile, WebSocketDraft,
 };
-pub use session::{HistoryEntry, Session, HISTORY_CAP};
+pub use session::{CookieView, HistoryEntry, Session, HISTORY_CAP};
 pub use xml::{XmlElement, XmlNode};

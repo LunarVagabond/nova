@@ -26,7 +26,8 @@ const props = defineProps<{
     | "sun"
     | "moon"
     | "monitor"
-    | "sidebar";
+    | "sidebar"
+    | "cookie";
 }>();
 </script>
 
@@ -138,6 +139,13 @@ const props = defineProps<{
     <template v-else-if="name === 'sidebar'">
       <rect x="3" y="4" width="18" height="16" rx="1.5" />
       <path d="M9.5 4v16" />
+    </template>
+
+    <template v-else-if="name === 'cookie'">
+      <path
+        d="M20.5 12.5A8.5 8.5 0 1 1 11.5 3.5c0 1.4 1.1 2.5 2.5 2.5s2.5 1.1 2.5 2.5 1.1 2.5 2.5 2.5 2 .6 2 1.5z"
+      />
+      <path d="M9 12a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM13.5 17a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM9.5 16.5h.01" />
     </template>
   </svg>
 </template>

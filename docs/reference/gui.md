@@ -31,7 +31,14 @@ release bundle with `make build-app`.
 - **`src/components/`** — `Sidebar.vue`/`ProjectPanel.vue`/`CollectionNode.vue`
   for the collection tree; `RequestPanel.vue` for the HTTP request editor,
   split into Params/Auth/Headers/Body tabs (`AuthEditor.vue`,
-  `KeyValueEditor.vue`, `MultipartEditor.vue`, `CodeEditor.vue`);
+  `KeyValueEditor.vue`, `MultipartEditor.vue`, `CodeEditor.vue`), plus a
+  "Variables" toggle in its header that opens a read-only drawer listing
+  what the request's `{{variable}}` placeholders would actually resolve to
+  for the selected environment — collection variables and this project's
+  session-chained variables included, via the `get_resolved_variables`
+  command (`nova_engine::Session::resolved_variables`, the same
+  collection/chained/environment merge `send_request` uses). Editing still
+  only happens in `EnvironmentPanel.vue`;
   `WebSocketPanel.vue` for a WebSocket request (`protocol: websocket`) — a
   separate component from `RequestPanel.vue` rather than another tab on it,
   since a WebSocket request has no method/params/body/auth/assertions/
@@ -40,7 +47,13 @@ release bundle with `make build-app`.
   sends (method/status/timing/timestamp), reachable from the top bar's
   clock-icon action, with a click on an entry reopening its full stored
   request/response — in-memory and per-session, so it resets when the app
-  restarts; `ResponseDiffView.vue` renders a structured response diff (see
+  restarts; `CookiesPanel.vue` for the current project's session cookie jar,
+  reachable from the top bar's cookie-icon action — lists every cookie
+  currently stored (host/name/value/path/domain/secure/expiry), with inline
+  editing of a cookie's value, deleting a single cookie, or clearing the
+  whole jar; also in-memory and per-session, resetting along with
+  `HistoryPanel.vue`'s history when the app restarts;
+  `ResponseDiffView.vue` renders a structured response diff (see
   below) for the response pane's Diff tab; `Modal.vue` is the shared
   in-app dialog component — used instead of `window.prompt`/
   `window.confirm`, which are unreliable inside Tauri's webview.

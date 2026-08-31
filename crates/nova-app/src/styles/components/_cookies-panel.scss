@@ -1,0 +1,98 @@
+@use "../variables" as *;
+
+// The Cookies panel (see CookiesPanel.vue, TopBar's cookie-icon action) —
+// a flat table of this project's session cookie jar, one row per stored
+// cookie. Sits in the same flush content region a request tab/History does
+// (see `.app-shell__content--flush`), so it owns its own scrolling rather
+// than relying on the outer content region.
+.cookies-panel {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: $spacing-lg;
+}
+
+.cookies-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $spacing-md;
+}
+
+.cookies-panel__title {
+  margin: 0;
+  font-size: $font-size-md;
+  font-weight: 600;
+}
+
+.cookies-panel__header-actions {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
+.cookies-panel__hint {
+  color: var(--color-text-muted);
+}
+
+.cookies-panel__error {
+  color: var(--color-danger);
+}
+
+.cookies-panel__table-wrap {
+  overflow-x: auto;
+}
+
+.cookies-panel__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: $font-size-sm;
+}
+
+.cookies-panel__table th {
+  text-align: left;
+  padding: $spacing-xs $spacing-sm;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.cookies-panel__table td {
+  padding: $spacing-xs $spacing-sm;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.cookies-panel__mono {
+  font-family: $font-family-mono;
+}
+
+.cookies-panel__value-cell {
+  max-width: 20rem;
+}
+
+.cookies-panel__value {
+  display: block;
+  max-width: 20rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cookies-panel__value-input {
+  width: 100%;
+  padding: $spacing-xs;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-sm;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  font-family: $font-family-mono;
+}
+
+.cookies-panel__row-actions {
+  display: flex;
+  gap: $spacing-xs;
+  white-space: nowrap;
+}

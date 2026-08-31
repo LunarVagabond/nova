@@ -10,6 +10,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import type {
   AuthScheme,
   Collection,
+  CookieView,
   GitStatusMap,
   GraphQlBody,
   HistoryDetail,
@@ -81,6 +82,20 @@ export function sendRequest(
 }
 
 /**
+ * The full variable map `requestPath`'s `{{name}}` placeholders would
+ * resolve against right now — against `environment` if named (else the
+ * project's default), collection variables and this project's
+ * session-chained variables included — without sending anything. Powers
+ * the request panel's read-only variables drawer.
+ */
+export function getResolvedVariables(
+  requestPath: string,
+  environment: string | null,
+): Promise<Record<string, string>> {
+  return invoke<Record<string, string>>("get_resolved_variables", { requestPath, environment });
+}
+
+/**
  * The project at `path`'s recent request/response history, most-recent
  * first — empty (not an error) if nothing has been sent in this project
  * yet this session. History lives only for the life of the app session;
@@ -93,6 +108,38 @@ export function getHistory(path: string): Promise<HistorySummary[]> {
 /** Reopens one past history entry from the project at `path` by the `id` `getHistory` handed out for it. */
 export function reopenHistoryEntry(path: string, id: number): Promise<HistoryDetail> {
   return invoke<HistoryDetail>("reopen_history_entry", { path, id });
+}
+
+/**
+ * The project at `path`'s currently-stored session cookies — empty (not an
+ * error) if nothing has set a cookie in this project yet this session.
+ * Cookies live only for the life of the app session, the same as history.
+ */
+export function getCookies(path: string): Promise<CookieView[]> {
+  return invoke<CookieView[]>("get_cookies", { path });
+}
+
+/** Deletes one stored cookie (identified by `host` + `name`) from the project at `path`'s session. */
+export function deleteCookie(path: string, host: string, name: string): Promise<boolean> {
+  return invoke<boolean>("delete_cookie", { path, host, name });
+}
+
+/** Deletes every stored cookie from the project at `path`'s session. */
+export function clearCookies(path: string): Promise<void> {
+  return invoke<void>("clear_cookies", { path });
+}
+
+/**
+ * Edits the value of one stored cookie (identified by `host` + `name`) in
+ * the project at `path`'s session, leaving its other attributes untouched.
+ */
+export function updateCookie(
+  path: string,
+  host: string,
+  name: string,
+  value: string,
+): Promise<boolean> {
+  return invoke<boolean>("update_cookie", { path, host, name, value });
 }
 
 /**
