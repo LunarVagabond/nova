@@ -48,6 +48,18 @@ pub enum WebSocketMessage {
     BinaryFile { path: String },
 }
 
+/// Prepend `ws://` to `url` if it has no scheme at all — a bare
+/// `host:port/path` a user typed without thinking about `ws://` vs.
+/// `wss://`. A URL that already names *some* scheme (`ws://`, `wss://`, or
+/// even an unrelated one like `http://`) is left untouched.
+fn with_default_ws_scheme(url: String) -> String {
+    if url.contains("://") {
+        url
+    } else {
+        format!("ws://{url}")
+    }
+}
+
 impl ParsedWebSocketRequest {
     /// Resolve `{{variable}}` placeholders in the URL, header values, and
     /// messages (a text message's content, or a binary message's file
@@ -55,6 +67,12 @@ impl ParsedWebSocketRequest {
     /// counterpart to
     /// [`ParsedRequest::resolve`](crate::ParsedRequest::resolve). There's
     /// no auth scheme or body to resolve here, just these three.
+    ///
+    /// A resolved URL with no `ws://`/`wss://` scheme (and no other scheme
+    /// either — an `http://` typo is left alone so it surfaces as the
+    /// usual invalid-scheme error) gets `ws://` prepended: a bare
+    /// `host:port/path` is unambiguously meant as a WebSocket endpoint,
+    /// since that's the only kind of URL this file type ever connects to.
     pub fn resolve(&self, environment: &Environment) -> NovaResult<ParsedWebSocketRequest> {
         let headers = self
             .headers
@@ -80,7 +98,7 @@ impl ParsedWebSocketRequest {
             .collect::<NovaResult<Vec<_>>>()?;
 
         Ok(ParsedWebSocketRequest {
-            url: substitute(&self.url, environment)?,
+            url: with_default_ws_scheme(substitute(&self.url, environment)?),
             headers,
             messages,
         })
@@ -556,6 +574,48 @@ mod tests {
                 path: "files/payload.bin".to_string()
             }
         );
+    }
+
+    #[test]
+    fn websocket_request_resolve_defaults_a_schemeless_url_to_ws() {
+        let environment = Environment {
+            name: "local".to_string(),
+            variables: std::collections::HashMap::new(),
+            secrets: Vec::new(),
+            auth: None,
+            path: PathBuf::from("local.yaml"),
+        };
+
+        let parsed = ParsedWebSocketRequest {
+            url: "example.com/socket".to_string(),
+            headers: vec![],
+            messages: vec![],
+        };
+
+        let resolved = parsed.resolve(&environment).unwrap();
+
+        assert_eq!(resolved.url, "ws://example.com/socket");
+    }
+
+    #[test]
+    fn websocket_request_resolve_leaves_an_explicit_scheme_alone() {
+        let environment = Environment {
+            name: "local".to_string(),
+            variables: std::collections::HashMap::new(),
+            secrets: Vec::new(),
+            auth: None,
+            path: PathBuf::from("local.yaml"),
+        };
+
+        let parsed = ParsedWebSocketRequest {
+            url: "http://example.com/socket".to_string(),
+            headers: vec![],
+            messages: vec![],
+        };
+
+        let resolved = parsed.resolve(&environment).unwrap();
+
+        assert_eq!(resolved.url, "http://example.com/socket");
     }
 
     #[test]
