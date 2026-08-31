@@ -1,36 +1,146 @@
 @use "../variables" as *;
 
 .empty-state {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: $spacing-md;
+  gap: $spacing-sm;
   text-align: center;
   color: var(--color-text-muted);
+  overflow: hidden;
 }
 
-.empty-state__icon {
-  width: 2.5rem;
-  height: 2.5rem;
-  color: var(--color-text-muted);
-  opacity: 0.6;
+// A faint radial ring behind the hero content — the mockup's starfield is
+// decorative flourish, not something worth a canvas/particle dependency for.
+.empty-state__field {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 
-.empty-state__title {
-  font-size: $font-size-lg;
-  font-weight: 600;
+.empty-state__ring {
+  width: min(46rem, 90vw);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  opacity: 0.5;
+}
+
+.empty-state__mark {
+  position: relative;
+  width: 2.75rem;
+  height: 2.75rem;
+  color: var(--color-accent);
+  filter: drop-shadow(0 0 0.75rem rgba(155, 133, 255, 0.45));
+}
+
+.empty-state__wordmark {
+  position: relative;
+  margin: 0;
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1.1;
+  background: linear-gradient(135deg, var(--color-accent), var(--color-code-keyword));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.empty-state__tagline {
+  position: relative;
+  margin: 0 0 $spacing-sm;
+  font-size: $font-size-md;
   color: var(--color-text);
-  margin: 0;
 }
 
-.empty-state__hint {
-  margin: 0;
-  max-width: 32ch;
+.empty-state__pillars {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing-md $spacing-lg;
+  list-style: none;
+  margin: 0 0 $spacing-lg;
+  padding: 0;
+}
+
+.empty-state__pillar {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-xs;
+  font-size: $font-size-sm;
+  color: var(--color-text-muted);
+
+  .icon {
+    width: 1rem;
+    height: 1rem;
+    color: var(--color-accent);
+  }
+}
+
+.empty-state__actions {
+  position: relative;
+  display: flex;
+  gap: $spacing-sm;
+}
+
+.empty-state__cta {
+  height: auto;
+  padding: $spacing-smd $spacing-lg;
+  font-size: $font-size-base;
+}
+
+.empty-state__drop-hint {
+  position: relative;
+  margin: $spacing-md 0 0;
+  font-size: $font-size-sm;
+}
+
+.empty-state__accent {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.empty-state__footer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  margin-top: $spacing-xl;
+  font-size: $font-size-xs;
+
+  .icon {
+    width: 0.9rem;
+    height: 0.9rem;
+  }
+
+  a {
+    display: inline-flex;
+    align-items: center;
+    gap: $spacing-xs;
+    color: var(--color-text-muted);
+
+    &:hover {
+      color: var(--color-text);
+    }
+  }
+}
+
+.empty-state__footer-rule {
+  width: 2.5rem;
+  height: 1px;
+  background-color: var(--color-border);
 }
 
 .empty-state__error {
+  position: relative;
   color: var(--color-danger);
   max-width: 40ch;
 }

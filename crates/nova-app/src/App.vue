@@ -829,6 +829,17 @@ onMounted(async () => {
     // The toggle just starts from "off" if the initial status fetch fails
     // — never worth blocking app startup over.
   }
+
+  // Only wired up for the "no project open" landing screen (see its drag-
+  // and-drop hint) — once a project is open, switching projects goes
+  // through the explicit "Switch project" picker instead, so a stray drop
+  // onto the workspace doesn't blow away in-progress work.
+  const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+  await getCurrentWebview().onDragDropEvent((event) => {
+    if (event.payload.type !== "drop" || project.value) return;
+    const path = event.payload.paths[0];
+    if (path) void loadProject(path);
+  });
 });
 
 function closeTestResults() {
@@ -947,7 +958,7 @@ async function handleToggleMockServer() {
 <template>
   <div
     class="app-shell"
-    :class="{ 'app-shell--sidebar-hidden': sidebarHidden }"
+    :class="{ 'app-shell--sidebar-hidden': sidebarHidden || !project }"
     :style="{ '--sidebar-width': sidebarPane.size.value + 'px' }"
     :ref="(el) => (sidebarPane.containerEl.value = el as HTMLElement | null)"
   >
@@ -979,7 +990,7 @@ async function handleToggleMockServer() {
       @cycle-theme="cycleTheme"
     />
 
-    <aside v-show="!sidebarHidden" class="app-shell__sidebar">
+    <aside v-show="!sidebarHidden && project" class="app-shell__sidebar">
       <Sidebar
         v-if="project"
         :project="project"
@@ -1000,7 +1011,7 @@ async function handleToggleMockServer() {
     </aside>
 
     <div
-      v-show="!sidebarHidden"
+      v-show="!sidebarHidden && project"
       class="app-shell__sidebar-divider"
       title="Drag to resize sidebar"
       @mousedown="sidebarPane.startDrag"
@@ -1114,7 +1125,12 @@ async function handleToggleMockServer() {
           :active="mainView === 'changes'"
           @changed="refreshGitStatus"
         />
-        <EmptyState v-else-if="!project" :error="error" @open="handleOpen" />
+        <EmptyState
+          v-else-if="!project"
+          :error="error"
+          @open="handleOpen"
+          @start-new="handleOpen"
+        />
       </div>
     </main>
 
