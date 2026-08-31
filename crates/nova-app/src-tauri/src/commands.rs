@@ -11,13 +11,14 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use nova_engine::{
-    diff_responses, evaluate, export_request, export_to_spec, generate_project,
-    graphql_body_to_text, multipart_fields_to_body_text, parse_curl, parse_graphql_body,
-    parse_multipart_fields, write_generated_project, AssertionOutcome, AuthScheme, Collection,
-    ComparableResponse, CookieView, Environment, ExportFormat, GitFileStatus, GitStatusCache,
-    GraphQlBody, GraphQlSchema, Header, InitOptions, InitOutcome, Manifest, MultipartField,
-    NovaProject, OpenProjectOutcome, ParsedCurlRequest, ParsedRequest, ParsedWebSocketRequest,
-    RequestDraft, RequestFile, Response, ResponseDiff, Session, WebSocketDraft, WebSocketExchange,
+    diff_responses, evaluate, export_request, export_to_spec, generate_project, git_commit,
+    git_diff, git_fetch, git_pull, git_push, git_stage, git_unstage, graphql_body_to_text,
+    multipart_fields_to_body_text, parse_curl, parse_graphql_body, parse_multipart_fields,
+    write_generated_project, AssertionOutcome, AuthScheme, Collection, ComparableResponse,
+    CookieView, Environment, ExportFormat, GitFileStatus, GitStatusCache, GraphQlBody,
+    GraphQlSchema, Header, InitOptions, InitOutcome, Manifest, MultipartField, NovaProject,
+    OpenProjectOutcome, ParsedCurlRequest, ParsedRequest, ParsedWebSocketRequest, RequestDraft,
+    RequestFile, Response, ResponseDiff, Session, WebSocketDraft, WebSocketExchange,
 };
 
 use crate::mock_server::{MockServerState, MockServerStatus, DEFAULT_HOST, DEFAULT_PORT};
@@ -123,6 +124,97 @@ pub fn git_status(
 ) -> Result<Option<HashMap<PathBuf, GitFileStatus>>, String> {
     let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
     cache.get(&project.root).map_err(|e| e.to_string())
+}
+
+/// The unified diff for `file_path` (an absolute path, as reported by
+/// [`git_status`]) inside the git repository containing the project at
+/// `path`, covering both staged and unstaged changes for that one file —
+/// see [`nova_engine::git_diff`]. `None` when `path` isn't inside a git
+/// repository at all.
+#[tauri::command]
+pub fn git_diff_file(path: String, file_path: String) -> Result<Option<String>, String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    git_diff(&project.root, std::path::Path::new(&file_path)).map_err(|e| e.to_string())
+}
+
+/// Stage `file_paths` (absolute paths) in the git repository containing
+/// the project at `path`, ready for the next [`git_commit_changes`] call.
+/// An empty `file_paths` stages every changed file — the Changes panel's
+/// "stage all" default.
+#[tauri::command]
+pub fn git_stage_files(
+    path: String,
+    file_paths: Vec<String>,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<(), String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    let paths: Vec<PathBuf> = file_paths.into_iter().map(PathBuf::from).collect();
+    git_stage(&project.root, &paths).map_err(|e| e.to_string())?;
+    cache.invalidate(&project.root);
+    Ok(())
+}
+
+/// Unstage `file_paths` (absolute paths) in the git repository containing
+/// the project at `path`, without touching their working-tree contents.
+#[tauri::command]
+pub fn git_unstage_files(
+    path: String,
+    file_paths: Vec<String>,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<(), String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    let paths: Vec<PathBuf> = file_paths.into_iter().map(PathBuf::from).collect();
+    git_unstage(&project.root, &paths).map_err(|e| e.to_string())?;
+    cache.invalidate(&project.root);
+    Ok(())
+}
+
+/// Commit whatever is currently staged in the git repository containing
+/// the project at `path`, using `message` as the commit message. `amend`
+/// folds the commit into the current `HEAD` instead of creating a new one
+/// — see [`nova_engine::git_commit`].
+#[tauri::command]
+pub fn git_commit_changes(
+    path: String,
+    message: String,
+    amend: bool,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<(), String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    git_commit(&project.root, &message, amend).map_err(|e| e.to_string())?;
+    cache.invalidate(&project.root);
+    Ok(())
+}
+
+/// Fetch from the git repository containing the project at `path`'s
+/// configured remote, returning git's own combined output. See
+/// [`nova_engine::git_fetch`] for why a conflict/auth failure surfaces as
+/// git's own text rather than an interpreted error.
+#[tauri::command]
+pub fn git_fetch_remote(path: String) -> Result<String, String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    git_fetch(&project.root).map_err(|e| e.to_string())
+}
+
+/// Pull into the git repository containing the project at `path`,
+/// returning git's own combined output.
+#[tauri::command]
+pub fn git_pull_remote(
+    path: String,
+    cache: tauri::State<GitStatusCache>,
+) -> Result<String, String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    let output = git_pull(&project.root).map_err(|e| e.to_string())?;
+    cache.invalidate(&project.root);
+    Ok(output)
+}
+
+/// Push the git repository containing the project at `path` to its
+/// configured remote, returning git's own combined output.
+#[tauri::command]
+pub fn git_push_remote(path: String) -> Result<String, String> {
+    let project = NovaProject::discover(std::path::Path::new(&path)).map_err(|e| e.to_string())?;
+    git_push(&project.root).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
