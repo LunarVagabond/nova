@@ -689,6 +689,48 @@ mod tests {
     }
 
     #[test]
+    fn parses_request_with_binary_body() {
+        let contents = "[request]\nmethod: PUT\nurl: {{base_url}}/files/42\n\n[headers]\nContent-Type: application/octet-stream\n\n[body]\n@file: attachments/payload.bin\n";
+
+        let parsed = parse_nova(contents).unwrap();
+
+        let RequestBody::Binary(file_path) = parsed.body else {
+            panic!("expected a binary body");
+        };
+        assert_eq!(file_path, "attachments/payload.bin");
+    }
+
+    #[test]
+    fn round_trips_a_binary_body() {
+        let contents = "[request]\nmethod: PUT\nurl: {{base_url}}/files/42\n\n[headers]\nContent-Type: application/octet-stream\n\n[body]\n@file: attachments/payload.bin\n";
+        let parsed = parse_nova(contents).unwrap();
+        let text = parsed.to_nova_string().unwrap();
+        let reparsed = parse_nova(&text).unwrap();
+        assert_eq!(parsed.body, reparsed.body);
+        assert!(text.contains("@file: attachments/payload.bin"), "{text}");
+    }
+
+    #[test]
+    fn resolve_substitutes_variables_in_a_binary_body_file_path() {
+        let contents = "[request]\nmethod: PUT\nurl: {{base_url}}/files/42\n\n[headers]\nContent-Type: application/octet-stream\n\n[body]\n@file: {{fixtures_dir}}/payload.bin\n";
+        let parsed = parse_nova(contents).unwrap();
+        let env = test_environment(
+            "local",
+            &[
+                ("base_url", "http://localhost:8080"),
+                ("fixtures_dir", "fixtures"),
+            ],
+        );
+
+        let resolved = parsed.resolve(&env).unwrap();
+
+        let RequestBody::Binary(file_path) = resolved.body else {
+            panic!("expected a binary body");
+        };
+        assert_eq!(file_path, "fixtures/payload.bin");
+    }
+
+    #[test]
     fn parses_request_with_assert_section() {
         let contents = "[request]\nmethod: POST\nurl: {{base_url}}/auth/login\n\n[assert]\naccess_token = response.access_token\nstatus == 200\nresponse.name exists\n";
 

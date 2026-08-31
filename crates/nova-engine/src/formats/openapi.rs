@@ -446,6 +446,12 @@ fn body_example(body: &RequestBody) -> Option<(&'static str, serde_json::Value)>
                     .collect(),
             ),
         )),
+        // No literal bytes to show as an example — the file path is the
+        // closest thing to one.
+        RequestBody::Binary(file_path) => Some((
+            "application/octet-stream",
+            serde_json::Value::String(file_path.clone()),
+        )),
     }
 }
 

@@ -45,6 +45,21 @@ pub enum RequestBody {
     Text(String),
     Form(Vec<(String, String)>),
     Multipart(Vec<MultipartField>),
+    /// The entire request body as one file's raw bytes, read from disk at
+    /// send time (see [`crate::execution::http::execute`]) — unlike
+    /// [`RequestBody::Multipart`], where a file is one part among possibly
+    /// several, this *is* the whole payload (e.g. `PUT /files/{id}` with
+    /// `Content-Type: application/octet-stream`). The path is
+    /// project-root-relative, the same spirit as
+    /// [`MultipartField::file_path`], and for the same reason: a file's
+    /// bytes are deliberately never inlined into a `.nova` file.
+    ///
+    /// Declared under `[body]` as a single `@file: <path>` line (see
+    /// [`RequestBody::from_text`]/[`RequestBody::to_body_text`]) — the same
+    /// `@`-prefixed convention `curl --data-binary @file` uses for "read
+    /// this argument from a file" — regardless of the request's own
+    /// `Content-Type`.
+    Binary(String),
 }
 
 impl RequestBody {
@@ -54,6 +69,10 @@ impl RequestBody {
     /// headers) can go through the identical inference nova-app never
     /// hand-rolls itself.
     pub fn from_text(headers: &[Header], body_text: &str) -> Result<RequestBody, String> {
+        if let Some(file_path) = body_text.trim().strip_prefix("@file:") {
+            return Ok(RequestBody::Binary(file_path.trim().to_string()));
+        }
+
         let content_type = headers
             .iter()
             .find(|h| h.name.eq_ignore_ascii_case("content-type"))
@@ -107,6 +126,7 @@ impl RequestBody {
     pub fn to_body_text(&self, headers: &[Header]) -> Result<String, String> {
         Ok(match self {
             RequestBody::None => String::new(),
+            RequestBody::Binary(file_path) => format!("@file: {file_path}"),
             RequestBody::Text(text) => text.clone(),
             RequestBody::Json(value) => serde_json::to_string_pretty(value)
                 .map_err(|source| format!("failed to serialize JSON body: {source}"))?,

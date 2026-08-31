@@ -31,14 +31,14 @@ const DEFAULT_ACCEPT: &str = "*/*";
 /// Send `request` over HTTP and capture its response.
 ///
 /// `project_root` is only consulted for a `Multipart` body carrying a file
-/// reference (see [`MultipartField::file_path`]) — every other body ignores
-/// it. It should be the same [`crate::NovaProject::root`] the request was
-/// discovered under.
+/// reference (see [`MultipartField::file_path`]) or a `Binary` body (see
+/// [`RequestBody::Binary`]) — every other body ignores it. It should be the
+/// same [`crate::NovaProject::root`] the request was discovered under.
 ///
 /// A non-2xx/3xx status is still a successful [`Response`] — callers (e.g.
 /// assertions) decide what a given status means. Only a genuine transport
 /// failure (connection refused, DNS failure, timeout, ...) or a missing
-/// multipart file attachment is a typed `NovaError`.
+/// multipart/binary file attachment is a typed `NovaError`.
 pub fn execute(project_root: &Path, request: &ParsedRequest) -> NovaResult<Response> {
     let agent = ureq::Agent::new();
     let mut req = agent.request(&request.method, &request.full_url());
@@ -104,6 +104,16 @@ fn send(
             )
             .send_bytes(&bytes)
         }
+        RequestBody::Binary(file_path) => {
+            let resolved = resolve_project_file_path(project_root, file_path).ok_or_else(|| {
+                NovaError::BinaryFileNotFound {
+                    path: PathBuf::from(file_path),
+                }
+            })?;
+            let bytes = fs::read(&resolved)
+                .map_err(|_| NovaError::BinaryFileNotFound { path: resolved })?;
+            req.send_bytes(&bytes)
+        }
     })
 }
 
@@ -140,7 +150,13 @@ fn encode_multipart(
         body.extend_from_slice(b"\r\n");
         match &field.file_path {
             Some(file_path) => {
-                let resolved = resolve_multipart_file_path(project_root, &field.name, file_path)?;
+                let resolved =
+                    resolve_project_file_path(project_root, file_path).ok_or_else(|| {
+                        NovaError::MultipartFileNotFound {
+                            field: field.name.clone(),
+                            path: PathBuf::from(file_path),
+                        }
+                    })?;
                 let bytes = fs::read(&resolved).map_err(|_| NovaError::MultipartFileNotFound {
                     field: field.name.clone(),
                     path: resolved,
@@ -156,50 +172,39 @@ fn encode_multipart(
     Ok((BOUNDARY.to_string(), body))
 }
 
-/// Resolve a multipart field's `file_path` (a reference meant to be
-/// project-root-relative, see [`MultipartField::file_path`]) to an actual
-/// path on disk, refusing anything that isn't genuinely inside
-/// `project_root`.
+/// Resolve a project-root-relative file reference (a `Multipart` field's
+/// `file_path`, or a `Binary` body's file path) to an actual path on disk,
+/// refusing anything that isn't genuinely inside `project_root`. Returns
+/// `None` — rather than a typed error itself — so each caller can attach
+/// its own context (which multipart field, or "the binary body") to the
+/// error it reports.
 ///
 /// `.nova` files are plain text committed to a repo — a malicious one could
-/// otherwise set `file_path` to an absolute path (`/etc/passwd`) or a
-/// relative one that escapes the project via `..` components, and have
-/// opening/sending that request exfiltrate an arbitrary file from whoever's
-/// machine sends it. An absolute `file_path` is rejected outright (this is
-/// only ever meant to be a project-relative reference); anything else is
-/// joined onto `project_root` and then canonicalized alongside it, so a
-/// `..` escape — even through a symlink — is caught by checking the
-/// resolved path is still inside the resolved root, not just by pattern-
-/// matching on `..` in the text.
-fn resolve_multipart_file_path(
-    project_root: &Path,
-    field_name: &str,
-    file_path: &str,
-) -> NovaResult<PathBuf> {
+/// otherwise set the path to an absolute path (`/etc/passwd`) or a relative
+/// one that escapes the project via `..` components, and have opening/
+/// sending that request exfiltrate an arbitrary file from whoever's machine
+/// sends it. An absolute path is rejected outright (this is only ever meant
+/// to be a project-relative reference); anything else is joined onto
+/// `project_root` and then canonicalized alongside it, so a `..` escape —
+/// even through a symlink — is caught by checking the resolved path is
+/// still inside the resolved root, not just by pattern-matching on `..` in
+/// the text.
+fn resolve_project_file_path(project_root: &Path, file_path: &str) -> Option<PathBuf> {
     let requested = Path::new(file_path);
-    let not_found = |path: PathBuf| NovaError::MultipartFileNotFound {
-        field: field_name.to_string(),
-        path,
-    };
-
     if requested.is_absolute() {
-        return Err(not_found(requested.to_path_buf()));
+        return None;
     }
 
     let joined = project_root.join(requested);
 
-    let canonical_root = project_root
-        .canonicalize()
-        .map_err(|_| not_found(joined.clone()))?;
-    let canonical_target = joined
-        .canonicalize()
-        .map_err(|_| not_found(joined.clone()))?;
+    let canonical_root = project_root.canonicalize().ok()?;
+    let canonical_target = joined.canonicalize().ok()?;
 
     if !canonical_target.starts_with(&canonical_root) {
-        return Err(not_found(joined));
+        return None;
     }
 
-    Ok(canonical_target)
+    Some(canonical_target)
 }
 
 fn build_response(response: ureq::Response, elapsed: Duration) -> NovaResult<Response> {

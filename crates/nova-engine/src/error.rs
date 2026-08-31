@@ -69,6 +69,12 @@ pub enum NovaError {
     )]
     MultipartFileNotFound { field: String, path: PathBuf },
 
+    #[error(
+        "binary body references a file at {path} that doesn't exist \
+         (looked relative to the project root)"
+    )]
+    BinaryFileNotFound { path: PathBuf },
+
     #[error("failed to obtain an OAuth2 access token from {token_url}: {message}")]
     OAuth2TokenRequest { token_url: String, message: String },
 

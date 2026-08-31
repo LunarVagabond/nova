@@ -8,15 +8,18 @@ import type { EditorLanguage } from "../components/CodeEditor.vue";
 // dropdown — "raw" covers what used to be separate json/xml/text options,
 // now distinguished by `RawLanguage` instead. GraphQL and multipart-form
 // each get their own dedicated editor; "none" and "form" need no further
-// distinction.
-export type BodyType = "none" | "form" | "multipart" | "raw" | "graphql";
+// distinction. "binary" is a single file's raw bytes sent as the entire
+// body (see `BinaryEditor.vue`) — unlike "multipart", where a file is one
+// part among possibly several.
+export type BodyType = "none" | "form" | "multipart" | "binary" | "raw" | "graphql";
 
-export const BODY_TYPE_OPTIONS: BodyType[] = ["none", "form", "multipart", "raw", "graphql"];
+export const BODY_TYPE_OPTIONS: BodyType[] = ["none", "form", "multipart", "binary", "raw", "graphql"];
 
 export const BODY_TYPE_LABELS: Record<BodyType, string> = {
   none: "None",
   form: "x-www-form-urlencoded",
   multipart: "Form Data",
+  binary: "Binary",
   raw: "Raw",
   graphql: "GraphQL",
 };
@@ -24,8 +27,29 @@ export const BODY_TYPE_LABELS: Record<BodyType, string> = {
 export const BODY_TYPE_CONTENT_TYPES: Record<Exclude<BodyType, "none" | "raw">, string> = {
   form: "application/x-www-form-urlencoded",
   multipart: "multipart/form-data",
+  binary: "application/octet-stream",
   graphql: "application/graphql+json",
 };
+
+// The marker line a binary body's `[body]` text holds instead of literal
+// content — mirrors `RequestBody::from_text`/`to_body_text` in
+// `nova-engine`'s `request/model.rs`, the single source of truth for this
+// syntax; kept in sync here since the frontend never re-parses `.nova`
+// files itself, but the Body tab still needs to recognize/produce this one
+// line to show/drive the file-picker UI.
+const BINARY_FILE_PREFIX = "@file:";
+
+/** The file path out of a binary body's `[body]` text, or `null` if `text` isn't a binary-body marker line. */
+export function parseBinaryBodyPath(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith(BINARY_FILE_PREFIX)) return null;
+  return trimmed.slice(BINARY_FILE_PREFIX.length).trim();
+}
+
+/** Renders a binary body's `[body]` text for the given file path — the inverse of `parseBinaryBodyPath`. */
+export function serializeBinaryBodyPath(filePath: string): string {
+  return `${BINARY_FILE_PREFIX} ${filePath}`;
+}
 
 // The language sub-choice shown only when "Raw" is selected — reuses
 // `EditorLanguage` directly rather than a separate parallel type, since the
@@ -57,6 +81,7 @@ export function detectBodyType(
 ): { type: BodyType; rawLanguage: RawLanguage } {
   const NONE = { type: "none" as const, rawLanguage: "text" as const };
   if (text.trim() === "") return NONE;
+  if (parseBinaryBodyPath(text) !== null) return { type: "binary", rawLanguage: "text" };
 
   const contentType = currentHeaders.find((h) => h.name.toLowerCase() === "content-type")?.value ?? "";
   const essence = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
