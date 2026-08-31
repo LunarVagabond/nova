@@ -122,23 +122,42 @@ pub fn execute(project_root: &Path, request: &ParsedRequest) -> NovaResult<Respo
     }
 }
 
-/// Capture `response` into `file`'s `[response <status>]` section — the
+/// Capture `response` into `file`'s `[response <status>]` sections — the
 /// "Save as Example" action (`nova-app`'s response pane, `nova run
-/// --save-example`). Replaces whatever example response the file already
-/// had, if any, and leaves every other section untouched.
+/// --save-example`).
+///
+/// A file can now hold more than one example response (named or not), so
+/// this can't just replace "the" example wholesale the way it did when a
+/// file held at most one. Instead: if an *unnamed* example already exists
+/// at `response`'s status, that one is overwritten in place (its position
+/// in the file is unchanged, and every other example is left untouched) —
+/// this is what keeps a plain, classic single-example file behaving
+/// exactly as before. Otherwise a new unnamed example is appended for this
+/// status, so re-running a request that returns a new status case grows
+/// the file's example set rather than clobbering an unrelated example.
 ///
 /// Goes through the same [`RequestFile::parse`]/
 /// [`ParsedRequest::to_nova_string`] round trip [`RequestFile::write`] uses,
 /// rather than patching the file's text directly, so a request that also
-/// has a hand-written `[response]` section (as opposed to one from a
+/// has hand-written `[response]` sections (as opposed to ones from a
 /// previous capture) gets overwritten the same well-defined way.
 pub fn save_example_response(file: &RequestFile, response: &Response) -> NovaResult<()> {
     let mut parsed = file.parse()?;
-    parsed.example_response = Some(ExampleResponse {
+    let captured = ExampleResponse {
         status: response.status,
+        name: None,
         headers: response.headers.clone(),
         body: response.body.clone(),
-    });
+    };
+
+    match parsed
+        .example_responses
+        .iter_mut()
+        .find(|example| example.name.is_none() && example.status == response.status)
+    {
+        Some(existing) => *existing = captured,
+        None => parsed.example_responses.push(captured),
+    }
 
     let text = parsed
         .to_nova_string()

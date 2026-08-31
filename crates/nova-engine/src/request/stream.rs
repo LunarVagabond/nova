@@ -189,7 +189,7 @@ pub(super) fn parse_nova_websocket(contents: &str) -> Result<ParsedWebSocketRequ
     let mut message_lines: Vec<&str> = Vec::new();
 
     for line in contents.lines() {
-        if let Some((section, _status)) = parse_section_marker(line) {
+        if let Some((section, _status, _name)) = parse_section_marker(line) {
             current = Some(section);
             continue;
         }
@@ -354,7 +354,7 @@ pub(super) fn parse_nova_sse(contents: &str) -> Result<ParsedSseRequest, String>
     let mut header_lines: Vec<&str> = Vec::new();
 
     for line in contents.lines() {
-        if let Some((section, _status)) = parse_section_marker(line) {
+        if let Some((section, _status, _name)) = parse_section_marker(line) {
             current = Some(section);
             continue;
         }

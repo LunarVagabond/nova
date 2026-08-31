@@ -31,7 +31,7 @@ fn graphql_request(url: String) -> ParsedRequest {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
     }
 }
 

@@ -109,12 +109,12 @@ impl RequestFile {
     /// rather than nova-app (or any other caller) hand-rolling `.nova`
     /// syntax.
     ///
-    /// Only the example response already present in the file (if any) is
+    /// Only the example responses already present in the file (if any) are
     /// read back and carried through unchanged — a draft has no field for
-    /// it, so saving one shouldn't silently drop it. A draft's
-    /// `has_example_response` is ignored here for the same reason: it
-    /// describes what the file already had, and the file itself remains
-    /// the source of truth.
+    /// them, so saving one shouldn't silently drop them. A draft's
+    /// `has_example_response`/`example_responses` are ignored here for the
+    /// same reason: they describe what the file already had, and the file
+    /// itself remains the source of truth.
     ///
     /// A malformed `assert_text` line is a [`NovaError::RequestSerialize`],
     /// the same as any other draft field that fails to round-trip.
@@ -156,7 +156,7 @@ impl RequestFile {
             assertions,
             extractions,
             script,
-            example_response: existing.and_then(|p| p.example_response),
+            example_responses: existing.map(|p| p.example_responses).unwrap_or_default(),
         };
 
         let text = parsed
@@ -323,7 +323,7 @@ pub(crate) fn detect_method_and_protocol(path: &Path) -> (String, String) {
 fn detect_protocol(contents: &str) -> String {
     let mut current: Option<Section> = None;
     for line in contents.lines() {
-        if let Some((section, _status)) = parse_section_marker(line) {
+        if let Some((section, _status, _name)) = parse_section_marker(line) {
             current = Some(section);
             continue;
         }

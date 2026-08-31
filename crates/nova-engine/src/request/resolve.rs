@@ -109,7 +109,7 @@ impl ParsedRequest {
             assertions: self.assertions.clone(),
             extractions: self.extractions.clone(),
             script: self.script.clone(),
-            example_response: self.example_response.clone(),
+            example_responses: self.example_responses.clone(),
         })
     }
 }

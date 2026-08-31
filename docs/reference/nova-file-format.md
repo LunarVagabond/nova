@@ -23,7 +23,7 @@ order:
 | `[settings]` | Per-request authoring preferences (not sent on the wire) |
 | `[assert]` | Test assertions and value extractions |
 | `[script]` | A pre-request and/or post-response script to run |
-| `[response <status>]` | A canned example response, used by `nova mock` |
+| `[response <status> "name"]` | A canned example response, used by `nova mock` — a file may have more than one, distinguished by status and/or name |
 
 ### `[request]`
 
@@ -383,8 +383,47 @@ silently excluded from the mock server.
 Hand-writing this section works, but it's also written for you: sending a
 request and choosing "Save as Example" in the desktop app's response pane
 (or running `nova run --save-example`) captures the actual response —
-status, headers, body — into this section, replacing whatever was there
-before and leaving the rest of the file alone.
+status, headers, body — into this section. If an unnamed example already
+exists at that same status, it's overwritten in place; otherwise a new
+unnamed example is added alongside whatever's already there. Either way,
+every other section in the file is left untouched.
+
+#### Multiple named examples
+
+A request file can declare more than one `[response <status>]` section —
+a success case and a not-found case for the same endpoint, say — as long as
+each one carries a distinct `"name"` marker to tell them apart:
+
+```text
+[response 200 "ok"]
+Content-Type: application/json
+
+{ "id": "usr_1234", "name": "John" }
+
+[response 404 "not_found"]
+Content-Type: application/json
+
+{ "error": "no such user" }
+```
+
+The name is optional and goes after the status (`[response 404 "not_found"]`),
+or on its own when the status is the default `200` (`[response "ok"]`). A
+plain `[response 201]` with no name — the shape every `.nova` file used
+before this existed — still works exactly as before, including when a
+file has several of them without any names at all.
+
+`nova mock` defaults to serving the *lowest-status* example for a route —
+so a request against a route with a `200` and a `404` example gets the
+`200` — which is also what happens for the classic single-example file,
+since there's nothing else to pick. An incoming mock request can ask for a
+specific example instead via two headers:
+
+- `X-Nova-Mock-Example: <name>` — serve the example with this name.
+- `X-Nova-Mock-Status: <status>` — serve the example at this status code.
+
+`X-Nova-Mock-Example` takes priority when both are present; either one
+falls through to the default lowest-status example if it doesn't match
+anything (an unrecognized name isn't treated as "serve nothing").
 
 ## WebSocket requests
 

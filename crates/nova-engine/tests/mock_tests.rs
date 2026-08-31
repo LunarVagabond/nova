@@ -9,19 +9,19 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 #[test]
-fn builds_one_route_per_request_with_its_example_response() {
+fn builds_one_route_per_request_with_its_example_responses() {
     let project = NovaProject::discover(&fixture("mock-project")).expect("project should load");
     let routes = mock_routes(&project).expect("routes should build");
 
-    assert_eq!(routes.len(), 4);
+    assert_eq!(routes.len(), 5);
 
     let list = routes
         .iter()
         .find(|r| r.method == "GET" && r.path == "/users")
         .expect("GET /users route should exist");
     let example = list
-        .example_response
-        .as_ref()
+        .example_responses
+        .first()
         .expect("GET /users should have an example response");
     assert_eq!(example.status, 200);
     assert!(example.body.contains("Ada"));
@@ -42,22 +42,50 @@ fn builds_one_route_per_request_with_its_example_response() {
         ]
     );
     // A bare "[response]" (no status) defaults to 200.
-    assert_eq!(get.example_response.as_ref().unwrap().status, 200);
+    assert_eq!(get.example_responses[0].status, 200);
 
     let create = routes
         .iter()
         .find(|r| r.method == "POST" && r.path == "/users")
         .expect("POST /users route should exist");
-    assert_eq!(create.example_response.as_ref().unwrap().status, 201);
+    assert_eq!(create.example_responses[0].status, 201);
 
     let delete = routes
         .iter()
         .find(|r| r.method == "DELETE")
         .expect("DELETE route should exist");
     assert!(
-        delete.example_response.is_none(),
+        delete.example_responses.is_empty(),
         "a request with no \"[response]\" section should have no example response"
     );
+}
+
+#[test]
+fn a_route_with_multiple_named_examples_selects_by_default_name_or_status() {
+    let project = NovaProject::discover(&fixture("mock-project")).expect("project should load");
+    let routes = mock_routes(&project).expect("routes should build");
+
+    let lookup = routes
+        .iter()
+        .find(|r| r.method == "GET" && r.path == "/users/{{user_id}}/lookup")
+        .expect("GET /users/{{user_id}}/lookup route should exist");
+
+    assert_eq!(lookup.example_responses.len(), 2);
+
+    // Default: the lowest-status example.
+    assert_eq!(lookup.select_example(None, None).unwrap().status, 200);
+
+    // Override by name.
+    assert_eq!(
+        lookup
+            .select_example(Some("not_found"), None)
+            .unwrap()
+            .status,
+        404
+    );
+
+    // Override by status.
+    assert_eq!(lookup.select_example(None, Some(404)).unwrap().status, 404);
 }
 
 #[test]

@@ -36,7 +36,7 @@ fn get_request(url: String) -> ParsedRequest {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
     }
 }
 
@@ -110,7 +110,7 @@ fn login_create_get_chain_carries_extracted_values_forward() {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
     };
     create_request.extractions.push(nova_engine::Extraction {
         raw: "user_id = response.user_id".to_string(),

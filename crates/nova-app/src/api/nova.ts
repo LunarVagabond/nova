@@ -284,16 +284,27 @@ export function diffAgainstPreviousRun(
 
 /**
  * Diffs the most recent send of the `.nova` file at `requestPath` against
- * its own hand-written `[response]` example, if it has one — "did this
- * response drift from the documented example". Resolves to `null` (not an
- * error) when the request has no example, or hasn't been sent yet this
- * session.
+ * one of its own hand-written `[response]` examples, if it has any — "did
+ * this response drift from the documented example". A request can declare
+ * more than one example; `exampleName`/`exampleStatus` pick which one to
+ * diff against (matching by name first, then status, then falling back to
+ * the lowest-status example when neither is given or neither matches — the
+ * same precedence `nova mock`'s override headers use). Pass `null` for
+ * both to get the default. Resolves to `null` (not an error) when the
+ * request has no example, or hasn't been sent yet this session.
  */
 export function diffAgainstExampleResponse(
   requestPath: string,
   environment: string | null,
+  exampleName: string | null = null,
+  exampleStatus: number | null = null,
 ): Promise<ResponseDiff | null> {
-  return invoke<ResponseDiff | null>("diff_against_example_response", { requestPath, environment });
+  return invoke<ResponseDiff | null>("diff_against_example_response", {
+    requestPath,
+    environment,
+    exampleName,
+    exampleStatus,
+  });
 }
 
 /** Parses the `.nova` file at `requestPath` into an editable draft. */

@@ -55,6 +55,12 @@ fn write_project(dir: &Path) {
         "[request]\nmethod: GET\nurl: {{base_url}}/missing\n",
     )
     .unwrap();
+
+    fs::write(
+        nova_dir.join("collections/multi.nova"),
+        "[request]\nmethod: GET\nurl: {{base_url}}/multi\n\n[response 200 \"ok\"]\nContent-Type: text/plain\n\nfound\n\n[response 404 \"not_found\"]\nContent-Type: text/plain\n\nmissing\n",
+    )
+    .unwrap();
 }
 
 /// Spawns `nova mock` against `project_dir` on an OS-assigned port and
@@ -141,6 +147,91 @@ fn returns_501_for_a_registered_route_with_no_example_response() {
     match *err {
         ureq::Error::Status(code, _) => assert_eq!(code, 501),
         ureq::Error::Transport(transport) => panic!("unexpected transport error: {transport}"),
+    }
+
+    child.kill().unwrap();
+    let _ = child.wait();
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn defaults_to_the_lowest_status_example_for_a_route_with_multiple() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = temp_project_dir("multi-default");
+    write_project(&dir);
+
+    let (base_url, mut child) = spawn_mock_server(&dir);
+
+    let response = get_with_retry(&format!("{base_url}/multi"), &mut child).unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.into_string().unwrap().trim(), "found");
+
+    child.kill().unwrap();
+    let _ = child.wait();
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn selects_an_example_by_name_header() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = temp_project_dir("multi-by-name");
+    write_project(&dir);
+
+    let (base_url, mut child) = spawn_mock_server(&dir);
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let response = loop {
+        match ureq::get(&format!("{base_url}/multi"))
+            .set("X-Nova-Mock-Example", "not_found")
+            .call()
+        {
+            Err(ureq::Error::Transport(_)) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            result => break result,
+        }
+    };
+    match response {
+        Ok(_) => panic!("expected a 404 status, got a success response"),
+        Err(ureq::Error::Status(code, response)) => {
+            assert_eq!(code, 404);
+            assert_eq!(response.into_string().unwrap().trim(), "missing");
+        }
+        Err(ureq::Error::Transport(transport)) => panic!("unexpected transport error: {transport}"),
+    }
+
+    child.kill().unwrap();
+    let _ = child.wait();
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn selects_an_example_by_status_header() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = temp_project_dir("multi-by-status");
+    write_project(&dir);
+
+    let (base_url, mut child) = spawn_mock_server(&dir);
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let response = loop {
+        match ureq::get(&format!("{base_url}/multi"))
+            .set("X-Nova-Mock-Status", "404")
+            .call()
+        {
+            Err(ureq::Error::Transport(_)) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            result => break result,
+        }
+    };
+    match response {
+        Ok(_) => panic!("expected a 404 status, got a success response"),
+        Err(ureq::Error::Status(code, response)) => {
+            assert_eq!(code, 404);
+            assert_eq!(response.into_string().unwrap().trim(), "missing");
+        }
+        Err(ureq::Error::Transport(transport)) => panic!("unexpected transport error: {transport}"),
     }
 
     child.kill().unwrap();

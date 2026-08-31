@@ -163,10 +163,25 @@ to be filled in by hand.
 ## `nova mock [path]`
 
 Start a local mock server. For every `.nova` request found under `path`,
-registers a route matching its method and path; a request with a
-`[response <status>]` section serves that example verbatim, one without
-still gets a route but always answers `501`. Mocking is static — nothing a
-mocked request does affects a later mocked request's response.
+registers a route matching its method and path; a request with one or more
+`[response <status> "name"]` sections serves an example verbatim, one
+without any still gets a route but always answers `501`. Mocking is static —
+nothing a mocked request does affects a later mocked request's response.
+
+A request with more than one example serves its **lowest-status** example
+by default (so a `200` and a `404` example on the same route answers `200`
+for an ordinary request — this is also what a classic single-example file
+already did). An incoming request can ask for a specific example instead
+via two headers:
+
+- `X-Nova-Mock-Example: <name>` — serve the example with this name.
+- `X-Nova-Mock-Status: <status>` — serve the example at this status code.
+
+`X-Nova-Mock-Example` takes priority when both are given; either one falls
+through to the default lowest-status example if it doesn't match any
+declared example, rather than answering `404`/`501`. See
+[the `.nova` file format's `[response <status>]` section](./nova-file-format.md#response-status)
+for how to declare multiple examples.
 
 - `--host <addr>` — default `127.0.0.1`.
 - `--port <port>` — default `4010`; `0` picks any available port.
