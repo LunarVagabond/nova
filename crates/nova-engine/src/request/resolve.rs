@@ -103,13 +103,14 @@ impl ParsedRequest {
             body: substitute_body(&self.body, environment)?,
             auth: deferred_auth,
             sync_content_type: self.sync_content_type,
-            // Assertions, extractions, the script section, and the example
-            // response don't reference environment variables, so they
-            // carry through resolution unchanged.
+            // Assertions, extractions, the script section, the example
+            // response, and the sweep section don't reference environment
+            // variables, so they carry through resolution unchanged.
             assertions: self.assertions.clone(),
             extractions: self.extractions.clone(),
             script: self.script.clone(),
             example_responses: self.example_responses.clone(),
+            sweep: self.sweep.clone(),
         })
     }
 }

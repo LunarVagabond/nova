@@ -85,6 +85,7 @@ fn executes_a_request_and_captures_the_response() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
 
     let response = execute(&project_root(), &request).unwrap();
@@ -115,6 +116,7 @@ fn captures_a_timing_breakdown_that_sums_to_the_total_elapsed_time() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
 
     let response = execute(&project_root(), &request).unwrap();
@@ -150,6 +152,7 @@ fn non_2xx_status_is_still_a_successful_response() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
 
     let response = execute(&project_root(), &request).unwrap();
@@ -208,6 +211,7 @@ fn sends_json_body_on_the_wire() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
 
     execute(&project_root(), &request).unwrap();
@@ -236,6 +240,7 @@ fn sends_xml_body_on_the_wire() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
 
     execute(&project_root(), &request).unwrap();
@@ -264,6 +269,7 @@ fn sends_graphql_body_as_a_json_envelope_on_the_wire() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
 
     execute(&project_root(), &request).unwrap();
@@ -300,6 +306,7 @@ fn sends_graphql_body_with_default_empty_variables_when_none_declared() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
 
     execute(&project_root(), &request).unwrap();
@@ -346,6 +353,7 @@ fn sends_multipart_body_with_boundary_on_the_wire() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
 
     execute(&project_root(), &request).unwrap();
@@ -403,6 +411,7 @@ fn a_missing_multipart_file_attachment_is_a_typed_error() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
 
     let err = execute(&project_root(), &request).unwrap_err();
@@ -432,6 +441,7 @@ fn multipart_request(file_path: &str) -> ParsedRequest {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     }
 }
 
@@ -512,6 +522,7 @@ fn a_missing_binary_body_file_is_a_typed_error() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
 
     let err = execute(&project_root(), &request).unwrap_err();
@@ -535,6 +546,7 @@ fn binary_request(file_path: &str) -> ParsedRequest {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     }
 }
 
@@ -592,6 +604,7 @@ fn network_failure_is_a_typed_error() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
 
     let err = execute(&project_root(), &request).unwrap_err();

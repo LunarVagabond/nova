@@ -459,6 +459,7 @@ mod tests {
             extractions: vec![],
             script: None,
             example_responses: Vec::new(),
+            sweep: None,
         }
     }
 

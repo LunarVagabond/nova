@@ -49,6 +49,22 @@ fn main() {
             environment,
             data,
         }) => commands::test::run(&path, environment.as_deref(), json, data.as_deref()),
+        Some(Command::Sweep {
+            request,
+            environment,
+            position,
+            values,
+            values_file,
+            generator,
+        }) => commands::sweep::run(
+            &request,
+            environment.as_deref(),
+            json,
+            position.as_deref(),
+            values.as_deref(),
+            values_file.as_deref(),
+            generator.as_deref(),
+        ),
         Some(Command::Generate { input, output }) => commands::generate::run(&input, &output),
         Some(Command::Export { path, output }) => commands::export::run(&path, output.as_deref()),
         Some(Command::ExportRequest {

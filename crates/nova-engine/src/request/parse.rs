@@ -34,6 +34,9 @@ pub(super) enum Section {
     /// `[script]` — names a pre-request and/or post-response script to run
     /// around this request's execution. See [`crate::execution::script`].
     Script,
+    /// `[sweep]` — names one position in this request and a set of values
+    /// to resend it with, one at a time. See [`crate::execution::sweep`].
+    Sweep,
 }
 
 /// Recognize a line as a section marker, returning the section it starts
@@ -62,6 +65,7 @@ pub(super) fn parse_section_marker(
         "response" => Some((Section::Response, None, None)),
         "messages" => Some((Section::Messages, None, None)),
         "script" => Some((Section::Script, None, None)),
+        "sweep" => Some((Section::Sweep, None, None)),
         _ => {
             let rest = inner.strip_prefix("response ")?.trim();
             if rest.is_empty() {
@@ -132,6 +136,7 @@ pub(super) fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
     let mut body_lines: Vec<&str> = Vec::new();
     let mut assert_lines: Vec<&str> = Vec::new();
     let mut script_lines: Vec<&str> = Vec::new();
+    let mut sweep_lines: Vec<&str> = Vec::new();
     let mut response_sections: Vec<(Option<String>, Option<String>, Vec<&str>)> = Vec::new();
 
     for line in contents.lines() {
@@ -159,6 +164,7 @@ pub(super) fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
             Some(Section::Body) => body_lines.push(line),
             Some(Section::Assert) => assert_lines.push(line),
             Some(Section::Script) => script_lines.push(line),
+            Some(Section::Sweep) => sweep_lines.push(line),
             Some(Section::Response) => {
                 if let Some((_, _, lines)) = response_sections.last_mut() {
                     lines.push(line);
@@ -256,6 +262,7 @@ pub(super) fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
         extractions,
         script: parse_script_section(&script_lines)?,
         example_responses,
+        sweep: parse_sweep_section(&sweep_lines)?,
     })
 }
 
@@ -325,6 +332,70 @@ fn parse_script_section(
     }
 
     Ok(Some(crate::execution::script::ScriptSection { pre, post }))
+}
+
+/// Parse the lines under a `.nova` file's `[sweep]` marker into a
+/// [`crate::execution::sweep::SweepConfig`].
+///
+/// Recognized keys: `position:` (required — a `param:<name>`,
+/// `header:<name>`, or `body:<dotted.path>` spec, see
+/// [`crate::execution::sweep::parse_position`]), and exactly one of
+/// `values:` (a comma-separated inline list), `values_file:` (a
+/// project-root-relative path to a one-value-per-line file), or
+/// `generator:` (a comma-separated list of built-in
+/// [`crate::execution::boundary_values::BoundaryGenerator`] names, or the
+/// literal `all` for every built-in generator). An absent `[sweep]`
+/// section — the overwhelmingly common case — comes back as `None` from
+/// the caller, not this function, which only runs when the section was
+/// actually present.
+fn parse_sweep_section(
+    lines: &[&str],
+) -> Result<Option<crate::execution::sweep::SweepConfig>, String> {
+    use crate::execution::sweep::{parse_position, parse_value_source, SweepConfig};
+
+    let mut position = None;
+    let mut values: Option<String> = None;
+    let mut values_file: Option<String> = None;
+    let mut generator: Option<String> = None;
+
+    for line in lines {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let (key, value) = line
+            .split_once(':')
+            .ok_or_else(|| format!("malformed [sweep] line (expected \"key: value\"): {line:?}"))?;
+        let value = value.trim();
+
+        match key.trim().to_ascii_lowercase().as_str() {
+            "position" => {
+                position =
+                    Some(parse_position(value).map_err(|message| {
+                        format!("[sweep] \"position:\" is invalid: {message}")
+                    })?);
+            }
+            "values" => values = Some(value.to_string()),
+            "values_file" => values_file = Some(value.to_string()),
+            "generator" => generator = Some(value.to_string()),
+            _ => {}
+        }
+    }
+
+    if position.is_none() && values.is_none() && values_file.is_none() && generator.is_none() {
+        return Ok(None);
+    }
+
+    let position =
+        position.ok_or_else(|| "[sweep] section is missing a \"position:\" line".to_string())?;
+
+    let source = parse_value_source(
+        values.as_deref(),
+        values_file.as_deref(),
+        generator.as_deref(),
+    )
+    .map_err(|message| format!("[sweep] section: {message}"))?;
+
+    Ok(Some(SweepConfig { position, source }))
 }
 
 /// Parse a `[response <status>]`/`[response <status> "name"]` section into
@@ -469,6 +540,38 @@ impl ParsedRequest {
                 out.push_str("post: ");
                 out.push_str(post);
                 out.push('\n');
+            }
+        }
+
+        if let Some(sweep) = &self.sweep {
+            use crate::execution::sweep::SweepValueSource;
+
+            out.push_str("\n[sweep]\n");
+            out.push_str("position: ");
+            out.push_str(&sweep.position.to_spec());
+            out.push('\n');
+            match &sweep.source {
+                SweepValueSource::Inline(values) => {
+                    out.push_str("values: ");
+                    out.push_str(&values.join(", "));
+                    out.push('\n');
+                }
+                SweepValueSource::File(path) => {
+                    out.push_str("values_file: ");
+                    out.push_str(path);
+                    out.push('\n');
+                }
+                SweepValueSource::Generators(generators) => {
+                    out.push_str("generator: ");
+                    out.push_str(
+                        &generators
+                            .iter()
+                            .map(|g| g.name())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    );
+                    out.push('\n');
+                }
             }
         }
 
@@ -773,6 +876,145 @@ mod tests {
             panic!("expected a binary body");
         };
         assert_eq!(file_path, "fixtures/payload.bin");
+    }
+
+    #[test]
+    fn parses_request_with_sweep_section_using_inline_values() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/items\n\n[params]\nlimit: 10\n\n[sweep]\nposition: param:limit\nvalues: 0, -1, 999999\n";
+
+        let parsed = parse_nova(contents).unwrap();
+        let sweep = parsed.sweep.unwrap();
+
+        assert_eq!(
+            sweep.position,
+            crate::execution::sweep::SweepPosition::Param("limit".to_string())
+        );
+        assert_eq!(
+            sweep.source,
+            crate::execution::sweep::SweepValueSource::Inline(vec![
+                "0".to_string(),
+                "-1".to_string(),
+                "999999".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn parses_request_with_sweep_section_using_a_values_file() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/items\n\n[sweep]\nposition: header:X-Api-Key\nvalues_file: nova/sweeps/api-key.txt\n";
+
+        let parsed = parse_nova(contents).unwrap();
+        let sweep = parsed.sweep.unwrap();
+
+        assert_eq!(
+            sweep.position,
+            crate::execution::sweep::SweepPosition::Header("X-Api-Key".to_string())
+        );
+        assert_eq!(
+            sweep.source,
+            crate::execution::sweep::SweepValueSource::File("nova/sweeps/api-key.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn parses_request_with_sweep_section_using_generators() {
+        let contents = "[request]\nmethod: POST\nurl: {{base_url}}/users\n\n[body]\n{\"email\": \"a@example.com\"}\n\n[sweep]\nposition: body:email\ngenerator: empty, unicode, missing\n";
+
+        let parsed = parse_nova(contents).unwrap();
+        let sweep = parsed.sweep.unwrap();
+
+        assert_eq!(
+            sweep.position,
+            crate::execution::sweep::SweepPosition::Body(vec!["email".to_string()])
+        );
+        assert_eq!(
+            sweep.source,
+            crate::execution::sweep::SweepValueSource::Generators(vec![
+                crate::execution::boundary_values::BoundaryGenerator::Empty,
+                crate::execution::boundary_values::BoundaryGenerator::Unicode,
+                crate::execution::boundary_values::BoundaryGenerator::Missing,
+            ])
+        );
+    }
+
+    #[test]
+    fn parses_request_with_sweep_section_generator_all() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/items\n\n[sweep]\nposition: param:limit\ngenerator: all\n";
+
+        let parsed = parse_nova(contents).unwrap();
+        let sweep = parsed.sweep.unwrap();
+
+        assert_eq!(
+            sweep.source,
+            crate::execution::sweep::SweepValueSource::Generators(
+                crate::execution::boundary_values::BoundaryGenerator::ALL.to_vec()
+            )
+        );
+    }
+
+    #[test]
+    fn a_request_with_no_sweep_section_has_none() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/items\n";
+        let parsed = parse_nova(contents).unwrap();
+        assert!(parsed.sweep.is_none());
+    }
+
+    #[test]
+    fn sweep_section_missing_position_is_a_typed_error() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/items\n\n[sweep]\nvalues: 0, 1\n";
+        assert!(parse_nova(contents).is_err());
+    }
+
+    #[test]
+    fn sweep_section_with_no_value_source_is_a_typed_error() {
+        let contents =
+            "[request]\nmethod: GET\nurl: {{base_url}}/items\n\n[sweep]\nposition: param:limit\n";
+        assert!(parse_nova(contents).is_err());
+    }
+
+    #[test]
+    fn sweep_section_with_more_than_one_value_source_is_a_typed_error() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/items\n\n[sweep]\nposition: param:limit\nvalues: 0, 1\ngenerator: empty\n";
+        assert!(parse_nova(contents).is_err());
+    }
+
+    #[test]
+    fn sweep_section_with_an_unknown_generator_name_is_a_typed_error() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/items\n\n[sweep]\nposition: param:limit\ngenerator: not_a_real_generator\n";
+        assert!(parse_nova(contents).is_err());
+    }
+
+    #[test]
+    fn sweep_section_with_an_invalid_position_is_a_typed_error() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/items\n\n[sweep]\nposition: notakind:limit\nvalues: 0\n";
+        assert!(parse_nova(contents).is_err());
+    }
+
+    #[test]
+    fn round_trips_a_sweep_section_with_inline_values() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/items\n\n[sweep]\nposition: param:limit\nvalues: 0, -1\n";
+        let parsed = parse_nova(contents).unwrap();
+        let text = parsed.to_nova_string().unwrap();
+        let reparsed = parse_nova(&text).unwrap();
+        assert_eq!(parsed.sweep, reparsed.sweep);
+    }
+
+    #[test]
+    fn round_trips_a_sweep_section_with_a_values_file() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/items\n\n[sweep]\nposition: header:X-Api-Key\nvalues_file: nova/sweeps/keys.txt\n";
+        let parsed = parse_nova(contents).unwrap();
+        let text = parsed.to_nova_string().unwrap();
+        let reparsed = parse_nova(&text).unwrap();
+        assert_eq!(parsed.sweep, reparsed.sweep);
+    }
+
+    #[test]
+    fn round_trips_a_sweep_section_with_generators() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/items\n\n[sweep]\nposition: body:user.email\ngenerator: empty, huge\n";
+        let parsed = parse_nova(contents).unwrap();
+        let text = parsed.to_nova_string().unwrap();
+        let reparsed = parse_nova(&text).unwrap();
+        assert_eq!(parsed.sweep, reparsed.sweep);
     }
 
     #[test]

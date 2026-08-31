@@ -135,6 +135,7 @@ fn generate_request(
         extractions: Vec::new(),
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
     let contents = parsed
         .to_nova_string()

@@ -145,6 +145,10 @@ impl RequestFile {
             })
         };
 
+        let (existing_example_responses, existing_sweep) = existing
+            .map(|p| (p.example_responses, p.sweep))
+            .unwrap_or((Vec::new(), None));
+
         let parsed = ParsedRequest {
             method: draft.method.clone(),
             url: draft.url.clone(),
@@ -156,7 +160,8 @@ impl RequestFile {
             assertions,
             extractions,
             script,
-            example_responses: existing.map(|p| p.example_responses).unwrap_or_default(),
+            example_responses: existing_example_responses,
+            sweep: existing_sweep,
         };
 
         let text = parsed

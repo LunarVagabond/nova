@@ -58,6 +58,7 @@ fn persists_cookies_across_requests_in_the_same_session() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
     session.execute(&project_root(), &login_request).unwrap();
 
@@ -73,6 +74,7 @@ fn persists_cookies_across_requests_in_the_same_session() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
     session.execute(&project_root(), &me_request).unwrap();
 
@@ -123,6 +125,7 @@ fn a_fresh_session_does_not_carry_cookies_from_another_session() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
     first_session
         .execute(&project_root(), &login_request)
@@ -141,6 +144,7 @@ fn a_fresh_session_does_not_carry_cookies_from_another_session() {
         extractions: vec![],
         script: None,
         example_responses: Vec::new(),
+        sweep: None,
     };
     second_session
         .execute(&project_root(), &check_request)
