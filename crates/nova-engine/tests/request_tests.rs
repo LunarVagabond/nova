@@ -241,6 +241,113 @@ fn write_round_trips_the_sync_content_type_setting() {
         .contains("[settings]"));
 }
 
+/// A draft's `assert_text` is genuinely editable (#166) — the request
+/// panel's Tests tab edits `[assert]` as raw text rather than always
+/// carrying the file's existing assertions through unchanged.
+#[test]
+fn write_applies_an_edited_assert_text_to_the_assert_section() {
+    let temp = TempDir::new("write-assert-text");
+    let request_path = temp.0.join("request.nova");
+    std::fs::write(
+        &request_path,
+        "[request]\nmethod: GET\nurl: {{base_url}}/users/{{user_id}}\n\n[assert]\nstatus == 200\n",
+    )
+    .unwrap();
+
+    let request_file = RequestFile {
+        name: "request".to_string(),
+        path: request_path,
+        method: String::new(),
+        protocol: "http".to_string(),
+    };
+
+    let mut draft = request_file.parse().unwrap().to_draft().unwrap();
+    assert_eq!(draft.assert_text, "status == 200");
+
+    draft.assert_text = "status == 201\nuser_id = response.id".to_string();
+    request_file.write(&draft).unwrap();
+
+    let after = request_file.parse().unwrap();
+    assert_eq!(after.assertions.len(), 1);
+    assert_eq!(after.assertions[0].raw(), "status == 201");
+    assert_eq!(after.extractions.len(), 1);
+    assert_eq!(after.extractions[0].name, "user_id");
+}
+
+/// A malformed `assert_text` line is a save-time error, not a silently
+/// dropped assertion.
+#[test]
+fn write_rejects_a_malformed_assert_text_line() {
+    let temp = TempDir::new("write-assert-text-malformed");
+    let request_path = temp.0.join("request.nova");
+    std::fs::write(
+        &request_path,
+        "[request]\nmethod: GET\nurl: {{base_url}}/me\n",
+    )
+    .unwrap();
+
+    let request_file = RequestFile {
+        name: "request".to_string(),
+        path: request_path,
+        method: String::new(),
+        protocol: "http".to_string(),
+    };
+
+    let mut draft = request_file.parse().unwrap().to_draft().unwrap();
+    draft.assert_text = "this is not a valid directive".to_string();
+
+    let err = request_file.write(&draft).unwrap_err();
+    assert!(matches!(err, nova_engine::NovaError::RequestSerialize { .. }));
+}
+
+/// A draft's `script_pre`/`script_post` round-trip through save the same
+/// way `auth` does (#166) — the request panel's Scripts tab edits the
+/// `[script]` section directly rather than always preserving whatever the
+/// file already had.
+#[test]
+fn write_round_trips_a_script_section_added_through_a_draft() {
+    let temp = TempDir::new("write-script");
+    let request_path = temp.0.join("request.nova");
+    std::fs::write(
+        &request_path,
+        "[request]\nmethod: GET\nurl: {{base_url}}/me\n",
+    )
+    .unwrap();
+
+    let request_file = RequestFile {
+        name: "request".to_string(),
+        path: request_path,
+        method: String::new(),
+        protocol: "http".to_string(),
+    };
+
+    let mut draft = request_file.parse().unwrap().to_draft().unwrap();
+    assert_eq!(draft.script_pre, None);
+    assert_eq!(draft.script_post, None);
+
+    draft.script_pre = Some("sign-request.py".to_string());
+    request_file.write(&draft).unwrap();
+
+    let after = request_file.parse().unwrap();
+    assert_eq!(
+        after.script,
+        Some(nova_engine::ScriptSection {
+            pre: Some("sign-request.py".to_string()),
+            post: None,
+        })
+    );
+
+    // ...and clearing both fields drops the section again.
+    let mut draft = request_file.parse().unwrap().to_draft().unwrap();
+    draft.script_pre = None;
+    request_file.write(&draft).unwrap();
+
+    assert_eq!(request_file.parse().unwrap().script, None);
+    assert!(!std::fs::read_to_string(&request_file.path)
+        .unwrap()
+        .contains("[script]"));
+}
+
 #[test]
 fn create_writes_a_minimal_default_request_and_refuses_to_overwrite() {
     let temp = TempDir::new("create");

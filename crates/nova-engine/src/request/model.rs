@@ -267,13 +267,18 @@ pub(crate) const DEFAULT_SYNC_CONTENT_TYPE: bool = true;
 /// text field can show and hand back unchanged (see
 /// [`RequestBody::to_body_text`]/[`RequestBody::from_text`] for the
 /// text<->structured-body conversion this is built from), the request's
-/// `[auth]` scheme, and its `[settings]`.
+/// `[auth]` scheme, its `[settings]`, its `[assert]` section as raw text,
+/// and its `[script]` section's `pre:`/`post:` names.
 ///
-/// Assertions/extractions/an example response aren't editable through this
-/// draft; the `has_*` flags just let the GUI say "this file also has
-/// assertions" without needing to understand their syntax. Saving a draft
-/// (see [`RequestFile::write`](crate::RequestFile::write)) always preserves
-/// whatever was already in those sections.
+/// `assert_text` is the `[assert]` section's lines verbatim (extractions
+/// then assertions, comments and interleaving not preserved — the same
+/// grouping [`ParsedRequest::to_nova_string`] already re-emits), re-parsed
+/// on save via the same directive parser normal `.nova` parsing uses; a
+/// malformed line is a save-time error rather than a silent drop, the same
+/// way a malformed pasted curl command is. An example response isn't
+/// editable through this draft — `has_example_response` just lets the GUI
+/// say "this file also has one" — and saving always preserves it
+/// unchanged (see [`RequestFile::write`](crate::RequestFile::write)).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RequestDraft {
     pub method: String,
@@ -292,16 +297,39 @@ pub struct RequestDraft {
     #[serde(default = "default_sync_content_type")]
     pub sync_content_type: bool,
 
+    /// The `[assert]` section's assertion/extraction lines, verbatim —
+    /// edited through the request panel's Tests tab.
     #[serde(default)]
-    pub has_assertions: bool,
+    pub assert_text: String,
+
+    /// The `[script]` section's `pre:` script name/path, if any — edited
+    /// through the request panel's Scripts tab.
     #[serde(default)]
-    pub has_extractions: bool,
+    pub script_pre: Option<String>,
+    /// The `[script]` section's `post:` script name/path, if any.
+    #[serde(default)]
+    pub script_post: Option<String>,
+
     #[serde(default)]
     pub has_example_response: bool,
 }
 
 fn default_sync_content_type() -> bool {
     DEFAULT_SYNC_CONTENT_TYPE
+}
+
+/// Re-render assertions/extractions back into `[assert]` section text, the
+/// same grouping (extractions, then assertions) [`ParsedRequest::to_nova_string`]
+/// writes to disk — shared so a draft's `assert_text` is exactly what
+/// saving it unchanged would already produce.
+pub(crate) fn assert_text(
+    assertions: &[crate::execution::assertion::Assertion],
+    extractions: &[crate::execution::assertion::Extraction],
+) -> String {
+    let mut lines: Vec<&str> = Vec::with_capacity(assertions.len() + extractions.len());
+    lines.extend(extractions.iter().map(|e| e.raw.as_str()));
+    lines.extend(assertions.iter().map(|a| a.raw()));
+    lines.join("\n")
 }
 
 impl ParsedRequest {
@@ -316,8 +344,9 @@ impl ParsedRequest {
             body_text: self.body.to_body_text(&self.headers)?,
             auth: self.auth.clone(),
             sync_content_type: self.sync_content_type,
-            has_assertions: !self.assertions.is_empty(),
-            has_extractions: !self.extractions.is_empty(),
+            assert_text: assert_text(&self.assertions, &self.extractions),
+            script_pre: self.script.as_ref().and_then(|s| s.pre.clone()),
+            script_post: self.script.as_ref().and_then(|s| s.post.clone()),
             has_example_response: self.example_response.is_some(),
         })
     }

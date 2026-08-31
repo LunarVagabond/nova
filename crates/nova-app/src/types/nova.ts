@@ -200,9 +200,14 @@ export interface GraphQlBody {
  * and `sync_content_type` is its `[settings]` toggle; both round-trip
  * through save exactly like the other editable fields.
  *
- * `has_assertions`/`has_extractions`/`has_example_response` aren't
- * editable here — they just let the GUI say a file has more to it than
- * this panel shows. Saving always preserves those sections unchanged.
+ * `assert_text` is the `[assert]` section's assertion/extraction lines,
+ * verbatim (comments and interleaving between the two kinds aren't
+ * preserved — extractions are always re-emitted before assertions on
+ * save, same as a malformed line is rejected at save time, not silently
+ * dropped). `script_pre`/`script_post` are the `[script]` section's
+ * `pre:`/`post:` names. `has_example_response` isn't editable here — it
+ * just lets the GUI say a file also has one; saving always preserves it
+ * unchanged.
  */
 export interface RequestDraft {
   method: string;
@@ -217,8 +222,9 @@ export interface RequestDraft {
    * entirely by hand.
    */
   sync_content_type: boolean;
-  has_assertions: boolean;
-  has_extractions: boolean;
+  assert_text: string;
+  script_pre: string | null;
+  script_post: string | null;
   has_example_response: boolean;
 }
 
