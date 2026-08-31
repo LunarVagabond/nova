@@ -466,11 +466,27 @@
   margin: 0 0 $spacing-sm;
 }
 
+.request-panel__script-group {
+  margin-bottom: $spacing-md;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
 .request-panel__script-field {
   display: flex;
   align-items: center;
   gap: $spacing-sm;
   margin-bottom: $spacing-sm;
+}
+
+// The Scripts tab's in-app content editor for a named pre:/post: script
+// (#184) — same relative-positioned wrapper as `.request-panel__body-editor`
+// so its Beautify button (`.request-panel__beautify`) can float over its
+// bottom-right corner the same way.
+.request-panel__script-editor {
+  position: relative;
 }
 
 .request-panel__script-label {

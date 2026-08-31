@@ -30,8 +30,10 @@ release bundle with `make build-app`.
 - **`src/api/nova.ts`** — wraps `invoke()` and the dialog plugin.
 - **`src/components/`** — `Sidebar.vue`/`ProjectPanel.vue`/`CollectionNode.vue`
   for the collection tree; `RequestPanel.vue` for the HTTP request editor,
-  split into Params/Auth/Headers/Body tabs (`AuthEditor.vue`,
-  `KeyValueEditor.vue`, `MultipartEditor.vue`, `CodeEditor.vue`), plus a
+  split into Params/Auth/Headers/Body/Scripts/Tests tabs (`AuthEditor.vue`,
+  `KeyValueEditor.vue`, `MultipartEditor.vue`, `CodeEditor.vue`) — see
+  "Script content editing" below for what the Scripts tab does beyond
+  naming a `pre:`/`post:` script — plus a
   "Variables" toggle in its header that opens a read-only drawer listing
   what the request's `{{variable}}` placeholders would actually resolve to
   for the selected environment — collection variables and this project's
@@ -71,6 +73,47 @@ release bundle with `make build-app`.
   `Modal.vue` is the shared in-app dialog component — used instead of
   `window.prompt`/`window.confirm`, which are unreliable inside Tauri's
   webview.
+
+### Script content editing
+
+The Scripts tab's `pre:`/`post:` fields name a script (a bare name resolved
+against `nova/scripts/`, or an explicit path — see
+[project structure](./project-structure.md)); once a field names one,
+the tab shows that script's actual content in a `CodeEditor.vue` instance
+below it, so the file can be read and edited without leaving Nova. Reading
+and writing that content goes through `nova-engine`'s
+`read_script_contents`/`write_script_contents`
+(`crates/nova-engine/src/execution/script.rs`), via the `read_script_content`/
+`write_script_content` Tauri commands — nova-app never reads or writes the
+script file itself. Naming a script that doesn't exist on disk yet shows an
+empty editor; typing into it and saving the request (the same Save action
+that writes the rest of the request's fields) creates the file, along with
+`nova/scripts/` itself if this is a project's first script.
+
+Syntax highlighting, and lint/beautify, are only offered for the two
+languages the engine already knows how to run (`interpreter_for` in
+`execution/script.rs`): JavaScript (`.js`/`.mjs`/`.ts`) and Python (`.py`).
+The engine reports which of the two (if either) a script's extension maps
+to via `script_language`/`get_script_language`; a script whose extension
+isn't one of these — a custom/external interpreter a project wires up some
+other way — still opens in the same editor, just as plain text with no
+lint gutter or Beautify button. Bash/shell was considered as a third
+built-in interpreter alongside this feature but left out: the Scripts tab
+has no shell syntax highlighting to pair a `bash`/`sh` interpreter mapping
+with without pulling in another CodeMirror language package, so it stays a
+custom-interpreter case for now (plain text, no lint/beautify).
+
+"Lint" here means syntax-error detection, not a real linter — there's no
+ESLint/pylint dependency; `CodeEditor.vue`'s `syntaxErrorLinter` reuses
+`@codemirror/lang-javascript`/`@codemirror/lang-python`'s own parser (the
+same one driving syntax highlighting) and flags whatever it couldn't parse.
+"Beautify" for JavaScript is a best-effort bracket-depth reindenter
+(`src/lib/jsFormat.ts`), the same scope as the Body tab's XML beautify —
+it doesn't reflow code the way a real formatter would, and doesn't account
+for strings/comments/template literals containing brace characters.
+Python has no beautify at all: a real Python formatter is a
+disproportionately large dependency to add just for this button, so Python
+scripts get lint (syntax-error detection) and highlighting only.
 
 ### WebSocket requests
 

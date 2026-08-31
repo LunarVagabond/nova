@@ -14,12 +14,13 @@ use nova_engine::{
     begin_oauth2_authorization_code, diff_responses, evaluate, export_request, export_to_spec,
     generate_project, git_commit, git_diff, git_fetch, git_pull, git_push, git_stage, git_unstage,
     graphql_body_to_text, multipart_fields_to_body_text, parse_curl, parse_graphql_body,
-    parse_multipart_fields, write_generated_project, AssertionOutcome, AuthScheme, Collection,
-    ComparableResponse, CookieView, Environment, ExportFormat, GitFileStatus, GitStatusCache,
-    GraphQlBody, GraphQlSchema, Header, InitOptions, InitOutcome, Manifest, MultipartField,
-    NovaProject, OpenProjectOutcome, ParsedCurlRequest, ParsedRequest, ParsedWebSocketRequest,
-    RequestDraft, RequestFile, Response, ResponseDiff, Session, WebSocketDraft, WebSocketExchange,
-    DEFAULT_AUTHORIZATION_TIMEOUT,
+    parse_multipart_fields, read_script_contents, script_language, write_generated_project,
+    write_script_contents, AssertionOutcome, AuthScheme, Collection, ComparableResponse,
+    CookieView, Environment, ExportFormat, GitFileStatus, GitStatusCache, GraphQlBody,
+    GraphQlSchema, Header, InitOptions, InitOutcome, Manifest, MultipartField, NovaProject,
+    OpenProjectOutcome, ParsedCurlRequest, ParsedRequest, ParsedWebSocketRequest, RequestDraft,
+    RequestFile, Response, ResponseDiff, ScriptLanguage, Session, WebSocketDraft,
+    WebSocketExchange, DEFAULT_AUTHORIZATION_TIMEOUT,
 };
 
 use crate::mock_server::{MockServerState, MockServerStatus, DEFAULT_HOST, DEFAULT_PORT};
@@ -822,6 +823,44 @@ pub fn save_request(
     request_file.write(&draft).map_err(|e| e.to_string())?;
     invalidate_git_status_cache(&request_file.path, &cache);
     Ok(())
+}
+
+/// Read a `[script]` `pre:`/`post:` script's raw text content for the
+/// request panel's Scripts tab editor — `null` means `script_ref` is a
+/// safe, resolvable name/path but nothing is written there yet (a
+/// brand-new script), which the GUI treats as "start from an empty
+/// editor," not an error. See [`nova_engine::read_script_contents`].
+#[tauri::command]
+pub fn read_script_content(
+    project_root: String,
+    script_ref: String,
+) -> Result<Option<String>, String> {
+    read_script_contents(std::path::Path::new(&project_root), &script_ref)
+        .map_err(|e| e.to_string())
+}
+
+/// Write `contents` as a `[script]` `pre:`/`post:` script's raw text,
+/// creating the file (and its containing directory) if it doesn't exist
+/// yet — the request panel Scripts tab editor's save action. See
+/// [`nova_engine::write_script_contents`].
+#[tauri::command]
+pub fn write_script_content(
+    project_root: String,
+    script_ref: String,
+    contents: String,
+) -> Result<(), String> {
+    write_script_contents(std::path::Path::new(&project_root), &script_ref, &contents)
+        .map_err(|e| e.to_string())
+}
+
+/// The built-in language `script_ref`'s extension maps to (`"javascript"`,
+/// `"python"`, `"bash"`), or `null` for a custom/external interpreter
+/// mapping — tells the Scripts tab editor whether to offer syntax
+/// highlighting and lint/beautify, or fall back to plain text. See
+/// [`nova_engine::script_language`].
+#[tauri::command]
+pub fn get_script_language(script_ref: String) -> Option<ScriptLanguage> {
+    script_language(&script_ref)
 }
 
 /// Parse the `.nova` file at `request_path` as a WebSocket connection

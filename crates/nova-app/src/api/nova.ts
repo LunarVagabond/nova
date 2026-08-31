@@ -32,6 +32,7 @@ import type {
   RequestResponse,
   ResolvedVariables,
   ResponseDiff,
+  ScriptLanguage,
   TestRunResult,
   WebSocketDraft,
   WebSocketExchange,
@@ -320,6 +321,41 @@ export function readRequest(requestPath: string): Promise<RequestDraft> {
  */
 export function saveRequest(requestPath: string, draft: RequestDraft): Promise<void> {
   return invoke<void>("save_request", { requestPath, draft });
+}
+
+/**
+ * Reads a `[script]` `pre:`/`post:` script's raw text content for the
+ * Scripts tab editor. `scriptRef` is resolved the same way execution
+ * resolves it (a bare name under `nova/scripts/`, or an explicit path
+ * relative to `projectRoot`). `null` means the name/path is valid but
+ * nothing is written there yet — a brand-new script — which the editor
+ * should treat as an empty document rather than an error.
+ */
+export function readScriptContent(projectRoot: string, scriptRef: string): Promise<string | null> {
+  return invoke<string | null>("read_script_content", { projectRoot, scriptRef });
+}
+
+/**
+ * Writes `contents` as a `[script]` `pre:`/`post:` script's raw text,
+ * creating the file (and its containing directory) if it doesn't exist
+ * yet.
+ */
+export function writeScriptContent(
+  projectRoot: string,
+  scriptRef: string,
+  contents: string,
+): Promise<void> {
+  return invoke<void>("write_script_content", { projectRoot, scriptRef, contents });
+}
+
+/**
+ * The built-in language `scriptRef`'s extension maps to (see
+ * {@link ScriptLanguage}), or `null` for a custom/external interpreter
+ * mapping — tells the Scripts tab editor whether to offer syntax
+ * highlighting and lint/beautify, or fall back to plain text.
+ */
+export function getScriptLanguage(scriptRef: string): Promise<ScriptLanguage | null> {
+  return invoke<ScriptLanguage | null>("get_script_language", { scriptRef });
 }
 
 /** Parses the `.nova` file at `requestPath` as a WebSocket connection declaration into an editable draft. */
