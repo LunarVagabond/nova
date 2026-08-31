@@ -165,6 +165,24 @@ pub enum NovaError {
     #[error("failed to read git status: {message}")]
     GitStatus { message: String },
 
+    #[error("failed to read git diff: {message}")]
+    GitDiff { message: String },
+
+    #[error("failed to stage changes: {message}")]
+    GitStage { message: String },
+
+    #[error("failed to commit: {message}")]
+    GitCommit { message: String },
+
+    #[error("failed to fetch: {message}")]
+    GitFetch { message: String },
+
+    #[error("failed to pull: {message}")]
+    GitPull { message: String },
+
+    #[error("failed to push: {message}")]
+    GitPush { message: String },
+
     /// The repository sets `core.hooksPath`, so the default `.git/hooks`
     /// wouldn't take effect and the override may point somewhere shared
     /// across repositories. Carries the ready-to-paste `script` rather

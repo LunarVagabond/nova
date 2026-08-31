@@ -50,7 +50,12 @@ pub use formats::openapi::{
     export_to_spec, generate_from_spec, GeneratedProject, GeneratedRequest,
 };
 pub use formats::postman::generate_from_postman_collection;
-pub use git::status::{git_status, GitFileStatus, GitStatusCache, GIT_STATUS_CACHE_TTL};
+pub use git::commit::{git_commit, git_stage, git_unstage};
+pub use git::patch::git_diff;
+pub use git::remote::{git_fetch, git_pull, git_push};
+pub use git::status::{
+    git_repository_root, git_status, GitFileStatus, GitStatusCache, GIT_STATUS_CACHE_TTL,
+};
 pub use mock::{mock_routes, MockCallLogEntry, MockRoute, PathSegment};
 pub use project::collection::{
     create_collection, delete_collection, rename_collection, Collection,

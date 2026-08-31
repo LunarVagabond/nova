@@ -16,6 +16,7 @@ defineProps<{
   showingHistory: boolean;
   showingCookies: boolean;
   showingMockLog: boolean;
+  showingChanges: boolean;
   runningTests: boolean;
   mockServerStatus: MockServerStatus;
   mockServerBusy: boolean;
@@ -30,6 +31,7 @@ const emit = defineEmits<{
   (e: "showHistory"): void;
   (e: "showCookies"): void;
   (e: "showMockLog"): void;
+  (e: "showChanges"): void;
   (e: "runTests"): void;
   (e: "importExport"): void;
   (e: "toggleMockServer"): void;
@@ -147,6 +149,17 @@ const THEME_LABEL: Record<ThemePreference, string> = {
       @click="emit('runTests')"
     >
       <Icon name="play" />
+    </button>
+
+    <button
+      v-if="projectName"
+      type="button"
+      class="icon-button icon-button--outline"
+      :class="{ 'icon-button--active': showingChanges }"
+      title="Changes (commit / diff / push / pull)"
+      @click="emit('showChanges')"
+    >
+      <Icon name="git-branch" />
     </button>
 
     <button

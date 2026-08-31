@@ -1,0 +1,231 @@
+@use "../variables" as *;
+
+// The Changes panel (see ChangesPanel.vue, TopBar's git-branch action) —
+// a master/detail layout mirroring `_history-panel.scss`: a changed-file
+// list on the left, the selected file's diff on the right. Sits in the
+// same flush content region a request tab does (see `.app-shell__content
+// --flush`), so it owns its own scrolling rather than relying on the
+// outer content region.
+.changes-panel {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.changes-panel__list {
+  flex: 0 0 24rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+}
+
+.changes-panel__list-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $spacing-md $spacing-lg;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.changes-panel__title {
+  margin: 0;
+  font-size: $font-size-md;
+  font-weight: 600;
+}
+
+.changes-panel__header-actions {
+  display: flex;
+  gap: $spacing-xs;
+}
+
+.changes-panel__list-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: $spacing-sm;
+  padding: $spacing-sm $spacing-lg;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.changes-panel__entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.changes-panel__entry {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.changes-panel__entry:hover,
+.changes-panel__entry--active {
+  background-color: var(--color-bg-raised);
+}
+
+.changes-panel__entry--active {
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+.changes-panel__checkbox {
+  flex-shrink: 0;
+  margin-left: $spacing-lg;
+  cursor: pointer;
+}
+
+.changes-panel__entry-button {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  min-width: 0;
+  padding: $spacing-sm $spacing-lg $spacing-sm 0;
+  border: none;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+// Same three-color convention as the sidebar tree's own git badge (see
+// `.collection-tree__git-badge` in `_sidebar.scss`) — kept as a separate
+// class here rather than reused directly, so this panel doesn't couple to
+// the sidebar component's naming.
+.changes-panel__status-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-text-muted);
+}
+
+.changes-panel__status-dot--untracked {
+  background-color: var(--color-accent);
+}
+
+.changes-panel__status-dot--unstaged,
+.changes-panel__status-dot--renamed {
+  background-color: var(--color-warning);
+}
+
+.changes-panel__status-dot--staged {
+  background-color: var(--color-success);
+}
+
+.changes-panel__file-name {
+  flex-shrink: 0;
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+}
+
+.changes-panel__file-dir {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  font-size: $font-size-xs;
+  direction: rtl;
+  text-align: left;
+}
+
+.changes-panel__status-label {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  font-size: $font-size-xs;
+}
+
+.changes-panel__diff {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+}
+
+// Reuses `ResponseDiffView.vue`'s added/removed color convention (see
+// `_response-diff.scss`) rather than inventing a second one — added ->
+// success, removed -> danger, hunk header -> muted/bold.
+.changes-panel__diff-view {
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.changes-panel__diff-line {
+  padding: 0 $spacing-lg;
+}
+
+.changes-panel__diff-line--added {
+  color: var(--color-success);
+  background-color: rgba(15, 157, 142, 0.1);
+}
+
+.changes-panel__diff-line--removed {
+  color: var(--color-danger);
+  background-color: rgba(232, 67, 122, 0.1);
+}
+
+.changes-panel__diff-line--hunk {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.changes-panel__diff-line--context {
+  color: var(--color-text);
+}
+
+.changes-panel__remote-output {
+  margin: 0 $spacing-lg $spacing-sm;
+  padding: $spacing-sm;
+  border-radius: $radius-sm;
+  background-color: var(--color-bg-raised);
+  font-family: $font-family-mono;
+  font-size: $font-size-xs;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 8rem;
+  overflow-y: auto;
+}
+
+.changes-panel__hint {
+  color: var(--color-text-muted);
+  padding: $spacing-lg;
+}
+
+.changes-panel__error {
+  color: var(--color-danger);
+  padding: 0 $spacing-lg $spacing-sm;
+}
+
+.changes-panel__field-label {
+  display: block;
+  margin-bottom: $spacing-xs;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.changes-panel__commit-message {
+  width: 100%;
+  padding: $spacing-sm;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-sm;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  resize: vertical;
+}
+
+.changes-panel__amend-label {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  margin-top: $spacing-sm;
+  font-size: $font-size-sm;
+}

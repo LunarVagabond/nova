@@ -30,7 +30,10 @@ const props = defineProps<{
     | "cookie"
     | "eye"
     | "eye-off"
-    | "lock";
+    | "lock"
+    | "git-branch"
+    | "upload"
+    | "download";
 }>();
 </script>
 
@@ -165,6 +168,24 @@ const props = defineProps<{
     <template v-else-if="name === 'lock'">
       <rect x="5" y="11" width="14" height="9" rx="1.5" />
       <path d="M8 11V7.5a4 4 0 0 1 8 0V11" />
+    </template>
+
+    <template v-else-if="name === 'git-branch'">
+      <circle cx="6" cy="5" r="2.25" />
+      <circle cx="6" cy="19" r="2.25" />
+      <circle cx="18" cy="8" r="2.25" />
+      <path d="M6 7.25V16.75" />
+      <path d="M18 10.25V13a4 4 0 0 1-4 4h-2" />
+    </template>
+
+    <template v-else-if="name === 'upload'">
+      <path d="M12 16V4M7.5 8.5L12 4l4.5 4.5" />
+      <path d="M4 16.5V19a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2.5" />
+    </template>
+
+    <template v-else-if="name === 'download'">
+      <path d="M12 4v12M7.5 11.5L12 16l4.5-4.5" />
+      <path d="M4 16.5V19a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2.5" />
     </template>
   </svg>
 </template>
