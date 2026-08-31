@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::auth::{AppliedAuth, AuthScheme};
-use crate::environment::Environment;
 use crate::error::{NovaError, NovaResult};
+use crate::execution::auth::{AppliedAuth, AuthScheme};
+use crate::project::environment::Environment;
 
 /// A discovered `.nova` request file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -460,7 +460,7 @@ pub struct QueryParam {
 /// text fields, and file fields pasted/typed as text) or attached from a
 /// file on disk (`file_path`). When `file_path` is set, `value` is left
 /// empty and ignored: the actual bytes are read from disk at send time
-/// (see [`crate::execute::execute`]), relative to the project root — the
+/// (see [`crate::execution::http::execute`]), relative to the project root — the
 /// same spirit as how `nova.yaml`'s `collections`/`environments` sections
 /// reference their directories by a project-root-relative path rather than
 /// inlining content. A file's bytes are deliberately never inlined
@@ -484,7 +484,7 @@ pub struct MultipartField {
 /// so each can be authored/edited independently rather than hand-rolled
 /// into one JSON blob. See [`RequestBody::to_body_text`]/
 /// [`RequestBody::from_text`] for how this maps to a `.nova` file's
-/// `[body]` text, and [`crate::execute`] for how it's assembled into the
+/// `[body]` text, and [`crate::execution::http`] for how it's assembled into the
 /// standard `{"query", "variables", "operationName"}` JSON envelope that
 /// actually goes out on the wire.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -497,7 +497,7 @@ pub struct GraphQlBody {
 impl GraphQlBody {
     /// Assemble into the standard `{"query", "variables", "operationName"}`
     /// JSON envelope GraphQL servers expect as the actual request body —
-    /// used both by [`crate::execute::execute`] to build the bytes sent on
+    /// used both by [`crate::execution::http::execute`] to build the bytes sent on
     /// the wire and by OpenAPI export to describe a request's body example.
     /// `variables` defaults to an empty object when the request declares
     /// none, matching how most GraphQL clients behave; `operationName` is
@@ -750,16 +750,16 @@ pub struct ParsedRequest {
     /// resolution, or execution.
     pub sync_content_type: bool,
 
-    pub assertions: Vec<crate::assertion::Assertion>,
-    pub extractions: Vec<crate::assertion::Extraction>,
+    pub assertions: Vec<crate::execution::assertion::Assertion>,
+    pub extractions: Vec<crate::execution::assertion::Extraction>,
 
     /// The request's `[script]` section, if any — names of a pre-request
     /// and/or post-response script to run around this request's
-    /// execution. See [`crate::script`] for how a name/path is resolved
+    /// execution. See [`crate::execution::script`] for how a name/path is resolved
     /// and run, and [`crate::Session::resolve_and_execute_in_collection`]
     /// for where the two hooks actually run relative to resolution and
     /// execution.
-    pub script: Option<crate::script::ScriptSection>,
+    pub script: Option<crate::execution::script::ScriptSection>,
 
     pub example_response: Option<ExampleResponse>,
 }
@@ -880,7 +880,7 @@ impl ParsedRequest {
     /// A literal `Authorization` header written by hand under `[headers]`
     /// is untouched by all of this and still gets the raw-`Basic
     /// user:password` encoding convenience (see
-    /// [`crate::auth::encode_basic_auth`]).
+    /// [`crate::execution::auth::encode_basic_auth`]).
     pub fn resolve(&self, environment: &Environment) -> NovaResult<ParsedRequest> {
         let headers = self
             .headers
@@ -892,7 +892,7 @@ impl ParsedRequest {
                 })
             })
             .collect::<NovaResult<Vec<_>>>()?;
-        let mut headers = crate::auth::encode_basic_auth(headers);
+        let mut headers = crate::execution::auth::encode_basic_auth(headers);
 
         let mut query = self
             .query
@@ -1074,7 +1074,7 @@ impl ParsedRequest {
 ///
 /// Only `url`, `[headers]`, and `[messages]` apply: there's no method,
 /// query params, body, auth, or example response for a WebSocket endpoint
-/// in this first pass. See [`crate::websocket`] for what actually opens
+/// in this first pass. See [`crate::execution::websocket`] for what actually opens
 /// the connection and exchanges messages once a request like this has been
 /// parsed and resolved.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1307,7 +1307,7 @@ fn parse_nova_websocket(contents: &str) -> Result<ParsedWebSocketRequest, String
 /// SSE is always a GET per spec, so there's no method to declare. Only
 /// `url` and `[headers]` apply: there's no query params, body, auth, or
 /// example response for an SSE endpoint in this first pass, mirroring
-/// [`ParsedWebSocketRequest`]'s own first-pass scope. See [`crate::sse`] for
+/// [`ParsedWebSocketRequest`]'s own first-pass scope. See [`crate::execution::sse`] for
 /// what actually opens the connection and reads events once a request like
 /// this has been parsed and resolved.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1602,7 +1602,7 @@ enum Section {
     /// [`ParsedWebSocketRequest`].
     Messages,
     /// `[script]` — names a pre-request and/or post-response script to run
-    /// around this request's execution. See [`crate::script`].
+    /// around this request's execution. See [`crate::execution::script`].
     Script,
 }
 
@@ -1772,7 +1772,8 @@ fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
     let body_text = body_text.trim();
     let body = RequestBody::from_text(&headers, body_text)?;
 
-    let (assertions, extractions) = crate::assertion::parse_directives(&assert_lines.join("\n"))?;
+    let (assertions, extractions) =
+        crate::execution::assertion::parse_directives(&assert_lines.join("\n"))?;
 
     let example_response = response_sections
         .into_iter()
@@ -1786,7 +1787,7 @@ fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
         query,
         headers,
         body,
-        auth: crate::auth::parse_auth_section(&auth_lines)?,
+        auth: crate::execution::auth::parse_auth_section(&auth_lines)?,
         sync_content_type: parse_settings_section(&settings_lines)?,
         assertions,
         extractions,
@@ -1830,13 +1831,15 @@ fn parse_settings_section(lines: &[&str]) -> Result<bool, String> {
 }
 
 /// Parse the lines under a `.nova` file's `[script]` marker into a
-/// [`crate::script::ScriptSection`]. Both `pre:` and `post:` are optional
+/// [`crate::execution::script::ScriptSection`]. Both `pre:` and `post:` are optional
 /// (a request may declare just one, or neither, in which case there's no
 /// `[script]` section at all and this is never called). An absent
 /// `[script]` section — the overwhelmingly common case — comes back as
 /// `None` from the caller, not this function, which only runs when the
 /// section was actually present.
-fn parse_script_section(lines: &[&str]) -> Result<Option<crate::script::ScriptSection>, String> {
+fn parse_script_section(
+    lines: &[&str],
+) -> Result<Option<crate::execution::script::ScriptSection>, String> {
     let mut pre = None;
     let mut post = None;
 
@@ -1858,7 +1861,7 @@ fn parse_script_section(lines: &[&str]) -> Result<Option<crate::script::ScriptSe
         return Ok(None);
     }
 
-    Ok(Some(crate::script::ScriptSection { pre, post }))
+    Ok(Some(crate::execution::script::ScriptSection { pre, post }))
 }
 
 /// Parse a `[response <status>]` section into an [`ExampleResponse`]:

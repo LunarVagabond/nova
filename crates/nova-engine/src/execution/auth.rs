@@ -4,8 +4,8 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
-use crate::environment::Environment;
 use crate::error::{NovaError, NovaResult};
+use crate::project::environment::Environment;
 use crate::request::{Header, QueryParam};
 
 /// Where an API key rides on the outgoing request: as a header, or as a

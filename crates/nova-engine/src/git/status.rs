@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 
 use crate::error::{NovaError, NovaResult};
-use crate::git_diagnostics::{describe_command_failure, describe_spawn_failure};
+use crate::git::diagnostics::{describe_command_failure, describe_spawn_failure};
 
 /// Where a single file stands relative to git, ordered from "furthest from
 /// committed" to "closest": a file with changes in more than one stage

@@ -9,9 +9,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::NovaResult;
-use crate::init::{create_dir, write_file};
-use crate::openapi::{generate_from_spec, GeneratedProject};
-use crate::postman::generate_from_postman_collection;
+use crate::formats::openapi::{generate_from_spec, GeneratedProject};
+use crate::formats::postman::generate_from_postman_collection;
+use crate::project::init::{create_dir, write_file};
 
 /// Generates a [`GeneratedProject`] from `input_text`, sniffing whether it's
 /// an OpenAPI 3.x spec (YAML or JSON — OpenAPI JSON is valid YAML) or a

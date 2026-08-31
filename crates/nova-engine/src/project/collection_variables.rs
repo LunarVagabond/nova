@@ -24,7 +24,7 @@ pub const COLLECTION_VARIABLES_FILE_NAME: &str = "_collection.yaml";
 ///
 /// Scoping is per-directory, not inherited: a collection's variables are
 /// only ever visible to requests that live directly inside that same
-/// directory, mirroring how [`crate::collection::Collection::requests`]
+/// directory, mirroring how [`crate::project::collection::Collection::requests`]
 /// already only holds the `.nova` files directly inside it rather than
 /// ones belonging to nested subcollections. A subcollection that wants
 /// the same values defines its own `_collection.yaml`.
@@ -36,7 +36,7 @@ pub struct CollectionVariables {
     /// Where this file was loaded from, for diagnostics and "open in
     /// editor" style GUI actions. Not part of the YAML shape, but still
     /// sent to frontends when serialized. Mirrors
-    /// [`crate::environment::Environment::path`].
+    /// [`crate::project::environment::Environment::path`].
     #[serde(skip_deserializing, skip_serializing)]
     pub path: PathBuf,
 }
@@ -64,7 +64,7 @@ impl CollectionVariables {
 
     /// Serialize back to the YAML text a collection variables file would
     /// contain — the inverse of parsing (see [`load_collection_variables`]).
-    /// Mirrors [`crate::environment::Environment::to_yaml_string`].
+    /// Mirrors [`crate::project::environment::Environment::to_yaml_string`].
     pub fn to_yaml_string(&self) -> Result<String, String> {
         let yaml = CollectionVariablesYaml {
             variables: self.variables.clone(),
@@ -74,7 +74,7 @@ impl CollectionVariables {
 
     /// Write this file's `variables` back to `self.path` on disk,
     /// replacing whatever was there. Mirrors
-    /// [`crate::environment::Environment::write`].
+    /// [`crate::project::environment::Environment::write`].
     pub fn write(&self) -> NovaResult<()> {
         let text =
             self.to_yaml_string()
@@ -120,7 +120,7 @@ pub fn load_collection_variables(dir: &Path) -> NovaResult<CollectionVariables> 
 /// Create an empty `_collection.yaml` directly inside `dir`, returning the
 /// freshly-created [`CollectionVariables`]. Errors if a variables file
 /// already exists at that path, so this never silently clobbers existing
-/// values. Mirrors [`crate::environment::create_environment`].
+/// values. Mirrors [`crate::project::environment::create_environment`].
 pub fn create_collection_variables(dir: &Path) -> NovaResult<CollectionVariables> {
     let path = dir.join(COLLECTION_VARIABLES_FILE_NAME);
 

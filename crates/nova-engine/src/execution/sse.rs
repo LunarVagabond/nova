@@ -1,16 +1,16 @@
 //! Connect to a Server-Sent Events (`text/event-stream`) endpoint and
 //! collect whatever events arrive — the SSE counterpart to
-//! [`crate::execute::execute`] and [`crate::websocket::connect_and_exchange`].
+//! [`crate::execution::http::execute`] and [`crate::execution::websocket::connect_and_exchange`].
 //!
 //! Unlike a normal HTTP request, an SSE response is never buffered whole:
 //! the connection stays open and the server pushes events over time, so this
 //! module reads the response body incrementally (line by line) and parses
 //! the SSE event framing as it goes, rather than reading the whole body up
-//! front like [`crate::execute::execute`] does.
+//! front like [`crate::execution::http::execute`] does.
 //!
 //! Built on `ureq`, the same HTTP client `execute.rs` already uses — no new
 //! HTTP dependency for this. First-pass scope, mirroring
-//! [`crate::websocket`]'s own first-pass scope decisions: connect, read
+//! [`crate::execution::websocket`]'s own first-pass scope decisions: connect, read
 //! events until a read timeout elapses or the connection closes, then
 //! return what arrived — not a long-running daemon subscription. See this
 //! module's tests for what is covered.
@@ -27,7 +27,7 @@ use crate::request::ParsedSseRequest;
 /// connecting, if none have arrived yet) before giving up and returning
 /// whatever has been collected so far — a stream that never closes and
 /// never sends another event would otherwise hang a caller forever. Mirrors
-/// [`crate::websocket::DEFAULT_READ_TIMEOUT`].
+/// [`crate::execution::websocket::DEFAULT_READ_TIMEOUT`].
 pub const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A single parsed SSE event: one or more `field: value` lines terminated
@@ -64,8 +64,8 @@ pub struct SseExchange {
 ///
 /// A connection failure (refused connection, DNS failure, non-2xx status) is
 /// a typed [`NovaError::RequestExecution`], matching how
-/// [`crate::execute::execute`] and
-/// [`crate::websocket::connect_and_exchange`] report a transport failure.
+/// [`crate::execution::http::execute`] and
+/// [`crate::execution::websocket::connect_and_exchange`] report a transport failure.
 pub fn connect_and_stream(
     request: &ParsedSseRequest,
     read_timeout: Duration,

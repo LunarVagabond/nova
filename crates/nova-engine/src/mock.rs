@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use crate::collection::Collection;
 use crate::error::NovaResult;
+use crate::project::collection::Collection;
 use crate::project::NovaProject;
 use crate::request::ExampleResponse;
 

@@ -1,15 +1,17 @@
 use serde::Deserialize;
 
 use crate::error::{NovaError, NovaResult};
-use crate::manifest::{Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION};
-use crate::openapi::{GeneratedProject, GeneratedRequest};
+use crate::formats::openapi::{GeneratedProject, GeneratedRequest};
+use crate::project::manifest::{
+    Defaults, Manifest, PathConfig, ProjectInfo, CURRENT_MANIFEST_VERSION,
+};
 use crate::request::{Header, MultipartField, ParsedRequest, QueryParam, RequestBody};
 
 /// Generate a Nova project from a Postman Collection Format v2.1 export
 /// (JSON). Folders become collection subdirectories, requests become
 /// `.nova` files — the same "parse external format into a
 /// [`GeneratedProject`], write nothing to disk" shape as
-/// [`crate::openapi::generate_from_spec`]. Pre-request/test scripts
+/// [`crate::formats::openapi::generate_from_spec`]. Pre-request/test scripts
 /// (`event` entries) have no Nova equivalent and are dropped; nothing else
 /// about generation depends on them.
 pub fn generate_from_postman_collection(collection_json: &str) -> NovaResult<GeneratedProject> {

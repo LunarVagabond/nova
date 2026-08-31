@@ -20,7 +20,7 @@ use std::process::{Command, Stdio};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{NovaError, NovaResult};
-use crate::execute::Response;
+use crate::execution::http::Response;
 use crate::request::{Header, ParsedRequest, QueryParam};
 
 /// A `.nova` file's `[script]` section: the pre-request and/or
@@ -63,7 +63,7 @@ fn interpreter_for(extension: &str) -> Option<&'static str> {
 ///
 /// Rejects an absolute path or one that would escape `project_root` (e.g.
 /// via `..`), the same defense-in-depth
-/// [`crate::execute::resolve_multipart_file_path`] applies to multipart
+/// [`crate::execution::http::resolve_multipart_file_path`] applies to multipart
 /// file attachments — a `.nova` file is plain checked-in text, so nothing
 /// stops a malicious one from naming a path outside the project were this
 /// not enforced.

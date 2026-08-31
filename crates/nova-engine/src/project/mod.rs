@@ -1,12 +1,29 @@
+//! A Nova project on disk: discovery, and everything a project directory
+//! is made of.
+//!
+//! [`NovaProject::discover`] walks upward from a path looking for
+//! `nova/nova.yaml` the way `git` looks for `.git`; the submodules here
+//! own the pieces it loads and mutates — the [`manifest`], the
+//! [`environment`]s, the [`collection`] tree and its
+//! [`collection_variables`] — plus scaffolding a brand-new project
+//! ([`init`]) and checking an existing one over ([`validate`]).
+
+pub mod collection;
+pub mod collection_variables;
+pub mod environment;
+pub mod init;
+pub mod manifest;
+pub mod validate;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::collection::{load_collections, Collection};
-use crate::environment::{load_environments, Environment};
 use crate::error::{NovaError, NovaResult};
-use crate::manifest::Manifest;
+use crate::project::collection::{load_collections, Collection};
+use crate::project::environment::{load_environments, Environment};
+use crate::project::manifest::Manifest;
 
 /// The manifest file name the engine looks for inside a project directory.
 pub const MANIFEST_FILE_NAME: &str = "nova.yaml";
