@@ -1,0 +1,113 @@
+@use "../variables" as *;
+
+// The GraphQL body type's schema-browsing column — sits to the left of the
+// Query/Variables editors (see `.request-panel__graphql` in
+// _request-panel.scss), same "own scrolling column" shape as
+// `.history-panel__list`.
+.graphql-schema-explorer {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-md;
+  padding: $spacing-sm;
+  overflow-y: auto;
+}
+
+.graphql-schema-explorer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.graphql-schema-explorer__title {
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.graphql-schema-explorer__hint,
+.graphql-schema-explorer__error {
+  margin: 0;
+  font-size: $font-size-sm;
+  color: var(--color-text-muted);
+}
+
+.graphql-schema-explorer__error {
+  color: var(--color-danger);
+}
+
+.graphql-schema-explorer__tree {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.graphql-schema-explorer__section-toggle {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: $spacing-xs 0;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.graphql-schema-explorer__chevron {
+  flex-shrink: 0;
+  width: 0.75em;
+  height: 0.75em;
+  transition: transform 0.12s ease;
+}
+
+.graphql-schema-explorer__chevron--collapsed {
+  transform: rotate(-90deg);
+}
+
+.graphql-schema-explorer__fields {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 $spacing-md;
+  display: flex;
+  flex-direction: column;
+}
+
+.graphql-schema-explorer__field {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: $spacing-sm;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: $radius-sm;
+  padding: $spacing-xs $spacing-sm;
+  font-family: $font-family-mono;
+  font-size: $font-size-xs;
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.graphql-schema-explorer__field:hover {
+  background: var(--color-bg-raised);
+}
+
+.graphql-schema-explorer__field-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graphql-schema-explorer__field-type {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
