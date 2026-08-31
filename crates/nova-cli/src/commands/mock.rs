@@ -3,6 +3,21 @@ use std::path::Path;
 
 use nova_engine::{mock_routes, MockRoute, NovaProject, MOCK_EXAMPLE_HEADER, MOCK_STATUS_HEADER};
 
+/// Writes a banner line to stdout, tolerating a failed write (e.g. a
+/// downstream reader closing the pipe early — piping into `head`, a
+/// wrapper script that only cares about the bound address, or a test
+/// harness that only reads the first line) rather than panicking the way
+/// `println!`'s own `.unwrap()` would. Purely informational output has no
+/// business taking a running mock server down.
+macro_rules! banner_line {
+    () => {
+        let _ = writeln!(std::io::stdout());
+    };
+    ($($arg:tt)*) => {
+        let _ = writeln!(std::io::stdout(), $($arg)*);
+    };
+}
+
 /// Discover a project's requests and start a local HTTP server that
 /// answers each one's route with its declared example response.
 ///
@@ -25,12 +40,12 @@ pub fn run(path: &Path, host: &str, port: u16) -> Result<(), String> {
         .map_err(|e| format!("failed to bind {host}:{port}: {e}"))?;
     let addr = server.server_addr();
 
-    println!("nova mock listening on http://{addr}");
-    println!();
+    banner_line!("nova mock listening on http://{addr}");
+    banner_line!();
     if routes.is_empty() {
-        println!("(no requests found in this project)");
+        banner_line!("(no requests found in this project)");
     } else {
-        println!("routes:");
+        banner_line!("routes:");
         for route in &routes {
             let status = route
                 .example_responses
@@ -38,11 +53,11 @@ pub fn run(path: &Path, host: &str, port: u16) -> Result<(), String> {
                 .min_by_key(|example| example.status)
                 .map(|response| response.status.to_string())
                 .unwrap_or_else(|| "501 (no example response)".to_string());
-            println!("  {:<7} {:<40} -> {status}", route.method, route.path);
+            banner_line!("  {:<7} {:<40} -> {status}", route.method, route.path);
         }
     }
-    println!();
-    std::io::stdout().flush().map_err(|e| e.to_string())?;
+    banner_line!();
+    let _ = std::io::stdout().flush();
 
     for request in server.incoming_requests() {
         handle_request(request, &routes);

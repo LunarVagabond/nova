@@ -90,6 +90,20 @@ fn spawn_mock_server(project_dir: &Path) -> (String, std::process::Child) {
         .map(|(_, addr)| format!("http://{addr}"))
         .expect("startup line should print the bound address");
 
+    // Keep draining the rest of the banner (and anything else the process
+    // ever writes) until the pipe closes on its own, rather than dropping
+    // `reader` here and closing our read end out from under a still-
+    // writing child — that used to make the child's own startup-banner
+    // writes hit a broken pipe intermittently under CI load (see #196).
+    // The banner no longer panics on that either way, but there's no
+    // reason for the test to keep re-triggering the condition.
+    std::thread::spawn(move || {
+        let mut line = String::new();
+        while reader.read_line(&mut line).unwrap_or(0) > 0 {
+            line.clear();
+        }
+    });
+
     (base_url, child)
 }
 
