@@ -44,6 +44,7 @@ pub use execution::websocket::{
     connect_and_exchange, WebSocketExchange, WebSocketSession, DEFAULT_READ_TIMEOUT,
 };
 pub use formats::curl::{parse_curl, ParsedCurlRequest};
+pub use formats::data::load_data_iterations;
 pub use formats::export::{export_request, to_curl, to_fetch, ExportFormat};
 pub use formats::generate::{generate_project, write_generated_project};
 pub use formats::openapi::{

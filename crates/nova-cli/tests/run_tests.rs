@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::mpsc;
 use std::thread;
 
 fn temp_project_dir(name: &str) -> PathBuf {
@@ -121,6 +122,81 @@ fn runs_every_request_under_a_directory() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("/hello"));
     assert!(stdout.contains("/world"));
+}
+
+/// Starts a mock server that replies 200 to every request it receives,
+/// sending each incoming request's URL path back over `tx` in arrival
+/// order, until `requests` of them have been handled.
+fn mock_server_capturing_paths(
+    requests: usize,
+) -> (String, mpsc::Receiver<String>, thread::JoinHandle<()>) {
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let addr = server.server_addr();
+    let url = format!("http://{addr}");
+    let (tx, rx) = mpsc::channel();
+
+    let handle = thread::spawn(move || {
+        for _ in 0..requests {
+            let request = server.recv().unwrap();
+            tx.send(request.url().to_string()).unwrap();
+            request
+                .respond(tiny_http::Response::from_string("ok").with_status_code(200))
+                .unwrap();
+        }
+    });
+
+    (url, rx, handle)
+}
+
+#[test]
+fn runs_a_request_once_per_row_in_a_csv_data_file() {
+    let (base_url, rx, handle) = mock_server_capturing_paths(2);
+    let dir = temp_project_dir("data-csv");
+    let nova_dir = dir.join("nova");
+    fs::create_dir_all(nova_dir.join("collections")).unwrap();
+    fs::create_dir_all(nova_dir.join("envs")).unwrap();
+    fs::write(
+        nova_dir.join("nova.yaml"),
+        "version: 1\nproject:\n  name: cli-test\n",
+    )
+    .unwrap();
+    fs::write(
+        nova_dir.join("envs/test.yaml"),
+        format!("name: test\nvariables:\n  base_url: {base_url}\n"),
+    )
+    .unwrap();
+    fs::write(
+        nova_dir.join("collections/user.nova"),
+        "[request]\nmethod: GET\nurl: {{base_url}}/users/{{user_id}}\n",
+    )
+    .unwrap();
+
+    let data_path = dir.join("users.csv");
+    fs::write(&data_path, "user_id\n1\n2\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_nova"))
+        .args([
+            "run",
+            nova_dir.join("collections/user.nova").to_str().unwrap(),
+            "--environment",
+            "test",
+            "--data",
+            data_path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    handle.join().unwrap();
+    fs::remove_dir_all(&dir).unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let paths: Vec<String> = rx.try_iter().collect();
+    assert_eq!(paths, vec!["/users/1", "/users/2"]);
 }
 
 #[test]
