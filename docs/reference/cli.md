@@ -128,6 +128,22 @@ stdout by default.
 
 - `--output <file>` — write to a file instead.
 
+## `nova export-request <request>`
+
+Render a single request, after `{{variable}}` substitution, as a
+copy-pasteable `curl` command or code snippet — for handing a request to
+someone who doesn't have Nova installed, or dropping one into a bug report
+or script.
+
+- `--environment <name>` — resolve against this environment instead of the
+  project's default.
+- `--as <curl|fetch>` — target format to render as. Defaults to `curl`.
+
+A request whose `[auth]` uses an OAuth2 client credentials grant can't be
+fully reproduced this way (it needs a live token exchange), so the
+rendered command includes a comment noting that a bearer token still needs
+to be filled in by hand.
+
 ## `nova mock [path]`
 
 Start a local mock server. For every `.nova` request found under `path`,

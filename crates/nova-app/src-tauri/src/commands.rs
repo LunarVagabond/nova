@@ -11,13 +11,13 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use nova_engine::{
-    diff_responses, evaluate, export_to_spec, generate_project, graphql_body_to_text,
-    multipart_fields_to_body_text, parse_curl, parse_graphql_body, parse_multipart_fields,
-    write_generated_project, AssertionOutcome, AuthScheme, Collection, ComparableResponse,
-    CookieView, Environment, GitFileStatus, GitStatusCache, GraphQlBody, Header, InitOptions,
-    InitOutcome, Manifest, MultipartField, NovaProject, OpenProjectOutcome, ParsedCurlRequest,
-    ParsedRequest, ParsedWebSocketRequest, RequestDraft, RequestFile, Response, ResponseDiff,
-    Session, WebSocketDraft, WebSocketExchange,
+    diff_responses, evaluate, export_request, export_to_spec, generate_project,
+    graphql_body_to_text, multipart_fields_to_body_text, parse_curl, parse_graphql_body,
+    parse_multipart_fields, write_generated_project, AssertionOutcome, AuthScheme, Collection,
+    ComparableResponse, CookieView, Environment, ExportFormat, GitFileStatus, GitStatusCache,
+    GraphQlBody, Header, InitOptions, InitOutcome, Manifest, MultipartField, NovaProject,
+    OpenProjectOutcome, ParsedCurlRequest, ParsedRequest, ParsedWebSocketRequest, RequestDraft,
+    RequestFile, Response, ResponseDiff, Session, WebSocketDraft, WebSocketExchange,
 };
 
 use crate::mock_server::{MockServerState, MockServerStatus, DEFAULT_HOST, DEFAULT_PORT};
@@ -186,6 +186,57 @@ pub fn send_request(
             .map(|(_resolved, response)| response)
             .map_err(|e| e.to_string())
     })
+}
+
+/// Render `request_path`, after `{{variable}}` substitution, as a
+/// copy-pasteable `curl` command or code snippet (see
+/// [`nova_engine::ExportFormat`]) — without sending anything. Resolves the
+/// same way [`send_request`] does (the named environment, or the project's
+/// default, plus collection variables and this project's session-chained
+/// variables), so the rendered command reflects exactly what a Send would
+/// actually go out as. Powers the request panel's "Copy as…" control.
+#[tauri::command]
+pub fn export_request_as(
+    request_path: String,
+    environment: Option<String>,
+    format: ExportFormat,
+    sessions: tauri::State<SessionStore>,
+) -> Result<String, String> {
+    let path = std::path::Path::new(&request_path);
+    let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
+
+    let resolved_environment = match environment {
+        Some(name) => project
+            .environment(&name)
+            .cloned()
+            .ok_or_else(|| format!("unknown environment '{name}'"))?,
+        None => project
+            .default_environment()
+            .cloned()
+            .ok_or_else(|| "project has no default environment".to_string())?,
+    };
+
+    let request_file = RequestFile {
+        name: String::new(),
+        path: path.to_path_buf(),
+        method: String::new(),
+        protocol: String::new(),
+    };
+    let parsed = request_file.parse().map_err(|e| e.to_string())?;
+
+    let collection_variables = project
+        .collections
+        .containing(path)
+        .map(|collection| collection.variables.clone())
+        .unwrap_or_default();
+
+    let resolved = sessions
+        .with_session(&project.root, |session| {
+            session.resolve_in_collection(&parsed, &resolved_environment, &collection_variables)
+        })
+        .map_err(|e| e.to_string())?;
+
+    export_request(&resolved, format)
 }
 
 /// The full variable map `request_path`'s `{{name}}` placeholders would

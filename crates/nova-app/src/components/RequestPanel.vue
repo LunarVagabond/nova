@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import {
   diffAgainstExampleResponse,
   diffAgainstPreviousRun,
+  exportRequestAs,
   getResolvedVariables,
   parseCurlCommand,
   parseGraphqlBody,
@@ -16,6 +17,7 @@ import {
 } from "../api/nova";
 import type {
   AuthScheme,
+  ExportFormat,
   GraphQlBody,
   MultipartField,
   QueryParam,
@@ -406,6 +408,67 @@ watch([() => props.request.path, () => props.selectedEnvironment], () => {
   if (variablesDrawerOpen.value) loadResolvedVariables();
 });
 
+// "Copy as…" (#152): render this request, resolved the same way Send
+// would resolve it, as a curl command or fetch() snippet, then copy it to
+// the clipboard. The rendered text is always shown too — some webviews
+// restrict clipboard writes, and this way a failed copy still leaves the
+// user something to select by hand.
+const copyAsMenuOpen = ref(false);
+const copyAsPanelOpen = ref(false);
+const copyAsFormat = ref<ExportFormat | null>(null);
+const copyAsText = ref<string | null>(null);
+const copyAsLoading = ref(false);
+const copyAsError = ref<string | null>(null);
+const copyAsJustCopied = ref(false);
+
+const COPY_AS_OPTIONS: { format: ExportFormat; label: string }[] = [
+  { format: "curl", label: "curl" },
+  { format: "fetch", label: "fetch()" },
+];
+
+function toggleCopyAsMenu() {
+  copyAsMenuOpen.value = !copyAsMenuOpen.value;
+}
+
+async function chooseCopyAsFormat(format: ExportFormat) {
+  copyAsMenuOpen.value = false;
+  copyAsPanelOpen.value = true;
+  copyAsFormat.value = format;
+  copyAsLoading.value = true;
+  copyAsError.value = null;
+  copyAsJustCopied.value = false;
+  try {
+    const text = await exportRequestAs(props.request.path, props.selectedEnvironment, format);
+    copyAsText.value = text;
+    try {
+      await navigator.clipboard.writeText(text);
+      copyAsJustCopied.value = true;
+    } catch {
+      // Clipboard write isn't available in every webview context — the
+      // panel still shows the text for a manual copy.
+    }
+  } catch (e) {
+    copyAsText.value = null;
+    copyAsError.value = String(e);
+  } finally {
+    copyAsLoading.value = false;
+  }
+}
+
+async function copyAsPanelCopyAgain() {
+  if (!copyAsText.value) return;
+  try {
+    await navigator.clipboard.writeText(copyAsText.value);
+    copyAsJustCopied.value = true;
+  } catch (e) {
+    copyAsError.value = String(e);
+  }
+}
+
+function closeCopyAsPanel() {
+  copyAsPanelOpen.value = false;
+}
+
 const curlPasteError = ref<string | null>(null);
 
 // Pasting a curl/wget command into the URL field fills in method/URL/
@@ -643,12 +706,24 @@ function onGlobalKeydown(event: KeyboardEvent) {
   handleSend();
 }
 
+// Closes the "Copy as…" menu on a click anywhere outside it, the same
+// dismiss behavior a native `<select>` gets for free.
+const copyAsMenuEl = ref<HTMLElement | null>(null);
+function onGlobalMousedown(event: MouseEvent) {
+  if (!copyAsMenuOpen.value) return;
+  if (copyAsMenuEl.value && !copyAsMenuEl.value.contains(event.target as Node)) {
+    copyAsMenuOpen.value = false;
+  }
+}
+
 onMounted(() => {
   window.addEventListener("keydown", onGlobalKeydown);
+  window.addEventListener("mousedown", onGlobalMousedown);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onGlobalKeydown);
+  window.removeEventListener("mousedown", onGlobalMousedown);
 });
 
 defineExpose({ dirty, save: handleSave });
@@ -767,47 +842,99 @@ defineExpose({ dirty, save: handleSave });
         Couldn't parse the pasted curl command: {{ curlPasteError }}
       </p>
 
-      <div class="request-panel__tabs" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          class="request-panel__tab"
-          :class="{ 'request-panel__tab--active': activeTab === 'auth' }"
-          :aria-selected="activeTab === 'auth'"
-          @click="activeTab = 'auth'"
-        >
-          Auth<span v-if="auth" class="request-panel__tab-count">&bull;</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          class="request-panel__tab"
-          :class="{ 'request-panel__tab--active': activeTab === 'headers' }"
-          :aria-selected="activeTab === 'headers'"
-          @click="activeTab = 'headers'"
-        >
-          Headers<span v-if="headers.length > 0" class="request-panel__tab-count">{{ headers.length }}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          class="request-panel__tab"
-          :class="{ 'request-panel__tab--active': activeTab === 'params' }"
-          :aria-selected="activeTab === 'params'"
-          @click="activeTab = 'params'"
-        >
-          Params<span v-if="query.length > 0" class="request-panel__tab-count">{{ query.length }}</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          class="request-panel__tab"
-          :class="{ 'request-panel__tab--active': activeTab === 'body' }"
-          :aria-selected="activeTab === 'body'"
-          @click="activeTab = 'body'"
-        >
-          Body<span v-if="bodyText.trim().length > 0" class="request-panel__tab-count">&bull;</span>
-        </button>
+      <div class="request-panel__tabs-row">
+        <div class="request-panel__tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            class="request-panel__tab"
+            :class="{ 'request-panel__tab--active': activeTab === 'auth' }"
+            :aria-selected="activeTab === 'auth'"
+            @click="activeTab = 'auth'"
+          >
+            Auth<span v-if="auth" class="request-panel__tab-count">&bull;</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="request-panel__tab"
+            :class="{ 'request-panel__tab--active': activeTab === 'headers' }"
+            :aria-selected="activeTab === 'headers'"
+            @click="activeTab = 'headers'"
+          >
+            Headers<span v-if="headers.length > 0" class="request-panel__tab-count">{{ headers.length }}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="request-panel__tab"
+            :class="{ 'request-panel__tab--active': activeTab === 'params' }"
+            :aria-selected="activeTab === 'params'"
+            @click="activeTab = 'params'"
+          >
+            Params<span v-if="query.length > 0" class="request-panel__tab-count">{{ query.length }}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="request-panel__tab"
+            :class="{ 'request-panel__tab--active': activeTab === 'body' }"
+            :aria-selected="activeTab === 'body'"
+            @click="activeTab = 'body'"
+          >
+            Body<span v-if="bodyText.trim().length > 0" class="request-panel__tab-count">&bull;</span>
+          </button>
+        </div>
+
+        <div ref="copyAsMenuEl" class="copy-as">
+          <button
+            type="button"
+            class="button button--ghost"
+            title="Render this request as a curl command or code snippet"
+            @click="toggleCopyAsMenu"
+          >
+            <Icon name="copy" />
+            Copy as
+            <Icon name="chevron-down" class="copy-as__chevron" />
+          </button>
+          <ul v-if="copyAsMenuOpen" class="copy-as__menu" role="menu">
+            <li v-for="option in COPY_AS_OPTIONS" :key="option.format">
+              <button
+                type="button"
+                role="menuitem"
+                class="copy-as__menu-item"
+                @click="chooseCopyAsFormat(option.format)"
+              >
+                {{ option.label }}
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div v-if="copyAsPanelOpen" class="copy-as-panel">
+        <div class="copy-as-panel__header">
+          <p class="copy-as-panel__title">
+            {{ copyAsFormat === "fetch" ? "fetch() snippet" : "curl command" }}
+            <span v-if="copyAsJustCopied" class="copy-as-panel__copied">Copied to clipboard</span>
+          </p>
+          <div class="copy-as-panel__actions">
+            <button
+              type="button"
+              class="button button--ghost"
+              :disabled="!copyAsText"
+              @click="copyAsPanelCopyAgain"
+            >
+              Copy
+            </button>
+            <button type="button" class="icon-button" title="Close" @click="closeCopyAsPanel">
+              <Icon name="x" />
+            </button>
+          </div>
+        </div>
+        <p v-if="copyAsLoading" class="response-pane__hint">Rendering…</p>
+        <p v-else-if="copyAsError" class="response-pane__error">{{ copyAsError }}</p>
+        <pre v-else-if="copyAsText" class="copy-as-panel__text">{{ copyAsText }}</pre>
       </div>
 
       <div v-if="activeTab === 'auth'" class="request-panel__tab-panel">
