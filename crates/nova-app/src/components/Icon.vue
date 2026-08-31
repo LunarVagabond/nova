@@ -33,7 +33,12 @@ const props = defineProps<{
     | "lock"
     | "git-branch"
     | "upload"
-    | "download";
+    | "download"
+    | "sparkle"
+    | "shield"
+    | "users"
+    | "code"
+    | "help-circle";
 }>();
 </script>
 
@@ -186,6 +191,35 @@ const props = defineProps<{
     <template v-else-if="name === 'download'">
       <path d="M12 4v12M7.5 11.5L12 16l4.5-4.5" />
       <path d="M4 16.5V19a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2.5" />
+    </template>
+
+    <path
+      v-else-if="name === 'sparkle'"
+      d="M12 2.5l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"
+      stroke-linejoin="round"
+    />
+
+    <template v-else-if="name === 'shield'">
+      <path d="M12 3l7 3v5.5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />
+      <path d="M9 12l2 2 4-4" />
+    </template>
+
+    <template v-else-if="name === 'users'">
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+      <path d="M16 4.5a3 3 0 0 1 0 5.9" />
+      <path d="M21 20c0-2.7-1.9-5-4.5-5.7" />
+    </template>
+
+    <template v-else-if="name === 'code'">
+      <path d="M9 8L4 12.5 9 17" />
+      <path d="M15 8l5 4.5-5 4.5" />
+    </template>
+
+    <template v-else-if="name === 'help-circle'">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.3 9.3a2.7 2.7 0 1 1 3.9 2.4c-.9.5-1.2 1-1.2 2" />
+      <path d="M12 17h.01" />
     </template>
   </svg>
 </template>
