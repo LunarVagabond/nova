@@ -82,6 +82,20 @@ export function sendRequest(
 }
 
 /**
+ * The full variable map `requestPath`'s `{{name}}` placeholders would
+ * resolve against right now — against `environment` if named (else the
+ * project's default), collection variables and this project's
+ * session-chained variables included — without sending anything. Powers
+ * the request panel's read-only variables drawer.
+ */
+export function getResolvedVariables(
+  requestPath: string,
+  environment: string | null,
+): Promise<Record<string, string>> {
+  return invoke<Record<string, string>>("get_resolved_variables", { requestPath, environment });
+}
+
+/**
  * The project at `path`'s recent request/response history, most-recent
  * first — empty (not an error) if nothing has been sent in this project
  * yet this session. History lives only for the life of the app session;

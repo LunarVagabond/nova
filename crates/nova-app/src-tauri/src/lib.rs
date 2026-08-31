@@ -18,6 +18,7 @@ pub fn run() {
             commands::validate_project,
             commands::git_status,
             commands::send_request,
+            commands::get_resolved_variables,
             commands::get_history,
             commands::reopen_history_entry,
             commands::get_cookies,

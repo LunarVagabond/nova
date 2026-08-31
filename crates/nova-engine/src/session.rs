@@ -559,6 +559,25 @@ impl Session {
         Ok(Some(header))
     }
 
+    /// The full variable map [`Session::resolve_and_execute_in_collection`]
+    /// would substitute `{{name}}` placeholders against right now:
+    /// `collection_variables` overridden by this session's chained
+    /// (extracted) variables, overridden in turn by `environment`'s own
+    /// declared variables — the same precedence documented on that method.
+    ///
+    /// Read-only and does nothing else (no execution, no mutation of this
+    /// session) — a GUI "variables drawer" uses this to show what a
+    /// request's placeholders will actually resolve to without sending
+    /// anything.
+    pub fn resolved_variables(
+        &self,
+        environment: &Environment,
+        collection_variables: &HashMap<String, String>,
+    ) -> HashMap<String, String> {
+        self.environment_with_variables(environment, collection_variables)
+            .variables
+    }
+
     fn environment_with_variables(
         &self,
         environment: &Environment,
@@ -799,6 +818,28 @@ mod tests {
 
         assert_eq!(
             effective.variables.get("token").map(String::as_str),
+            Some("chained-token")
+        );
+    }
+
+    #[test]
+    fn resolved_variables_matches_what_execution_would_merge() {
+        let mut session = Session::new();
+        session
+            .chained_variables
+            .insert("token".to_string(), "chained-token".to_string());
+        let environment = environment(&[("base_url", "https://example.com")]);
+        let collection_variables = HashMap::from([("base_path".to_string(), "/api".to_string())]);
+
+        let resolved = session.resolved_variables(&environment, &collection_variables);
+
+        assert_eq!(
+            resolved.get("base_url").map(String::as_str),
+            Some("https://example.com")
+        );
+        assert_eq!(resolved.get("base_path").map(String::as_str), Some("/api"));
+        assert_eq!(
+            resolved.get("token").map(String::as_str),
             Some("chained-token")
         );
     }

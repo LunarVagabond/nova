@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import {
   diffAgainstExampleResponse,
   diffAgainstPreviousRun,
+  getResolvedVariables,
   parseCurlCommand,
   parseGraphqlBody,
   parseMultipartBody,
@@ -363,6 +364,48 @@ function beautifyBody() {
   }
 }
 
+// The variables drawer (#147): a read-only, hidden-by-default panel
+// showing what this request's `{{variable}}` placeholders would actually
+// resolve to for the currently-selected environment — collection
+// variables and this project's session-chained variables included, via
+// the same merge `sendRequest` uses — so a request with several
+// placeholders doesn't require switching over to the environment editor
+// just to check a value. Editing still only happens there; this is
+// quick-reference only.
+const variablesDrawerOpen = ref(false);
+const resolvedVariables = ref<Record<string, string> | null>(null);
+const variablesLoading = ref(false);
+const variablesError = ref<string | null>(null);
+
+const sortedResolvedVariables = computed(() =>
+  Object.entries(resolvedVariables.value ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+);
+
+async function loadResolvedVariables() {
+  variablesLoading.value = true;
+  variablesError.value = null;
+  try {
+    resolvedVariables.value = await getResolvedVariables(props.request.path, props.selectedEnvironment);
+  } catch (e) {
+    resolvedVariables.value = null;
+    variablesError.value = String(e);
+  } finally {
+    variablesLoading.value = false;
+  }
+}
+
+function toggleVariablesDrawer() {
+  variablesDrawerOpen.value = !variablesDrawerOpen.value;
+  if (variablesDrawerOpen.value) loadResolvedVariables();
+}
+
+// Keep the drawer's contents current with whichever request/environment is
+// active while it's open, rather than only refreshing on the next manual
+// toggle.
+watch([() => props.request.path, () => props.selectedEnvironment], () => {
+  if (variablesDrawerOpen.value) loadResolvedVariables();
+});
+
 const curlPasteError = ref<string | null>(null);
 
 // Pasting a curl/wget command into the URL field fills in method/URL/
@@ -636,6 +679,15 @@ defineExpose({ dirty, save: handleSave });
         <button
           type="button"
           class="button button--ghost"
+          :class="{ 'button--ghost-active': variablesDrawerOpen }"
+          title="Show what this request's {{variables}} resolve to"
+          @click="toggleVariablesDrawer"
+        >
+          Variables
+        </button>
+        <button
+          type="button"
+          class="button button--ghost"
           title="Discard unsaved edits, back to the last saved version"
           :disabled="!dirty || saving"
           @click="handleRevert"
@@ -692,6 +744,23 @@ defineExpose({ dirty, save: handleSave });
         >
           {{ sending ? "Sending…" : "Send" }}
         </button>
+      </div>
+
+      <div v-if="variablesDrawerOpen" class="variables-drawer">
+        <p v-if="variablesLoading" class="response-pane__hint">Resolving variables…</p>
+        <p v-else-if="variablesError" class="response-pane__error">{{ variablesError }}</p>
+        <p v-else-if="sortedResolvedVariables.length === 0" class="response-pane__hint">
+          No variables resolve for this request's active environment.
+        </p>
+        <ul v-else class="variables-drawer__list">
+          <li v-for="[name, value] in sortedResolvedVariables" :key="name" class="variables-drawer__item">
+            <span class="variables-drawer__name">{{ name }}</span>
+            <span class="variables-drawer__value">{{ value }}</span>
+          </li>
+        </ul>
+        <p class="request-panel__hint-text">
+          Read-only — edit values in the environment editor instead.
+        </p>
       </div>
 
       <p v-if="curlPasteError" class="request-panel__save-error">

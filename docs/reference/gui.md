@@ -31,7 +31,14 @@ release bundle with `make build-app`.
 - **`src/components/`** — `Sidebar.vue`/`ProjectPanel.vue`/`CollectionNode.vue`
   for the collection tree; `RequestPanel.vue` for the HTTP request editor,
   split into Params/Auth/Headers/Body tabs (`AuthEditor.vue`,
-  `KeyValueEditor.vue`, `MultipartEditor.vue`, `CodeEditor.vue`);
+  `KeyValueEditor.vue`, `MultipartEditor.vue`, `CodeEditor.vue`), plus a
+  "Variables" toggle in its header that opens a read-only drawer listing
+  what the request's `{{variable}}` placeholders would actually resolve to
+  for the selected environment — collection variables and this project's
+  session-chained variables included, via the `get_resolved_variables`
+  command (`nova_engine::Session::resolved_variables`, the same
+  collection/chained/environment merge `send_request` uses). Editing still
+  only happens in `EnvironmentPanel.vue`;
   `WebSocketPanel.vue` for a WebSocket request (`protocol: websocket`) — a
   separate component from `RequestPanel.vue` rather than another tab on it,
   since a WebSocket request has no method/params/body/auth/assertions/

@@ -262,6 +262,14 @@ button {
   }
 }
 
+// A toggled-on ghost button (a drawer/panel visibility toggle) — mirrors
+// `.icon-button--active` below for the text-button case.
+.button--ghost-active {
+  border-color: var(--color-accent);
+  background-color: var(--color-bg-hover);
+  color: var(--color-accent);
+}
+
 // Square icon-only control (toolbar/tab-strip close buttons, sidebar row
 // actions) — sized off `$control-height-sm` since it carries a single glyph
 // rather than a text label.
