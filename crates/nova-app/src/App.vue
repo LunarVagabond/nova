@@ -96,6 +96,12 @@ const gitStatus = ref<GitStatusMap | null>(null);
 // just which environment requests are sent against.
 const managedEnvironment = ref<NovaEnvironment | null>(null);
 
+// Bumped every time an environment's on-disk data changes (saved, created,
+// or deleted) — RequestPanel's variables drawer watches this alongside the
+// request path/selected environment so an edit made in EnvironmentPanel
+// shows up there without the drawer having to be closed and reopened.
+const environmentsVersion = ref(0);
+
 // The desktop app's mock server toggle — its state lives in the Tauri
 // backend (one server per app instance, independent of which project is
 // open in the sidebar), so this mirrors it rather than owning it.
@@ -695,6 +701,7 @@ async function handleManageEnvironment(name: string) {
 
 async function handleEnvironmentSaved() {
   await refreshProjectTree();
+  environmentsVersion.value++;
 }
 
 // New environment — same in-app prompt pattern as new request/collection.
@@ -720,6 +727,7 @@ async function submitCreateEnvironment() {
   try {
     const created = await createEnvironment(project.value.environments_dir, name);
     await refreshProjectTree();
+    environmentsVersion.value++;
     // Jump straight into editing the new environment, the same way
     // creating a request immediately opens it.
     projectPanelDirty.value = false;
@@ -755,6 +763,7 @@ async function confirmDeleteEnvironment() {
   try {
     await deleteEnvironment(environment.path);
     await refreshProjectTree();
+    environmentsVersion.value++;
     if (selectedEnvironment.value === environment.name) {
       selectedEnvironment.value =
         project.value?.manifest.defaults.environment ?? project.value?.environments[0]?.name ?? null;
@@ -1029,6 +1038,7 @@ async function handleToggleMockServer() {
             :request="tab"
             :selected-environment="selectedEnvironment"
             :project-root="project?.root ?? ''"
+            :environments-version="environmentsVersion"
             @dirty-change="tabDirty[tab.path] = $event"
             @saved="refreshGitStatus"
           />

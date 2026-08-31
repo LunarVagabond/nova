@@ -65,6 +65,8 @@ const props = defineProps<{
   /** The open project's Nova root (`NovaProject.root`) — a multipart file attachment's path is stored relative to this. */
   projectRoot: string;
   active: boolean;
+  /** Bumped by the parent whenever an environment is saved/created/deleted, so the variables drawer's watch below picks up an edit made in EnvironmentPanel without needing the request/environment selection itself to change. */
+  environmentsVersion: number;
 }>();
 
 const emit = defineEmits<{
@@ -439,8 +441,10 @@ function toggleVariablesDrawer() {
 
 // Keep the drawer's contents current with whichever request/environment is
 // active while it's open, rather than only refreshing on the next manual
-// toggle.
-watch([() => props.request.path, () => props.selectedEnvironment], () => {
+// toggle — `environmentsVersion` covers an edit made in EnvironmentPanel
+// (e.g. adding a variable) landing here live, without the name of the
+// active environment itself having changed.
+watch([() => props.request.path, () => props.selectedEnvironment, () => props.environmentsVersion], () => {
   if (variablesDrawerOpen.value) loadResolvedVariables();
 });
 
@@ -800,6 +804,7 @@ defineExpose({ dirty, save: handleSave });
 </script>
 
 <template>
+  <div class="request-view-shell">
   <div class="request-view" :ref="(el) => (responsePane.containerEl.value = el as HTMLElement | null)">
     <div
       class="request-view__pane request-view__pane--top"
@@ -889,35 +894,6 @@ defineExpose({ dirty, save: handleSave });
         >
           {{ sending ? "Sending…" : "Send" }}
         </button>
-      </div>
-
-      <div v-if="variablesDrawerOpen" class="variables-drawer">
-        <p v-if="variablesLoading" class="response-pane__hint">Resolving variables…</p>
-        <p v-else-if="variablesError" class="response-pane__error">{{ variablesError }}</p>
-        <p v-else-if="sortedResolvedVariables.length === 0" class="response-pane__hint">
-          No variables resolve for this request's active environment.
-        </p>
-        <ul v-else class="variables-drawer__list">
-          <li v-for="[name, value] in sortedResolvedVariables" :key="name" class="variables-drawer__item">
-            <span class="variables-drawer__name">{{ name }}</span>
-            <span
-              class="variables-drawer__value"
-              :class="{ 'variables-drawer__value--masked': secretVariableNames.has(name) && !revealedVariables[name] }"
-            >{{ secretVariableNames.has(name) && !revealedVariables[name] ? "••••••••" : value }}</span>
-            <button
-              v-if="secretVariableNames.has(name)"
-              type="button"
-              class="variables-drawer__reveal"
-              :title="revealedVariables[name] ? 'Hide value' : 'Reveal value'"
-              @click="toggleVariableRevealed(name)"
-            >
-              <Icon :name="revealedVariables[name] ? 'eye-off' : 'eye'" />
-            </button>
-          </li>
-        </ul>
-        <p class="request-panel__hint-text">
-          Read-only — edit values in the environment editor instead.
-        </p>
       </div>
 
       <p v-if="curlPasteError" class="request-panel__save-error">
@@ -1271,5 +1247,38 @@ defineExpose({ dirty, save: handleSave });
       <p v-else class="response-pane__hint">Click Send to execute this request.</p>
     </div>
     </div>
+  </div>
+
+  <aside class="variables-drawer" :class="{ 'variables-drawer--open': variablesDrawerOpen }">
+    <div class="variables-drawer__inner">
+      <p class="variables-drawer__title">Variables</p>
+      <p v-if="variablesLoading" class="response-pane__hint">Resolving variables…</p>
+      <p v-else-if="variablesError" class="response-pane__error">{{ variablesError }}</p>
+      <p v-else-if="sortedResolvedVariables.length === 0" class="response-pane__hint">
+        No variables resolve for this request's active environment.
+      </p>
+      <ul v-else class="variables-drawer__list">
+        <li v-for="[name, value] in sortedResolvedVariables" :key="name" class="variables-drawer__item">
+          <span class="variables-drawer__name">{{ name }}</span>
+          <span
+            class="variables-drawer__value"
+            :class="{ 'variables-drawer__value--masked': secretVariableNames.has(name) && !revealedVariables[name] }"
+          >{{ secretVariableNames.has(name) && !revealedVariables[name] ? "••••••••" : value }}</span>
+          <button
+            v-if="secretVariableNames.has(name)"
+            type="button"
+            class="variables-drawer__reveal"
+            :title="revealedVariables[name] ? 'Hide value' : 'Reveal value'"
+            @click="toggleVariableRevealed(name)"
+          >
+            <Icon :name="revealedVariables[name] ? 'eye-off' : 'eye'" />
+          </button>
+        </li>
+      </ul>
+      <p class="request-panel__hint-text">
+        Read-only — edit values in the environment editor instead.
+      </p>
+    </div>
+  </aside>
   </div>
 </template>

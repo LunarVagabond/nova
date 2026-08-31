@@ -180,6 +180,17 @@
   white-space: nowrap;
 }
 
+// Outer row: the request/response column on the left, the variables
+// drawer as a fixed-width sibling on the right (see `.variables-drawer`
+// below) — a real layout column that squishes the column over when open,
+// not an overlay on top of it, so both can be open and worked with at once.
+.request-view-shell {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  min-height: 0;
+}
+
 // Resizable request/response split pane — the top pane (request editor)
 // grows to fill available space, the bottom pane (response) has an explicit
 // height dragged via the divider between them, and each scrolls on its own
@@ -189,6 +200,10 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  // The shrinking half of the shell row above — the drawer's flex-basis is
+  // the fixed side, this is the one that gives up width when it opens.
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .request-view__pane {
@@ -588,17 +603,48 @@
   font-size: $font-size-sm;
 }
 
-// The request panel's read-only variables drawer (#147) — hidden by
-// default, toggled open from the header. Deliberately plain: this is a
-// quick-reference list, not an editor (editing still happens in the
-// environment editor), so it mirrors `.response-headers` rather than
-// `.kv-editor`.
+// The request panel's read-only variables drawer (#147) — a fixed-width
+// column sliding in from the right of `.request-view-shell`, alongside the
+// request/response panes rather than over them, so both can stay open and
+// worked with at once. Always in the DOM (see RequestPanel.vue) with its
+// width animated between 0 and `$variables-drawer-width` via the `--open`
+// modifier below, rather than mounted/unmounted on toggle — `overflow:
+// hidden` on the outer element clips `__inner`'s fixed width during the
+// transition instead of letting its content reflow/wrap mid-animation.
+// Deliberately plain otherwise: this is a quick-reference list, not an
+// editor (editing still happens in the environment editor).
+$variables-drawer-width: 18rem;
+
 .variables-drawer {
-  border: 1px solid var(--color-border);
-  border-radius: $radius-sm;
+  flex: 0 0 0;
+  width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid transparent;
   background-color: var(--color-bg-raised);
-  padding: $spacing-sm $spacing-md;
-  margin-bottom: $spacing-lg;
+  transition:
+    width 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.variables-drawer--open {
+  flex-basis: $variables-drawer-width;
+  width: $variables-drawer-width;
+  border-left-color: var(--color-border);
+}
+
+.variables-drawer__inner {
+  width: $variables-drawer-width;
+  height: 100%;
+  overflow-y: auto;
+  padding: $spacing-md;
+}
+
+.variables-drawer__title {
+  margin: 0 0 $spacing-sm;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: var(--color-text-muted);
 }
 
 .variables-drawer__list {
