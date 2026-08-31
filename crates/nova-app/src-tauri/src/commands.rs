@@ -15,9 +15,9 @@ use nova_engine::{
     graphql_body_to_text, multipart_fields_to_body_text, parse_curl, parse_graphql_body,
     parse_multipart_fields, write_generated_project, AssertionOutcome, AuthScheme, Collection,
     ComparableResponse, CookieView, Environment, ExportFormat, GitFileStatus, GitStatusCache,
-    GraphQlBody, Header, InitOptions, InitOutcome, Manifest, MultipartField, NovaProject,
-    OpenProjectOutcome, ParsedCurlRequest, ParsedRequest, ParsedWebSocketRequest, RequestDraft,
-    RequestFile, Response, ResponseDiff, Session, WebSocketDraft, WebSocketExchange,
+    GraphQlBody, GraphQlSchema, Header, InitOptions, InitOutcome, Manifest, MultipartField,
+    NovaProject, OpenProjectOutcome, ParsedCurlRequest, ParsedRequest, ParsedWebSocketRequest,
+    RequestDraft, RequestFile, Response, ResponseDiff, Session, WebSocketDraft, WebSocketExchange,
 };
 
 use crate::mock_server::{MockServerState, MockServerStatus, DEFAULT_HOST, DEFAULT_PORT};
@@ -182,6 +182,55 @@ pub fn send_request(
                 &scoped_scripts,
             )
             .map(|(_resolved, response)| response)
+            .map_err(|e| e.to_string())
+    })
+}
+
+/// Introspect the GraphQL schema at `request_path`'s own URL, reusing its
+/// resolved headers/auth — see [`nova_engine::Session::fetch_graphql_schema`].
+/// `force_refresh` bypasses this project's cached schema for that URL (the
+/// GUI's "Refresh" action); otherwise a previously-fetched schema is served
+/// without hitting the network again.
+#[tauri::command]
+pub fn fetch_graphql_schema(
+    request_path: String,
+    environment: Option<String>,
+    force_refresh: bool,
+    sessions: tauri::State<SessionStore>,
+) -> Result<GraphQlSchema, String> {
+    let path = std::path::Path::new(&request_path);
+    let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
+
+    let resolved_environment = match environment {
+        Some(name) => project
+            .environment(&name)
+            .cloned()
+            .ok_or_else(|| format!("unknown environment '{name}'"))?,
+        None => project
+            .default_environment()
+            .cloned()
+            .ok_or_else(|| "project has no default environment".to_string())?,
+    };
+
+    let request_file = RequestFile {
+        name: String::new(),
+        path: path.to_path_buf(),
+        method: String::new(),
+        protocol: String::new(),
+    };
+    let parsed = request_file.parse().map_err(|e| e.to_string())?;
+
+    let collection_variables = project.effective_collection_variables(path);
+
+    sessions.with_session(&project.root, |session| {
+        session
+            .fetch_graphql_schema(
+                &project.root,
+                &parsed,
+                &resolved_environment,
+                &collection_variables,
+                force_refresh,
+            )
             .map_err(|e| e.to_string())
     })
 }

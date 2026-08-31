@@ -14,6 +14,7 @@ import type {
   ExportFormat,
   GitStatusMap,
   GraphQlBody,
+  GraphQlSchema,
   HistoryDetail,
   HistorySummary,
   ImportProjectOutcome,
@@ -349,6 +350,24 @@ export function parseGraphqlBody(bodyText: string): Promise<GraphQlBody> {
  */
 export function serializeGraphqlBody(graphql: GraphQlBody): Promise<string> {
   return invoke<string>("serialize_graphql_body", { graphql });
+}
+
+/**
+ * Introspects the GraphQL schema at `requestPath`'s own URL, reusing its
+ * resolved headers/auth. Cached per-project by resolved URL; pass
+ * `forceRefresh: true` to bypass that cache (the schema explorer's
+ * "Refresh" action) instead of getting back a possibly-stale schema.
+ */
+export function fetchGraphqlSchema(
+  requestPath: string,
+  environment: string | null,
+  forceRefresh: boolean,
+): Promise<GraphQlSchema> {
+  return invoke<GraphQlSchema>("fetch_graphql_schema", {
+    requestPath,
+    environment,
+    forceRefresh,
+  });
 }
 
 /**
