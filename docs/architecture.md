@@ -23,7 +23,7 @@ nowhere else:
   for `.git`)
 - parsing/serializing the manifest, environments, and `.nova` request files
 - `{{variable}}` resolution
-- HTTP (and WebSocket/SSE) execution
+- HTTP (and WebSocket/SSE/gRPC) execution
 - authentication schemes
 - assertions and request chaining
 - the local mock server

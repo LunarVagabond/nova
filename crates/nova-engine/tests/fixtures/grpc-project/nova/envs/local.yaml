@@ -1,0 +1,5 @@
+name: local
+
+variables:
+  grpc_host: http://127.0.0.1:9999
+  username: world

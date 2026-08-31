@@ -44,6 +44,11 @@ fn main() {
             environment,
             timeout_secs,
         }) => commands::sse::run(&request, environment.as_deref(), timeout_secs),
+        Some(Command::Grpc {
+            request,
+            environment,
+            timeout_secs,
+        }) => commands::grpc::run(&request, environment.as_deref(), json, timeout_secs),
         Some(Command::Test {
             path,
             environment,

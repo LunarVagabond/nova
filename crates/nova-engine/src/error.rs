@@ -219,6 +219,24 @@ pub enum NovaError {
 
     #[error("sweep position {position:?} could not be applied to this request: {reason}")]
     SweepPositionNotApplicable { position: String, reason: String },
+
+    #[error(
+        "gRPC request references a .proto file at {path} that doesn't exist \
+         (looked relative to the project root)"
+    )]
+    GrpcProtoNotFound { path: PathBuf },
+
+    #[error("failed to compile .proto file at {path}: {message}")]
+    GrpcProtoCompile { path: PathBuf, message: String },
+
+    #[error("gRPC rpc {rpc:?} could not be resolved: {message}")]
+    GrpcRpcNotFound { rpc: String, message: String },
+
+    #[error("gRPC message invalid: {message}")]
+    GrpcMessageInvalid { message: String },
+
+    #[error("gRPC call failed: {message}")]
+    GrpcCallFailed { message: String },
 }
 
 pub type NovaResult<T> = Result<T, NovaError>;

@@ -1,0 +1,11 @@
+[request]
+protocol: grpc
+url: {{grpc_host}}
+proto: protos/greeter.proto
+rpc: greeter.Greeter/SayHello
+
+[headers]
+x-nova-test: {{username}}
+
+[body]
+{ "name": "{{username}}" }

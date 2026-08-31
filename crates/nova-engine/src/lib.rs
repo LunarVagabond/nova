@@ -39,6 +39,7 @@ pub use execution::graphql_introspection::{
     parse_introspection_response, GraphQlArgDef, GraphQlFieldDef, GraphQlSchema, GraphQlTypeDef,
     INTROSPECTION_QUERY,
 };
+pub use execution::grpc::{call_unary, GrpcCallOutcome};
 pub use execution::http::{execute, save_example_response, Response, ResponseTiming};
 pub use execution::oauth2_loopback::{
     begin_oauth2_authorization_code, PendingAuthorizationCode, DEFAULT_AUTHORIZATION_TIMEOUT,
@@ -98,9 +99,9 @@ pub use project::{discover_or_not_found, NovaProject, OpenProjectOutcome, MANIFE
 pub use request::{
     delete_request, duplicate_request, graphql_body_to_text, multipart_fields_to_body_text,
     parse_graphql_body, parse_multipart_fields, rename_request, select_example_response,
-    ExampleResponse, ExampleResponseSummary, GraphQlBody, Header, MultipartField, ParsedRequest,
-    ParsedSseRequest, ParsedWebSocketRequest, QueryParam, RequestBody, RequestDraft, RequestFile,
-    WebSocketDraft, WebSocketMessage,
+    ExampleResponse, ExampleResponseSummary, GraphQlBody, Header, MultipartField,
+    ParsedGrpcRequest, ParsedRequest, ParsedSseRequest, ParsedWebSocketRequest, QueryParam,
+    RequestBody, RequestDraft, RequestFile, WebSocketDraft, WebSocketMessage,
 };
 pub use session::{CookieView, HistoryEntry, Session, HISTORY_CAP};
 pub use xml::{XmlElement, XmlNode};

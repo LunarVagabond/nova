@@ -101,7 +101,8 @@ See the [CLI reference](docs/reference/cli.md) for the full command list.
 
 ## Features
 
-- **Protocols:** HTTP/REST, GraphQL, WebSockets, Server-Sent Events
+- **Protocols:** HTTP/REST, GraphQL, WebSockets, Server-Sent Events, gRPC
+  (unary calls over a `.proto` file)
 - **Bodies:** JSON, XML, GraphQL, form and multipart (with file uploads)
 - **Auth:** Bearer, Basic, API Key, OAuth2 client credentials — or a
   literal header, your choice
