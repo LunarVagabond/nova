@@ -77,6 +77,54 @@ export function gitStatus(path: string): Promise<GitStatusMap | null> {
   return invoke<GitStatusMap | null>("git_status", { path });
 }
 
+/**
+ * The unified diff for `filePath` (an absolute path, as reported by
+ * `gitStatus`) in the git repository containing the project at `path`,
+ * covering both staged and unstaged changes for that one file. `null` when
+ * `path` isn't inside a git repository at all; an empty string when the
+ * file has no differences to show.
+ */
+export function gitDiffFile(path: string, filePath: string): Promise<string | null> {
+  return invoke<string | null>("git_diff_file", { path, filePath });
+}
+
+/**
+ * Stages `filePaths` (absolute paths) in the project at `path`'s git
+ * repository. An empty array stages every changed file.
+ */
+export function gitStageFiles(path: string, filePaths: string[]): Promise<void> {
+  return invoke<void>("git_stage_files", { path, filePaths });
+}
+
+/** Unstages `filePaths` (absolute paths) without touching their working-tree contents. */
+export function gitUnstageFiles(path: string, filePaths: string[]): Promise<void> {
+  return invoke<void>("git_unstage_files", { path, filePaths });
+}
+
+/**
+ * Commits whatever is currently staged in the project at `path`'s git
+ * repository, using `message`. `amend` folds the commit into the current
+ * `HEAD` instead of creating a new one.
+ */
+export function gitCommitChanges(path: string, message: string, amend: boolean): Promise<void> {
+  return invoke<void>("git_commit_changes", { path, message, amend });
+}
+
+/** Fetches from the project at `path`'s configured git remote, returning git's own combined output. */
+export function gitFetchRemote(path: string): Promise<string> {
+  return invoke<string>("git_fetch_remote", { path });
+}
+
+/** Pulls into the project at `path`'s git repository, returning git's own combined output. */
+export function gitPullRemote(path: string): Promise<string> {
+  return invoke<string>("git_pull_remote", { path });
+}
+
+/** Pushes the project at `path`'s git repository to its configured remote, returning git's own combined output. */
+export function gitPushRemote(path: string): Promise<string> {
+  return invoke<string>("git_push_remote", { path });
+}
+
 /** Parses, resolves, and executes the `.nova` file at `requestPath`. */
 export function sendRequest(
   requestPath: string,

@@ -66,7 +66,9 @@ release bundle with `make build-app`.
   `ResponseDiffView.vue` renders a structured response diff (see
   below) for the response pane's Diff tab; `ResponseTimelineView.vue` renders
   the captured timing breakdown (see below) for the response pane's Timeline
-  tab; `Modal.vue` is the shared in-app dialog component — used instead of
+  tab; `ChangesPanel.vue` for the containing git repository's working-tree
+  changes (see below), reachable from the top bar's git-branch-icon action;
+  `Modal.vue` is the shared in-app dialog component — used instead of
   `window.prompt`/`window.confirm`, which are unreliable inside Tauri's
   webview.
 
@@ -191,6 +193,43 @@ commands; the GUI only renders the resulting `ResponseDiff`. Since a
 request" is identified by matching method and fully-resolved URL rather
 than the source file — see `resolved_identity` in `commands.rs` for the
 documented edge cases this trades off.
+
+### The Changes panel
+
+`ChangesPanel.vue`, reachable from the top bar's git-branch-icon action,
+covers day-to-day git usage against the repository containing the open
+project without leaving the app: reviewing what's changed, staging,
+committing, and fetching/pulling/pushing. It's a master/detail layout like
+`HistoryPanel.vue` — the changed-file list (backed by the same
+`git_status` per-file map the sidebar tree's own status dots use, so both
+views always agree) on the left, a raw unified diff for whichever file is
+selected on the right.
+
+All of the actual git plumbing lives in `nova-engine`'s `git` module
+(`git/patch.rs`, `git/commit.rs`, `git/remote.rs`, alongside the existing
+`git/status.rs`) — the same "shell out to the `git` binary" approach
+`status.rs` already established, rather than adding a `git2` dependency.
+Each Tauri command (`git_diff_file`, `git_stage_files`/`git_unstage_files`,
+`git_commit_changes`, `git_fetch_remote`/`git_pull_remote`/
+`git_push_remote`) is a thin wrapper, matching every other command in
+`commands.rs`.
+
+A file's diff (`git_diff_file`/`nova_engine::git_diff`) covers both staged
+and unstaged changes for that one file, concatenated; an untracked file is
+diffed against an empty file so it reads as entirely added. The diff is
+rendered as plain text with per-line +/- coloring, reusing
+`ResponseDiffView.vue`'s existing added/removed color convention rather
+than a second one — there's no structural diffing here, just `git diff`'s
+own patch text.
+
+Staging is per-file (a checkbox per row) plus a "Stage all" shortcut
+(`git add -A`); the commit box is a `Modal.vue` dialog (message + an amend
+checkbox) rather than an inline form, matching how every other
+type-a-thing-and-confirm action in this app works. Fetch/pull/push run the
+plain git subcommand against whatever remote and branch are already
+configured — no branch switching or merge-conflict resolution — and show
+git's own combined output verbatim, including on failure (an auth
+rejection or a conflict), rather than trying to interpret it.
 
 ### Response timing
 

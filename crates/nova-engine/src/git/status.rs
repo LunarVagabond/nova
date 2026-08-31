@@ -372,7 +372,16 @@ fn unquote_git_path(raw: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn git_toplevel(path: &Path) -> Option<PathBuf> {
+/// Absolute path to the top level of the git repository containing `path`,
+/// or `None` if `path` isn't inside a git repository at all. Exposed so
+/// other `git/` submodules (and, through them, callers like `nova-app`)
+/// can resolve the same repository root [`git_status`] itself uses,
+/// without re-deriving it or shelling out to `git` a second time for it.
+pub fn git_repository_root(path: &Path) -> Option<PathBuf> {
+    git_toplevel(path)
+}
+
+pub(crate) fn git_toplevel(path: &Path) -> Option<PathBuf> {
     let output = Command::new("git")
         .arg("-C")
         .arg(path)
