@@ -18,8 +18,18 @@
 // *how* a body serializes to/from a `.nova` file; that stays entirely in
 // nova-engine (see `RequestBody::from_text`/`to_body_text`).
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
-import { EditorState, type Extension } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
+import { EditorState, RangeSetBuilder, type Extension } from "@codemirror/state";
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  hoverTooltip,
+  keymap,
+  lineNumbers,
+  highlightActiveLine,
+  ViewPlugin,
+  type ViewUpdate,
+} from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import {
   bracketMatching,
@@ -35,6 +45,8 @@ import { python, pythonLanguage } from "@codemirror/lang-python";
 import { html } from "@codemirror/lang-html";
 import { lintGutter, linter, type Diagnostic } from "@codemirror/lint";
 import type { LRLanguage } from "@codemirror/language";
+import { describeVariable, findVariableTokens } from "../lib/variableTokens";
+import type { ResolvedVariables } from "../types/nova";
 
 export type EditorLanguage = "json" | "xml" | "javascript" | "python" | "html" | "text";
 
@@ -42,7 +54,26 @@ const props = defineProps<{
   modelValue: string;
   language: EditorLanguage;
   readonly?: boolean;
+  /**
+   * This request's resolved `{{variable}}` values, for hover tooltips over
+   * a placeholder in the document — optional, since not every caller has
+   * one loaded (or a placeholder to highlight in the first place).
+   */
+  resolvedVariables?: ResolvedVariables | null;
 }>();
+
+// A live handle the hover-tooltip callback below reads at hover time —
+// CodeMirror extensions are built once per editor instance (`onMounted`),
+// but `resolvedVariables` can keep changing after that (a different
+// environment picked, a variable edited), so this ref, not the prop value
+// itself, is what the extension closes over.
+const liveResolvedVariables = shallowRef<ResolvedVariables | null>(props.resolvedVariables ?? null);
+watch(
+  () => props.resolvedVariables,
+  (next) => {
+    liveResolvedVariables.value = next ?? null;
+  },
+);
 
 const emit = defineEmits<{
   (e: "update:modelValue", value: string): void;
@@ -123,7 +154,66 @@ const novaEditorTheme = EditorView.theme({
   ".cm-diagnostic-error": {
     borderLeftColor: "var(--color-danger)",
   },
+  // A `{{variable}}` placeholder, colored to stand out from the
+  // surrounding string/text it sits in — see `variableHighlightPlugin`
+  // below for what marks the range.
+  ".cm-nova-variable": {
+    color: "var(--color-accent)",
+    fontWeight: "600",
+  },
+  ".cm-nova-variable-tooltip": {
+    padding: "4px 8px",
+    maxWidth: "24rem",
+    wordBreak: "break-word",
+  },
 });
+
+// Marks every `{{variable}}` placeholder in the document with a
+// `.cm-nova-variable` decoration, recomputed whenever the document changes.
+function buildVariableDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const token of findVariableTokens(view.state.doc.toString())) {
+    builder.add(token.start, token.end, Decoration.mark({ class: "cm-nova-variable" }));
+  }
+  return builder.finish();
+}
+
+const variableHighlightPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = buildVariableDecorations(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged) this.decorations = buildVariableDecorations(update.view);
+    }
+  },
+  { decorations: (instance) => instance.decorations },
+);
+
+// Hovering a `{{variable}}` placeholder shows what it resolves to —
+// `getResolved` is read at hover time (see `liveResolvedVariables` above),
+// not captured once when the extension is built.
+function variableHoverTooltip(getResolved: () => ResolvedVariables | null) {
+  return hoverTooltip((view, pos) => {
+    const token = findVariableTokens(view.state.doc.toString()).find(
+      (candidate) => pos >= candidate.start && pos <= candidate.end,
+    );
+    if (!token) return null;
+    const { text } = describeVariable(token.name, getResolved());
+    return {
+      pos: token.start,
+      end: token.end,
+      above: true,
+      create() {
+        const dom = document.createElement("div");
+        dom.className = "cm-nova-variable-tooltip";
+        dom.textContent = text;
+        return { dom };
+      },
+    };
+  });
+}
 
 // An empty body is valid (no body sent) — don't flag it as invalid JSON.
 function jsonLinterIgnoringEmpty(): ReturnType<typeof jsonParseLinter> {
@@ -192,6 +282,8 @@ function buildExtensions(language: EditorLanguage, readonly: boolean): Extension
     novaEditorTheme,
     EditorView.lineWrapping,
     EditorView.editable.of(!readonly),
+    variableHighlightPlugin,
+    variableHoverTooltip(() => liveResolvedVariables.value),
     ...languageExtension(language),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) {

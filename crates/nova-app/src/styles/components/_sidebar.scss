@@ -201,6 +201,15 @@
   transform: rotate(-90deg);
 }
 
+// No explicit color, same reasoning as `.collection-tree__chevron` above —
+// inherits the row's ambient (muted-at-rest, full-strength-on-hover) text
+// color instead of standing out as its own accent.
+.collection-tree__folder-icon {
+  flex-shrink: 0;
+  width: 0.9em;
+  height: 0.9em;
+}
+
 .collection-tree__label-name {
   overflow: hidden;
   text-overflow: ellipsis;

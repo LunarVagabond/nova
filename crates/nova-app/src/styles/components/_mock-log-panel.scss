@@ -21,8 +21,9 @@
 
 .mock-log-panel__title {
   margin: 0;
-  font-size: $font-size-md;
-  font-weight: 600;
+  font-size: $type-h3-size;
+  line-height: $type-h3-line;
+  font-weight: $type-h3-weight;
 }
 
 .mock-log-panel__header-actions {
