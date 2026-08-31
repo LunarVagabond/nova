@@ -12,9 +12,15 @@
 //! Orchestration across several of these — cookies, chaining, the OAuth2
 //! token exchange — lives one level up in [`crate::session`], which is
 //! what the CLI and GUI actually drive.
+//!
+//! [`boundary_values`] is a peer of the above but doesn't send anything
+//! itself: it's the built-in library of named boundary-value generators
+//! (empty, very long, negative/zero/huge, unicode, missing) a future sweep
+//! feature can draw values from.
 
 pub mod assertion;
 pub mod auth;
+pub mod boundary_values;
 pub mod http;
 pub mod script;
 pub mod sse;

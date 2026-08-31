@@ -427,6 +427,20 @@ environment entry needed:
 | `{{$randomInt}}`    | A random integer between 0 and 1000                   |
 | `{{$randomEmail}}`  | A random `local@example.com` throwaway address        |
 
+### Built-in boundary-value generators
+
+`nova-engine` also ships a small library of named boundary-value
+generators for common "unhappy path" cases — `empty`, `very_long`,
+`negative`, `zero`, `huge`, `unicode`, and `missing` (field absent
+entirely, as distinct from `empty`) — so a value like "a very long
+string" or "a representative unicode string" doesn't need to be
+hand-written into a project's values file. These aren't a `.nova` syntax
+of their own yet; there's no file-format hook to reference one by name
+today. They exist as a building block for planned value-sweeping support
+(sending a request repeatedly across a set of values for one field) — once
+that lands, this section will document how to reference a generator by
+name from a request.
+
 ## Full example
 
 ```text
