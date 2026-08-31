@@ -40,10 +40,14 @@ pub(super) enum Section {
 }
 
 /// Recognize a line as a section marker, returning the section it starts
-/// and (for `[response ...]`) the status text it named. Returns `None` for
-/// any line that isn't an exact match to a recognized marker, which makes
-/// it ordinary section content instead.
-pub(super) fn parse_section_marker(line: &str) -> Option<(Section, Option<String>)> {
+/// and, for a `[response ...]` marker, the status text and/or `"name"` it
+/// named — `[response]`, `[response 404]`, `[response "not_found"]`, and
+/// `[response 404 "not_found"]` are all recognized. Returns `None` for any
+/// line that isn't an exact match to a recognized marker, which makes it
+/// ordinary section content instead.
+pub(super) fn parse_section_marker(
+    line: &str,
+) -> Option<(Section, Option<String>, Option<String>)> {
     let trimmed = line.trim();
     if !trimmed.starts_with('[') || !trimmed.ends_with(']') || trimmed.len() < 2 {
         return None;
@@ -51,24 +55,52 @@ pub(super) fn parse_section_marker(line: &str) -> Option<(Section, Option<String
     let inner = &trimmed[1..trimmed.len() - 1];
 
     match inner {
-        "request" => Some((Section::Request, None)),
-        "settings" => Some((Section::Settings, None)),
-        "params" => Some((Section::Params, None)),
-        "auth" => Some((Section::Auth, None)),
-        "headers" => Some((Section::Headers, None)),
-        "body" => Some((Section::Body, None)),
-        "assert" => Some((Section::Assert, None)),
-        "response" => Some((Section::Response, None)),
-        "messages" => Some((Section::Messages, None)),
-        "script" => Some((Section::Script, None)),
-        "sweep" => Some((Section::Sweep, None)),
+        "request" => Some((Section::Request, None, None)),
+        "settings" => Some((Section::Settings, None, None)),
+        "params" => Some((Section::Params, None, None)),
+        "auth" => Some((Section::Auth, None, None)),
+        "headers" => Some((Section::Headers, None, None)),
+        "body" => Some((Section::Body, None, None)),
+        "assert" => Some((Section::Assert, None, None)),
+        "response" => Some((Section::Response, None, None)),
+        "messages" => Some((Section::Messages, None, None)),
+        "script" => Some((Section::Script, None, None)),
+        "sweep" => Some((Section::Sweep, None, None)),
         _ => {
-            let status = inner.strip_prefix("response ")?;
-            if !status.is_empty() && status.chars().all(|c| c.is_ascii_digit()) {
-                Some((Section::Response, Some(status.to_string())))
-            } else {
-                None
+            let rest = inner.strip_prefix("response ")?.trim();
+            if rest.is_empty() {
+                return None;
             }
+
+            let (status_part, name_part) = match rest.find('"') {
+                Some(idx) => (rest[..idx].trim(), Some(rest[idx..].trim())),
+                None => (rest, None),
+            };
+
+            let status = if status_part.is_empty() {
+                None
+            } else if status_part.chars().all(|c| c.is_ascii_digit()) {
+                Some(status_part.to_string())
+            } else {
+                return None;
+            };
+
+            let name = match name_part {
+                Some(quoted) => {
+                    if quoted.len() >= 2 && quoted.starts_with('"') && quoted.ends_with('"') {
+                        Some(quoted[1..quoted.len() - 1].to_string())
+                    } else {
+                        return None;
+                    }
+                }
+                None => None,
+            };
+
+            if status.is_none() && name.is_none() {
+                return None;
+            }
+
+            Some((Section::Response, status, name))
         }
     }
 }
@@ -105,13 +137,13 @@ pub(super) fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
     let mut assert_lines: Vec<&str> = Vec::new();
     let mut script_lines: Vec<&str> = Vec::new();
     let mut sweep_lines: Vec<&str> = Vec::new();
-    let mut response_sections: Vec<(Option<String>, Vec<&str>)> = Vec::new();
+    let mut response_sections: Vec<(Option<String>, Option<String>, Vec<&str>)> = Vec::new();
 
     for line in contents.lines() {
-        if let Some((section, status)) = parse_section_marker(line) {
+        if let Some((section, status, name)) = parse_section_marker(line) {
             current = Some(section);
             if section == Section::Response {
-                response_sections.push((status, Vec::new()));
+                response_sections.push((status, name, Vec::new()));
             }
             continue;
         }
@@ -134,7 +166,7 @@ pub(super) fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
             Some(Section::Script) => script_lines.push(line),
             Some(Section::Sweep) => sweep_lines.push(line),
             Some(Section::Response) => {
-                if let Some((_, lines)) = response_sections.last_mut() {
+                if let Some((_, _, lines)) = response_sections.last_mut() {
                     lines.push(line);
                 }
             }
@@ -211,11 +243,12 @@ pub(super) fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
     let (assertions, extractions) =
         crate::execution::assertion::parse_directives(&assert_lines.join("\n"))?;
 
-    let example_response = response_sections
+    let example_responses = response_sections
         .into_iter()
-        .last()
-        .map(|(status, lines)| parse_response_section(status.as_deref().unwrap_or(""), &lines))
-        .transpose()?;
+        .map(|(status, name, lines)| {
+            parse_response_section(status.as_deref().unwrap_or(""), name, &lines)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(ParsedRequest {
         method,
@@ -228,7 +261,7 @@ pub(super) fn parse_nova(contents: &str) -> Result<ParsedRequest, String> {
         assertions,
         extractions,
         script: parse_script_section(&script_lines)?,
-        example_response,
+        example_responses,
         sweep: parse_sweep_section(&sweep_lines)?,
     })
 }
@@ -365,11 +398,17 @@ fn parse_sweep_section(
     Ok(Some(SweepConfig { position, source }))
 }
 
-/// Parse a `[response <status>]` section into an [`ExampleResponse`](crate::ExampleResponse):
-/// optional `Name: Value` header lines, a blank line, then the raw response
-/// body. The status code comes from the section marker itself (`[response
-/// 201]`); when omitted it defaults to `200`.
-fn parse_response_section(status_text: &str, lines: &[&str]) -> Result<ExampleResponse, String> {
+/// Parse a `[response <status>]`/`[response <status> "name"]` section into
+/// an [`ExampleResponse`](crate::ExampleResponse): optional `Name: Value`
+/// header lines, a blank line, then the raw response body. The status code
+/// comes from the section marker itself (`[response 201]`); when omitted
+/// it defaults to `200`. `name` comes from the marker's optional `"name"`
+/// suffix.
+fn parse_response_section(
+    status_text: &str,
+    name: Option<String>,
+    lines: &[&str],
+) -> Result<ExampleResponse, String> {
     let status: u16 = if status_text.is_empty() {
         200
     } else {
@@ -402,6 +441,7 @@ fn parse_response_section(status_text: &str, lines: &[&str]) -> Result<ExampleRe
 
     Ok(ExampleResponse {
         status,
+        name,
         headers,
         body: body_lines.join("\n").trim().to_string(),
     })
@@ -535,11 +575,16 @@ impl ParsedRequest {
             }
         }
 
-        if let Some(response) = &self.example_response {
+        for response in &self.example_responses {
             out.push_str("\n[response");
             if response.status != 200 {
                 out.push(' ');
                 out.push_str(&response.status.to_string());
+            }
+            if let Some(name) = &response.name {
+                out.push_str(" \"");
+                out.push_str(name);
+                out.push('"');
             }
             out.push_str("]\n");
             for header in &response.headers {
@@ -581,7 +626,7 @@ mod tests {
         assert_eq!(parsed.body, RequestBody::None);
         assert!(parsed.assertions.is_empty());
         assert!(parsed.extractions.is_empty());
-        assert!(parsed.example_response.is_none());
+        assert!(parsed.example_responses.is_empty());
     }
 
     #[test]
@@ -989,8 +1034,9 @@ mod tests {
 
         let parsed = parse_nova(contents).unwrap();
 
-        let response = parsed.example_response.unwrap();
+        let response = parsed.example_responses.into_iter().next().unwrap();
         assert_eq!(response.status, 201);
+        assert_eq!(response.name, None);
         assert_eq!(
             response.headers,
             vec![Header {
@@ -1007,7 +1053,7 @@ mod tests {
 
         let parsed = parse_nova(contents).unwrap();
 
-        assert_eq!(parsed.example_response.unwrap().status, 200);
+        assert_eq!(parsed.example_responses[0].status, 200);
     }
 
     #[test]
@@ -1026,7 +1072,7 @@ mod tests {
         );
         assert_eq!(parsed.assertions.len(), 2);
         assert_eq!(parsed.extractions.len(), 1);
-        assert_eq!(parsed.example_response.as_ref().unwrap().status, 201);
+        assert_eq!(parsed.example_responses[0].status, 201);
     }
 
     #[test]
@@ -1702,7 +1748,47 @@ mod tests {
         let parsed = parse_nova(contents).unwrap();
         let text = parsed.to_nova_string().unwrap();
         let reparsed = parse_nova(&text).unwrap();
-        assert_eq!(parsed.example_response, reparsed.example_response);
+        assert_eq!(parsed.example_responses, reparsed.example_responses);
+    }
+
+    #[test]
+    fn parses_multiple_named_response_sections() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/users/{{user_id}}\n\n[response 200 \"ok\"]\nContent-Type: application/json\n\n{\"id\": \"1\"}\n\n[response 404 \"not_found\"]\nContent-Type: application/json\n\n{\"error\": \"missing\"}\n";
+
+        let parsed = parse_nova(contents).unwrap();
+
+        assert_eq!(parsed.example_responses.len(), 2);
+        assert_eq!(parsed.example_responses[0].status, 200);
+        assert_eq!(parsed.example_responses[0].name.as_deref(), Some("ok"));
+        assert_eq!(parsed.example_responses[0].body, "{\"id\": \"1\"}");
+        assert_eq!(parsed.example_responses[1].status, 404);
+        assert_eq!(
+            parsed.example_responses[1].name.as_deref(),
+            Some("not_found")
+        );
+        assert_eq!(parsed.example_responses[1].body, "{\"error\": \"missing\"}");
+    }
+
+    #[test]
+    fn parses_a_named_response_section_with_no_explicit_status() {
+        let contents =
+            "[request]\nmethod: GET\nurl: {{base_url}}/users\n\n[response \"ok\"]\n\n{}\n";
+
+        let parsed = parse_nova(contents).unwrap();
+
+        assert_eq!(parsed.example_responses.len(), 1);
+        assert_eq!(parsed.example_responses[0].status, 200);
+        assert_eq!(parsed.example_responses[0].name.as_deref(), Some("ok"));
+    }
+
+    #[test]
+    fn round_trips_multiple_named_response_sections() {
+        let contents = "[request]\nmethod: GET\nurl: {{base_url}}/users/{{user_id}}\n\n[response 200 \"ok\"]\nContent-Type: application/json\n\n{\"id\": \"1\"}\n\n[response 404 \"not_found\"]\nContent-Type: application/json\n\n{\"error\": \"missing\"}\n";
+        let parsed = parse_nova(contents).unwrap();
+        let text = parsed.to_nova_string().unwrap();
+        let reparsed = parse_nova(&text).unwrap();
+        assert_eq!(parsed.example_responses, reparsed.example_responses);
+        assert_eq!(reparsed.example_responses.len(), 2);
     }
 
     #[test]
@@ -1716,7 +1802,7 @@ mod tests {
         assert_eq!(parsed.query, reparsed.query);
         assert_eq!(parsed.assertions, reparsed.assertions);
         assert_eq!(parsed.extractions, reparsed.extractions);
-        assert_eq!(parsed.example_response, reparsed.example_response);
+        assert_eq!(parsed.example_responses, reparsed.example_responses);
         assert_eq!(parsed, reparsed);
     }
 

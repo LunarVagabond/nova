@@ -91,10 +91,12 @@ pub enum Command {
         environment: Option<String>,
 
         /// Capture each request's response into its file's `[response
-        /// <status>]` section, replacing whatever example response (if
-        /// any) was already there — the CLI counterpart to the desktop
-        /// app's "Save as Example" button. Applies to every request run,
-        /// so running a directory saves an example for each one.
+        /// <status>]` sections — the CLI counterpart to the desktop app's
+        /// "Save as Example" button. If an unnamed example already exists
+        /// at the response's status, it's overwritten in place; otherwise
+        /// a new unnamed example is added alongside whatever's already
+        /// there. Applies to every request run, so running a directory
+        /// saves an example for each one.
         #[arg(long)]
         save_example: bool,
 
@@ -242,10 +244,12 @@ pub enum Command {
     /// Start a local mock server serving each request's example response.
     ///
     /// For every `.nova` request found under `path`, registers a route
-    /// matching its method and path. A request with a `[response]`
-    /// section serves that example verbatim; a request without one still
-    /// gets a route, but it always answers `501` explaining that no
-    /// example response is defined.
+    /// matching its method and path. A request with one or more
+    /// `[response <status> "name"]` sections serves an example verbatim —
+    /// by default the lowest-status one, or a specific one selected via
+    /// the `X-Nova-Mock-Example`/`X-Nova-Mock-Status` request headers; a
+    /// request without any still gets a route, but it always answers
+    /// `501` explaining that no example response is defined.
     Mock {
         #[arg(default_value = ".")]
         path: PathBuf,

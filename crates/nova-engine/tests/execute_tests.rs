@@ -84,7 +84,7 @@ fn executes_a_request_and_captures_the_response() {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
         sweep: None,
     };
 
@@ -115,7 +115,7 @@ fn captures_a_timing_breakdown_that_sums_to_the_total_elapsed_time() {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
         sweep: None,
     };
 
@@ -151,7 +151,7 @@ fn non_2xx_status_is_still_a_successful_response() {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
         sweep: None,
     };
 
@@ -210,7 +210,7 @@ fn sends_json_body_on_the_wire() {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
         sweep: None,
     };
 
@@ -239,7 +239,7 @@ fn sends_xml_body_on_the_wire() {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
         sweep: None,
     };
 
@@ -268,7 +268,7 @@ fn sends_graphql_body_as_a_json_envelope_on_the_wire() {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
         sweep: None,
     };
 
@@ -305,7 +305,7 @@ fn sends_graphql_body_with_default_empty_variables_when_none_declared() {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
         sweep: None,
     };
 
@@ -352,7 +352,7 @@ fn sends_multipart_body_with_boundary_on_the_wire() {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
         sweep: None,
     };
 
@@ -410,7 +410,7 @@ fn a_missing_multipart_file_attachment_is_a_typed_error() {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
         sweep: None,
     };
 
@@ -440,7 +440,7 @@ fn multipart_request(file_path: &str) -> ParsedRequest {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
         sweep: None,
     }
 }
@@ -521,7 +521,7 @@ fn a_missing_binary_body_file_is_a_typed_error() {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
         sweep: None,
     };
 
@@ -545,7 +545,7 @@ fn binary_request(file_path: &str) -> ParsedRequest {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
         sweep: None,
     }
 }
@@ -603,7 +603,7 @@ fn network_failure_is_a_typed_error() {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
         sweep: None,
     };
 

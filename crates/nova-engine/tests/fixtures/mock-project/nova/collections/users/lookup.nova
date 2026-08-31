@@ -1,0 +1,13 @@
+[request]
+method: GET
+url: {{base_url}}/users/{{user_id}}/lookup
+
+[response 200 "ok"]
+Content-Type: application/json
+
+{"id": "1", "name": "Ada"}
+
+[response 404 "not_found"]
+Content-Type: application/json
+
+{"error": "no such user"}

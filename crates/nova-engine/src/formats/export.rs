@@ -168,7 +168,7 @@ mod tests {
             assertions: Vec::new(),
             extractions: Vec::new(),
             script: None,
-            example_response: None,
+            example_responses: Vec::new(),
             sweep: None,
         }
     }

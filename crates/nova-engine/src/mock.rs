@@ -5,7 +5,7 @@ use serde::Serialize;
 use crate::error::NovaResult;
 use crate::project::collection::Collection;
 use crate::project::NovaProject;
-use crate::request::ExampleResponse;
+use crate::request::{select_example_response, ExampleResponse};
 
 /// One segment of a route's path pattern: either literal text or a
 /// `{{name}}` placeholder that matches any single path segment.
@@ -16,8 +16,10 @@ pub enum PathSegment {
 }
 
 /// A single route `nova mock` registers: one project request's method and
-/// path, plus the canned response to serve for it (if the request declared
-/// one via a `[response]` section in its `.nova` file).
+/// path, plus every canned response the request declared for it (via one
+/// or more `[response]` sections in its `.nova` file — see
+/// [`MockRoute::select_example`] for how one gets picked to actually
+/// serve).
 #[derive(Debug, Clone)]
 pub struct MockRoute {
     pub method: String,
@@ -26,10 +28,26 @@ pub struct MockRoute {
     /// The path broken into matchable segments; a `Param` segment matches
     /// any single incoming path segment.
     pub segments: Vec<PathSegment>,
-    pub example_response: Option<ExampleResponse>,
+    /// Every example response the request's `.nova` file declares, in file
+    /// order. Empty when the request has none at all (a `501` in the mock
+    /// server's response, since there's nothing to serve).
+    pub example_responses: Vec<ExampleResponse>,
     /// The `.nova` file this route was registered from, for diagnostics.
     pub source: PathBuf,
 }
+
+/// The header an incoming mock request sets to pick a specific example
+/// response by its `[response <status> "name"]` name, overriding the
+/// default lowest-status selection. Case-insensitive, like all HTTP header
+/// names; unrecognized/absent falls through to [`MOCK_STATUS_HEADER`],
+/// then the default. See [`MockRoute::select_example`].
+pub const MOCK_EXAMPLE_HEADER: &str = "X-Nova-Mock-Example";
+
+/// The header an incoming mock request sets to pick a specific example
+/// response by status code, overriding the default lowest-status
+/// selection. Takes effect only when [`MOCK_EXAMPLE_HEADER`] is absent or
+/// doesn't match any example's name. See [`MockRoute::select_example`].
+pub const MOCK_STATUS_HEADER: &str = "X-Nova-Mock-Status";
 
 impl MockRoute {
     /// Whether an incoming request's method and path match this route.
@@ -50,6 +68,33 @@ impl MockRoute {
                 PathSegment::Literal(literal) => literal == actual,
                 PathSegment::Param(_) => true,
             })
+    }
+
+    /// Pick which of this route's example responses `nova mock` should
+    /// serve for one incoming request.
+    ///
+    /// Default behavior — both overrides absent or unmatched — is to serve
+    /// the *lowest-status* example, so an ordinary request against a route
+    /// with a `200` and a `404` example gets the `200`. This keeps a
+    /// request against a route with exactly one (unnamed) example
+    /// behaving exactly as it always has.
+    ///
+    /// Two overrides, checked in this order:
+    /// 1. `example_name` (from the [`MOCK_EXAMPLE_HEADER`] header) — the
+    ///    first example whose `name` matches exactly.
+    /// 2. `status` (from the [`MOCK_STATUS_HEADER`] header) — the first
+    ///    example at that status code.
+    ///
+    /// If `example_name` is given but matches no example's name, this
+    /// falls through to `status`, then to the default, rather than
+    /// treating an unrecognized name as "serve nothing" — a typo in the
+    /// header shouldn't turn a working mock route into a `404`/`501`.
+    pub fn select_example(
+        &self,
+        example_name: Option<&str>,
+        status: Option<u16>,
+    ) -> Option<&ExampleResponse> {
+        select_example_response(&self.example_responses, example_name, status)
     }
 }
 
@@ -118,7 +163,7 @@ fn collect_routes(collection: &Collection, routes: &mut Vec<MockRoute>) -> NovaR
             method: parsed.method,
             path,
             segments,
-            example_response: parsed.example_response,
+            example_responses: parsed.example_responses,
             source: request_file.path.clone(),
         });
     }
@@ -198,7 +243,7 @@ mod tests {
                 PathSegment::Literal("users".to_string()),
                 PathSegment::Param("user_id".to_string()),
             ],
-            example_response: None,
+            example_responses: Vec::new(),
             source: PathBuf::new(),
         };
 
@@ -207,5 +252,76 @@ mod tests {
         assert!(!route.matches("POST", "/users/42"));
         assert!(!route.matches("GET", "/users"));
         assert!(!route.matches("GET", "/users/42/extra"));
+    }
+
+    fn example(status: u16, name: Option<&str>) -> ExampleResponse {
+        ExampleResponse {
+            status,
+            name: name.map(str::to_string),
+            headers: Vec::new(),
+            body: String::new(),
+        }
+    }
+
+    fn a_route(example_responses: Vec<ExampleResponse>) -> MockRoute {
+        MockRoute {
+            method: "GET".to_string(),
+            path: "/users".to_string(),
+            segments: vec![PathSegment::Literal("users".to_string())],
+            example_responses,
+            source: PathBuf::new(),
+        }
+    }
+
+    #[test]
+    fn select_example_defaults_to_the_lowest_status() {
+        let route = a_route(vec![example(404, Some("not_found")), example(200, None)]);
+        assert_eq!(route.select_example(None, None).unwrap().status, 200);
+    }
+
+    #[test]
+    fn select_example_with_a_single_unnamed_example_matches_todays_behavior() {
+        let route = a_route(vec![example(201, None)]);
+        assert_eq!(route.select_example(None, None).unwrap().status, 201);
+    }
+
+    #[test]
+    fn select_example_by_name_overrides_the_default() {
+        let route = a_route(vec![example(200, None), example(404, Some("not_found"))]);
+        let selected = route.select_example(Some("not_found"), None).unwrap();
+        assert_eq!(selected.status, 404);
+    }
+
+    #[test]
+    fn select_example_by_status_overrides_the_default() {
+        let route = a_route(vec![
+            example(200, None),
+            example(404, Some("not_found")),
+            example(500, Some("server_error")),
+        ]);
+        let selected = route.select_example(None, Some(500)).unwrap();
+        assert_eq!(selected.status, 500);
+    }
+
+    #[test]
+    fn select_example_by_name_takes_priority_over_status() {
+        let route = a_route(vec![example(200, None), example(404, Some("not_found"))]);
+        let selected = route.select_example(Some("not_found"), Some(200)).unwrap();
+        assert_eq!(selected.status, 404);
+    }
+
+    #[test]
+    fn select_example_falls_back_to_status_when_the_name_does_not_match() {
+        let route = a_route(vec![example(200, None), example(404, Some("not_found"))]);
+        let selected = route
+            .select_example(Some("no_such_example"), Some(404))
+            .unwrap();
+        assert_eq!(selected.status, 404);
+    }
+
+    #[test]
+    fn select_example_returns_none_with_no_examples() {
+        let route = a_route(Vec::new());
+        assert!(route.select_example(Some("anything"), Some(200)).is_none());
     }
 }

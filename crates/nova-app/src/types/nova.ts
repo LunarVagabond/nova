@@ -269,9 +269,9 @@ export interface GraphQlSchema {
  * preserved — extractions are always re-emitted before assertions on
  * save, same as a malformed line is rejected at save time, not silently
  * dropped). `script_pre`/`script_post` are the `[script]` section's
- * `pre:`/`post:` names. `has_example_response` isn't editable here — it
- * just lets the GUI say a file also has one; saving always preserves it
- * unchanged.
+ * `pre:`/`post:` names. `has_example_response`/`example_responses` aren't
+ * editable here — they just let the GUI say what example responses the
+ * file already has; saving always preserves them unchanged.
  */
 export interface RequestDraft {
   method: string;
@@ -290,6 +290,23 @@ export interface RequestDraft {
   script_pre: string | null;
   script_post: string | null;
   has_example_response: boolean;
+  /**
+   * Every example response the file declares, summarized for the response
+   * pane's example picker — empty when there are none, a single entry for
+   * a classic one-example file. See {@link ExampleResponseSummary}.
+   */
+  example_responses: ExampleResponseSummary[];
+}
+
+/**
+ * Mirrors `nova_engine::ExampleResponseSummary` — enough to label one entry
+ * in the response pane's example picker (e.g. "200 OK" or "404
+ * not_found") without shipping every example's full headers/body just to
+ * populate a dropdown.
+ */
+export interface ExampleResponseSummary {
+  status: number;
+  name: string | null;
 }
 
 /**

@@ -638,6 +638,7 @@ mod tests {
     fn comparable_response_from_example_response_carries_status_headers_and_body() {
         let example = ExampleResponse {
             status: 201,
+            name: None,
             headers: vec![Header {
                 name: "Location".to_string(),
                 value: "/things/1".to_string(),

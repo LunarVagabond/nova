@@ -58,6 +58,7 @@ pub fn request(
             script_pre: None,
             script_post: None,
             has_example_response: false,
+            example_responses: vec![],
         };
         created.write(&draft).map_err(|e| e.to_string())?;
     }

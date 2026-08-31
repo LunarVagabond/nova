@@ -73,7 +73,9 @@ pub use git::remote::{git_fetch, git_pull, git_push};
 pub use git::status::{
     git_repository_root, git_status, GitFileStatus, GitStatusCache, GIT_STATUS_CACHE_TTL,
 };
-pub use mock::{mock_routes, MockCallLogEntry, MockRoute, PathSegment};
+pub use mock::{
+    mock_routes, MockCallLogEntry, MockRoute, PathSegment, MOCK_EXAMPLE_HEADER, MOCK_STATUS_HEADER,
+};
 pub use project::collection::{
     create_collection, delete_collection, rename_collection, Collection,
 };
@@ -95,9 +97,10 @@ pub use project::validate::{validate, ValidationIssue};
 pub use project::{discover_or_not_found, NovaProject, OpenProjectOutcome, MANIFEST_FILE_NAME};
 pub use request::{
     delete_request, duplicate_request, graphql_body_to_text, multipart_fields_to_body_text,
-    parse_graphql_body, parse_multipart_fields, rename_request, ExampleResponse, GraphQlBody,
-    Header, MultipartField, ParsedRequest, ParsedSseRequest, ParsedWebSocketRequest, QueryParam,
-    RequestBody, RequestDraft, RequestFile, WebSocketDraft, WebSocketMessage,
+    parse_graphql_body, parse_multipart_fields, rename_request, select_example_response,
+    ExampleResponse, ExampleResponseSummary, GraphQlBody, Header, MultipartField, ParsedRequest,
+    ParsedSseRequest, ParsedWebSocketRequest, QueryParam, RequestBody, RequestDraft, RequestFile,
+    WebSocketDraft, WebSocketMessage,
 };
 pub use session::{CookieView, HistoryEntry, Session, HISTORY_CAP};
 pub use xml::{XmlElement, XmlNode};

@@ -199,11 +199,65 @@ impl RequestBody {
 /// `[response <status>]` section — a fixture the request's author wrote
 /// down, not one produced by actually executing the request. This is the
 /// "canned response" `nova mock` serves for the request.
+///
+/// A request file can declare more than one of these (see
+/// [`ParsedRequest::example_responses`]) — a success case and a not-found
+/// case for the same endpoint, say — distinguished by `status` and/or an
+/// optional `name` (`[response 404 "not_found"]`). `nova mock` defaults to
+/// serving the lowest-status example, but an incoming mock request can
+/// override that via the `X-Nova-Mock-Example`/`X-Nova-Mock-Status`
+/// headers — see [`crate::mock::MockRoute::select_example`].
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ExampleResponse {
     pub status: u16,
+    /// The optional `"name"` marker from `[response <status> "name"]`,
+    /// used to tell apart multiple examples at the same status and to
+    /// select one by name (`X-Nova-Mock-Example`). `None` for an ordinary
+    /// unnamed `[response <status>]` section — the common case, and the
+    /// only shape every `.nova` file written before this existed used.
+    pub name: Option<String>,
     pub headers: Vec<Header>,
     pub body: String,
+}
+
+/// A summary of one [`ExampleResponse`] — just enough to label a GUI
+/// picker entry (e.g. "200 OK" or "404 not_found") without shipping every
+/// example's full headers/body across the Tauri boundary for every
+/// request opened in the panel. See [`RequestDraft::example_responses`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExampleResponseSummary {
+    pub status: u16,
+    pub name: Option<String>,
+}
+
+/// Pick one example from `examples` by name and/or status, falling back to
+/// the lowest-status example when neither is given or neither matches —
+/// the same selection rule `nova mock` applies (see
+/// [`crate::mock::MockRoute::select_example`], which delegates here) and
+/// that `nova-app`'s response pane uses to resolve which example a picker
+/// selection refers to for its "vs Saved Example" diff.
+///
+/// `name` takes priority over `status`: a request that supplies both gets
+/// matched by name first, and only falls through to `status` (then to the
+/// default) if no example has that name.
+pub fn select_example_response<'a>(
+    examples: &'a [ExampleResponse],
+    name: Option<&str>,
+    status: Option<u16>,
+) -> Option<&'a ExampleResponse> {
+    if let Some(name) = name {
+        if let Some(found) = examples.iter().find(|e| e.name.as_deref() == Some(name)) {
+            return Some(found);
+        }
+    }
+
+    if let Some(status) = status {
+        if let Some(found) = examples.iter().find(|e| e.status == status) {
+            return Some(found);
+        }
+    }
+
+    examples.iter().min_by_key(|e| e.status)
 }
 
 /// A `.nova` file parsed into its method, URL, query params, headers, body,
@@ -255,7 +309,12 @@ pub struct ParsedRequest {
     /// execution.
     pub script: Option<crate::execution::script::ScriptSection>,
 
-    pub example_response: Option<ExampleResponse>,
+    /// Every `[response <status>]`/`[response <status> "name"]` section the
+    /// file declares, in file order. Empty for the (still overwhelmingly
+    /// common) request with no example response at all; a single entry for
+    /// the "classic" one-example file. See [`ExampleResponse`] for how
+    /// `nova mock` picks among more than one.
+    pub example_responses: Vec<ExampleResponse>,
 
     /// The request's `[sweep]` section, if any — names one position in
     /// this request (a query param, a header, or a JSON body field) and a
@@ -318,6 +377,14 @@ pub struct RequestDraft {
 
     #[serde(default)]
     pub has_example_response: bool,
+
+    /// Every example response the file declares, summarized for a GUI
+    /// picker — empty when there are none, a single entry for the classic
+    /// one-example file. Not editable through the draft (same as
+    /// `has_example_response`): selecting one only changes what the
+    /// response pane previews, it never mutates the file.
+    #[serde(default)]
+    pub example_responses: Vec<ExampleResponseSummary>,
 }
 
 fn default_sync_content_type() -> bool {
@@ -353,7 +420,15 @@ impl ParsedRequest {
             assert_text: assert_text(&self.assertions, &self.extractions),
             script_pre: self.script.as_ref().and_then(|s| s.pre.clone()),
             script_post: self.script.as_ref().and_then(|s| s.post.clone()),
-            has_example_response: self.example_response.is_some(),
+            has_example_response: !self.example_responses.is_empty(),
+            example_responses: self
+                .example_responses
+                .iter()
+                .map(|r| ExampleResponseSummary {
+                    status: r.status,
+                    name: r.name.clone(),
+                })
+                .collect(),
         })
     }
 

@@ -182,17 +182,27 @@ explorer rather than an empty tree.
 
 The response pane's Diff tab compares a request's most recent send against
 either the send immediately before it in this project's session history
-("vs Previous Run") or the request's own hand-written `[response]` example
-("vs Saved Example", shown only when the request file has one). The
-comparison itself — status/header/body changes, with a structural,
-path-addressed diff for JSON bodies and a line-based diff otherwise — is
-computed in `nova-engine`'s `diff` module (`diff_responses`), reached via
-the `diff_against_previous_run`/`diff_against_example_response` Tauri
-commands; the GUI only renders the resulting `ResponseDiff`. Since a
+("vs Previous Run") or one of the request's own hand-written `[response]`
+examples ("vs Saved Example", shown only when the request file has at least
+one). The comparison itself — status/header/body changes, with a
+structural, path-addressed diff for JSON bodies and a line-based diff
+otherwise — is computed in `nova-engine`'s `diff` module (`diff_responses`),
+reached via the `diff_against_previous_run`/`diff_against_example_response`
+Tauri commands; the GUI only renders the resulting `ResponseDiff`. Since a
 `HistoryEntry` doesn't carry the `.nova` path it came from, "the same
 request" is identified by matching method and fully-resolved URL rather
 than the source file — see `resolved_identity` in `commands.rs` for the
 documented edge cases this trades off.
+
+A request file can declare more than one example response (#149 — see the
+`.nova` file format's `[response <status> "name"]` section). When it has
+more than one, a small dropdown appears next to "vs Saved Example" listing
+each one by status and name (e.g. "200" / "404 not_found"), plus a
+"Default" entry describing whichever example `nova mock` would serve by
+default (its lowest-status one). Picking an entry re-runs the diff against
+that specific example; the dropdown stays hidden for the common case of
+zero or one example, so a classic single-example file's Diff tab looks
+exactly as it always has.
 
 ### The Changes panel
 

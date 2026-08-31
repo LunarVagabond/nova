@@ -64,7 +64,7 @@ fn writes_edited_fields_back_to_disk_and_preserves_the_example_response() {
     let create = users.requests.iter().find(|r| r.name == "create").unwrap();
 
     let before = create.parse().unwrap();
-    assert!(before.example_response.is_some());
+    assert!(!before.example_responses.is_empty());
 
     let mut draft = before.to_draft().unwrap();
     draft.method = "POST".to_string();
@@ -95,7 +95,7 @@ fn writes_edited_fields_back_to_disk_and_preserves_the_example_response() {
     );
     // The `[response 201]` section wasn't touched by this edit and must
     // survive the save untouched.
-    assert_eq!(after.example_response, before.example_response);
+    assert_eq!(after.example_responses, before.example_responses);
 }
 
 #[test]

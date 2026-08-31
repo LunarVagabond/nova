@@ -19,6 +19,7 @@ import {
 } from "../api/nova";
 import type {
   AuthScheme,
+  ExampleResponseSummary,
   ExportFormat,
   GraphQlBody,
   GraphQlSchema,
@@ -341,15 +342,53 @@ const diffLoading = ref(false);
 const diffError = ref<string | null>(null);
 const hasExampleResponse = computed(() => original.value?.has_example_response ?? false);
 
+// A request can declare more than one example response (#149); the picker
+// only appears once there's more than one to choose from, matching
+// `nova mock`'s own default of "just serve the one example" when that's
+// all a file has. `null` means "use the default" — the same lowest-status
+// example `nova mock` falls back to — rather than forcing a selection.
+const exampleResponses = computed<ExampleResponseSummary[]>(() => original.value?.example_responses ?? []);
+const hasMultipleExampleResponses = computed(() => exampleResponses.value.length > 1);
+const selectedExampleKey = ref<string | null>(null);
+
+function exampleKey(example: ExampleResponseSummary): string {
+  return `${example.status} ${example.name ?? ""}`;
+}
+
+function exampleLabel(example: ExampleResponseSummary): string {
+  return example.name ? `${example.status} ${example.name}` : `${example.status}`;
+}
+
+// Mirrors the engine's default selection (`select_example_response`'s
+// fallback) — the lowest-status example — so the picker's "Default" entry
+// describes what actually gets diffed against when nothing is selected.
+const defaultExample = computed<ExampleResponseSummary | null>(() => {
+  if (exampleResponses.value.length === 0) return null;
+  return exampleResponses.value.reduce((lowest, e) => (e.status < lowest.status ? e : lowest));
+});
+
+watch(exampleResponses, (examples) => {
+  if (!examples.some((e) => exampleKey(e) === selectedExampleKey.value)) {
+    selectedExampleKey.value = null;
+  }
+});
+
 async function loadDiff() {
   diffLoading.value = true;
   diffError.value = null;
   diffResult.value = null;
   try {
-    diffResult.value =
-      diffMode.value === "previous"
-        ? await diffAgainstPreviousRun(props.request.path, props.selectedEnvironment)
-        : await diffAgainstExampleResponse(props.request.path, props.selectedEnvironment);
+    if (diffMode.value === "previous") {
+      diffResult.value = await diffAgainstPreviousRun(props.request.path, props.selectedEnvironment);
+    } else {
+      const selected = exampleResponses.value.find((e) => exampleKey(e) === selectedExampleKey.value);
+      diffResult.value = await diffAgainstExampleResponse(
+        props.request.path,
+        props.selectedEnvironment,
+        selected?.name ?? null,
+        selected?.status ?? null,
+      );
+    }
   } catch (e) {
     diffError.value = String(e);
   } finally {
@@ -357,7 +396,7 @@ async function loadDiff() {
   }
 }
 
-watch([activeResponseTab, diffMode], ([tab]) => {
+watch([activeResponseTab, diffMode, selectedExampleKey], ([tab]) => {
   if (tab === "diff") loadDiff();
 });
 
@@ -1360,6 +1399,19 @@ defineExpose({ dirty, save: handleSave });
             >
               vs Saved Example
             </button>
+            <select
+              v-if="diffMode === 'example' && hasMultipleExampleResponses"
+              v-model="selectedExampleKey"
+              class="response-diff__example-select"
+              title="Which saved example to diff against"
+            >
+              <option :value="null">
+                Default{{ defaultExample ? ` (${exampleLabel(defaultExample)})` : "" }}
+              </option>
+              <option v-for="example in exampleResponses" :key="exampleKey(example)" :value="exampleKey(example)">
+                {{ exampleLabel(example) }}
+              </option>
+            </select>
           </div>
 
           <p v-if="diffLoading" class="response-pane__hint">Loading diff…</p>

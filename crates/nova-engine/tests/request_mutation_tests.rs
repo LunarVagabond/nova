@@ -262,7 +262,7 @@ fn save_example_response_writes_a_response_section() {
     let request_file = a_request_file(&temp.0);
     let original = request_file.parse().unwrap();
     assert!(
-        original.example_response.is_none(),
+        original.example_responses.is_empty(),
         "fixture request shouldn't start with an example response"
     );
 
@@ -283,8 +283,10 @@ fn save_example_response_writes_a_response_section() {
     save_example_response(&request_file, &response).unwrap();
 
     let reparsed = request_file.parse().unwrap();
-    let example = reparsed.example_response.unwrap();
+    assert_eq!(reparsed.example_responses.len(), 1);
+    let example = &reparsed.example_responses[0];
     assert_eq!(example.status, 201);
+    assert_eq!(example.name, None);
     assert_eq!(
         example.headers,
         vec![Header {
@@ -300,8 +302,53 @@ fn save_example_response_writes_a_response_section() {
 }
 
 #[test]
-fn save_example_response_replaces_an_existing_example() {
+fn save_example_response_replaces_an_existing_unnamed_example_at_the_same_status() {
     let temp = TempDir::new("save-example-response-replace");
+    copy_dir_recursive(&fixture("basic-project"), &temp.0);
+    let request_file = a_request_file(&temp.0);
+
+    save_example_response(
+        &request_file,
+        &Response {
+            status: 200,
+            headers: Vec::new(),
+            body: "old".to_string(),
+            elapsed_ms: 1,
+            timing: ResponseTiming {
+                time_to_first_byte_ms: 1,
+                content_download_ms: 0,
+            },
+        },
+    )
+    .unwrap();
+
+    save_example_response(
+        &request_file,
+        &Response {
+            status: 200,
+            headers: Vec::new(),
+            body: "new".to_string(),
+            elapsed_ms: 1,
+            timing: ResponseTiming {
+                time_to_first_byte_ms: 1,
+                content_download_ms: 0,
+            },
+        },
+    )
+    .unwrap();
+
+    let reparsed = request_file.parse().unwrap();
+    // Same status overwrites the existing unnamed example in place rather
+    // than growing the set — this is what keeps a classic single-example
+    // file behaving exactly as before.
+    assert_eq!(reparsed.example_responses.len(), 1);
+    assert_eq!(reparsed.example_responses[0].status, 200);
+    assert_eq!(reparsed.example_responses[0].body, "new");
+}
+
+#[test]
+fn save_example_response_adds_a_new_example_for_a_different_status() {
+    let temp = TempDir::new("save-example-response-add");
     copy_dir_recursive(&fixture("basic-project"), &temp.0);
     let request_file = a_request_file(&temp.0);
 
@@ -336,9 +383,12 @@ fn save_example_response_replaces_an_existing_example() {
     .unwrap();
 
     let reparsed = request_file.parse().unwrap();
-    let example = reparsed.example_response.unwrap();
-    assert_eq!(example.status, 200);
-    assert_eq!(example.body, "new");
+    // Different statuses accumulate rather than clobbering each other.
+    assert_eq!(reparsed.example_responses.len(), 2);
+    assert_eq!(reparsed.example_responses[0].status, 500);
+    assert_eq!(reparsed.example_responses[0].body, "old");
+    assert_eq!(reparsed.example_responses[1].status, 200);
+    assert_eq!(reparsed.example_responses[1].body, "new");
 }
 
 #[test]

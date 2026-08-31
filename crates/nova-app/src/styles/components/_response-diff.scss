@@ -139,6 +139,19 @@
 
 .response-diff__toggle {
   display: flex;
+  align-items: center;
   gap: $spacing-xs;
   margin-bottom: $spacing-sm;
+}
+
+// The example picker (#149) that appears next to the toggle once a
+// request has more than one saved example response to diff against.
+.response-diff__example-select {
+  height: $control-height;
+  padding: 0 $spacing-sm;
+  border-radius: $radius-sm;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-raised);
+  color: var(--color-text);
+  font-size: $font-size-sm;
 }

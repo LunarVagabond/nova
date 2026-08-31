@@ -11,6 +11,12 @@
 //! `commands/mock.rs` rather than sharing it — pulling an HTTP server
 //! implementation into `nova-engine` itself would cross the boundary this
 //! codebase deliberately keeps engine logic free of I/O frameworks.
+//!
+//! A route with more than one example response (see
+//! `nova_engine::mock::MockRoute::select_example`) serves its lowest-status
+//! example by default; an incoming request can ask for a specific one via
+//! the `X-Nova-Mock-Example`/`X-Nova-Mock-Status` headers (see
+//! [`MOCK_EXAMPLE_HEADER`]/[`MOCK_STATUS_HEADER`]).
 
 use std::collections::VecDeque;
 use std::io::Cursor;
@@ -23,7 +29,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use nova_engine::{mock_routes, MockCallLogEntry, MockRoute, NovaProject};
+use nova_engine::{
+    mock_routes, MockCallLogEntry, MockRoute, NovaProject, MOCK_EXAMPLE_HEADER, MOCK_STATUS_HEADER,
+};
 
 /// Same defaults `nova mock` binds to (see `nova-cli`'s `Mock` subcommand
 /// in `cli.rs`) — kept in sync deliberately so the toggle's "just start
@@ -180,6 +188,16 @@ fn spawn_serving_thread(
     })
 }
 
+/// Case-insensitive header lookup on an incoming `tiny_http::Request` —
+/// mirrors `nova-cli`'s `commands/mock.rs` helper of the same shape.
+fn header_value<'a>(request: &'a tiny_http::Request, name: &str) -> Option<&'a str> {
+    request
+        .headers()
+        .iter()
+        .find(|h| h.field.as_str().as_str().eq_ignore_ascii_case(name))
+        .map(|h| h.value.as_str())
+}
+
 fn handle_request(
     request: tiny_http::Request,
     routes: &[MockRoute],
@@ -189,9 +207,17 @@ fn handle_request(
     let method = request.method().to_string();
     let full_path = request.url().to_string();
     let path = full_path.split('?').next().unwrap_or("/").to_string();
+    let example_name = header_value(&request, MOCK_EXAMPLE_HEADER).map(str::to_string);
+    let status_override = header_value(&request, MOCK_STATUS_HEADER).and_then(|v| v.parse().ok());
 
     let matched = routes.iter().find(|route| route.matches(&method, &path));
-    let response = build_response(matched, &method, &path);
+    let response = build_response(
+        matched,
+        &method,
+        &path,
+        example_name.as_deref(),
+        status_override,
+    );
     let status = response.status_code().0;
 
     let entry = MockCallLogEntry {
@@ -222,6 +248,8 @@ fn build_response(
     matched: Option<&MockRoute>,
     method: &str,
     path: &str,
+    example_name: Option<&str>,
+    status_override: Option<u16>,
 ) -> tiny_http::Response<Cursor<Vec<u8>>> {
     let Some(route) = matched else {
         return tiny_http::Response::from_string(format!(
@@ -230,7 +258,7 @@ fn build_response(
         .with_status_code(404);
     };
 
-    let Some(example) = &route.example_response else {
+    let Some(example) = route.select_example(example_name, status_override) else {
         return tiny_http::Response::from_string(format!(
             "no example response defined for {} {} — add a \"[response]\" section to {}\n",
             route.method,

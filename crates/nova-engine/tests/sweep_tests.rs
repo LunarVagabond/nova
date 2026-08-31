@@ -38,7 +38,7 @@ fn get_request(url: String, query: Vec<QueryParam>) -> ParsedRequest {
         assertions: vec![],
         extractions: vec![],
         script: None,
-        example_response: None,
+        example_responses: Vec::new(),
         sweep: None,
     }
 }

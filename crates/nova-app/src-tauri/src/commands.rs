@@ -747,6 +747,13 @@ pub fn diff_against_previous_run(
 /// against its own hand-written `[response]` example, if it has one — "did
 /// this response drift from the example documented in the file".
 ///
+/// A request can now declare more than one example (see
+/// `nova_engine::ExampleResponse`); `example_name`/`example_status` let the
+/// response pane's example picker say which one to diff against, with the
+/// same fall-through precedence `nova mock`'s override headers use (see
+/// `nova_engine::select_example_response`) — name first, then status, then
+/// the lowest-status example when neither is given or neither matches.
+///
 /// `Ok(None)` (not an error) when the request has no `[response]` example,
 /// or hasn't been sent yet this session — nothing to compare the example
 /// against.
@@ -754,13 +761,19 @@ pub fn diff_against_previous_run(
 pub fn diff_against_example_response(
     request_path: String,
     environment: Option<String>,
+    example_name: Option<String>,
+    example_status: Option<u16>,
     sessions: tauri::State<SessionStore>,
 ) -> Result<Option<ResponseDiff>, String> {
     let path = std::path::Path::new(&request_path);
     let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
     let (parsed, method, full_url) = resolved_identity(&project, path, environment)?;
 
-    let Some(example) = parsed.example_response.as_ref() else {
+    let Some(example) = nova_engine::select_example_response(
+        &parsed.example_responses,
+        example_name.as_deref(),
+        example_status,
+    ) else {
         return Ok(None);
     };
     let before = ComparableResponse::from(example);
