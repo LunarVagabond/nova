@@ -71,7 +71,8 @@
 
 .response-diff__section-title {
   margin: 0 0 $spacing-sm;
-  font-size: $font-size-xs;
+  font-size: $type-small-size;
+  line-height: $type-small-line;
   font-weight: 600;
   color: var(--color-text-muted);
   text-transform: uppercase;

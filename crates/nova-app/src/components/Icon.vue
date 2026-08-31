@@ -8,6 +8,7 @@ const props = defineProps<{
   name:
     | "chevron-down"
     | "folder"
+    | "folder-open"
     | "folder-plus"
     | "file-plus"
     | "pencil"
@@ -60,6 +61,11 @@ const props = defineProps<{
       v-else-if="name === 'folder'"
       d="M3 6.5a1 1 0 0 1 1-1h4.5l2 2H20a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"
     />
+
+    <template v-else-if="name === 'folder-open'">
+      <path d="M3 7V6.5a1 1 0 0 1 1-1h4.5l2 2H20a1 1 0 0 1 1 1V9" />
+      <path d="M1.5 9h19.9l-2.1 8.2a1 1 0 0 1-1 .8H4.6a1 1 0 0 1-1-.8z" />
+    </template>
 
     <template v-else-if="name === 'folder-plus'">
       <path d="M3 6.5a1 1 0 0 1 1-1h4.5l2 2H20a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" />

@@ -16,7 +16,7 @@
   border: 1px solid var(--color-border);
   border-radius: $radius-lg;
   padding: $spacing-lg;
-  box-shadow: var(--shadow-popover);
+  box-shadow: var(--shadow-raised-3);
 }
 
 /// Wider variant for content that doesn't fit the default 28rem width —
@@ -34,8 +34,9 @@
 
 .modal__title {
   margin: 0 0 $spacing-md;
-  font-size: $font-size-md;
-  font-weight: 600;
+  font-size: $type-h3-size;
+  line-height: $type-h3-line;
+  font-weight: $type-h3-weight;
   color: var(--color-text);
 }
 

@@ -8,10 +8,15 @@ $spacing-smd: 0.75rem; // 12px
 $spacing-md: 1rem; // 16px
 $spacing-lg: 1.5rem; // 24px
 $spacing-xl: 2rem; // 32px
+$spacing-2xl: 2.5rem; // 40px
+$spacing-3xl: 4rem; // 64px
 
+$radius-xs: 2px;
 $radius-sm: 4px;
 $radius-md: 6px;
-$radius-lg: 8px;
+$radius-lg: 12px;
+$radius-xl: 16px;
+$radius-2xl: 24px;
 
 $font-family-base: Inter, Avenir, Helvetica, Arial, sans-serif;
 $font-family-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
@@ -24,6 +29,40 @@ $font-size-sm: 0.8125rem;
 $font-size-base: 0.875rem;
 $font-size-md: 1rem;
 $font-size-lg: 1.125rem;
+
+// A real type scale for headings/empty-state copy/section titles, matching
+// the design system's Display/H1/H2/H3/Body/Small/Caption/Mono steps —
+// layered on top of the sizes above rather than replacing them, since
+// $font-size-base/md/etc. are already load-bearing across every component
+// partial. H3/Body/Small/Mono reuse an existing size where the two scales
+// land on the same value; Display/H1/H2/Caption are genuinely new steps.
+$type-display-size: 2rem; // 32px
+$type-display-line: 2.5rem; // 40px
+$type-display-weight: 700;
+
+$type-h1-size: 1.5rem; // 24px
+$type-h1-line: 2rem; // 32px
+$type-h1-weight: 700;
+
+$type-h2-size: 1.25rem; // 20px
+$type-h2-line: 1.75rem; // 28px
+$type-h2-weight: 600;
+
+$type-h3-size: $font-size-md; // 16px
+$type-h3-line: 1.5rem; // 24px
+$type-h3-weight: 600;
+
+$type-body-size: $font-size-base; // 14px
+$type-body-line: 1.25rem; // 20px
+
+$type-small-size: $font-size-xs; // 12px
+$type-small-line: 1rem; // 16px
+
+$type-caption-size: 0.6875rem; // 11px
+$type-caption-line: 0.875rem; // 14px
+
+$type-mono-size: $font-size-sm; // 13px
+$type-mono-line: 1.125rem; // 18px
 
 $sidebar-width: 252px;
 $sidebar-min-width: 32px;

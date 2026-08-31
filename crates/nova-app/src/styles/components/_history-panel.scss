@@ -32,8 +32,9 @@
 
 .history-panel__title {
   margin: 0;
-  font-size: $font-size-md;
-  font-weight: 600;
+  font-size: $type-h3-size;
+  line-height: $type-h3-line;
+  font-weight: $type-h3-weight;
 }
 
 .history-panel__entries {
@@ -101,6 +102,7 @@
 .history-panel__section-title {
   margin: 0 0 $spacing-sm;
   font-size: $font-size-sm;
+  line-height: $type-small-line;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.02em;

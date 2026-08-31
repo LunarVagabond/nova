@@ -5,6 +5,8 @@
 import { reactive } from "vue";
 
 import Icon from "./Icon.vue";
+import VariableAwareInput from "./VariableAwareInput.vue";
+import type { ResolvedVariables } from "../types/nova";
 
 // `secret` only means anything when `mode` is `"variables"` — an
 // environment variable flagged secret gets its value masked behind a
@@ -37,6 +39,13 @@ const props = defineProps<{
   namePlaceholder?: string;
   valuePlaceholder?: string;
   mode?: "headers" | "params" | "variables";
+  /**
+   * This request's resolved `{{variable}}` values, for the value column's
+   * hover tooltips — irrelevant (and not passed) when `mode` is
+   * `"variables"`, since there the values themselves *are* the definitions
+   * rather than a place a placeholder gets used.
+   */
+  resolved?: ResolvedVariables | null;
 }>();
 
 const emit = defineEmits<{
@@ -92,11 +101,20 @@ function toggleRevealed(index: number) {
         @input="update(index, 'name', ($event.target as HTMLInputElement).value)"
       />
       <input
+        v-if="mode === 'variables'"
         class="kv-editor__input"
-        :type="mode === 'variables' && row.secret && !revealed[index] ? 'password' : 'text'"
+        :type="row.secret && !revealed[index] ? 'password' : 'text'"
         :placeholder="valuePlaceholder ?? 'Value'"
         :value="row.value"
         @input="update(index, 'value', ($event.target as HTMLInputElement).value)"
+      />
+      <VariableAwareInput
+        v-else
+        class="kv-editor__input"
+        :placeholder="valuePlaceholder ?? 'Value'"
+        :model-value="row.value"
+        :resolved="resolved"
+        @update:model-value="update(index, 'value', $event)"
       />
       <button
         v-if="mode === 'variables' && row.secret"

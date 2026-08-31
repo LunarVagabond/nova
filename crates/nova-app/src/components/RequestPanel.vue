@@ -65,6 +65,7 @@ import KeyValueEditor from "./KeyValueEditor.vue";
 import MultipartEditor from "./MultipartEditor.vue";
 import ResponseDiffView from "./ResponseDiffView.vue";
 import ResponseTimelineView from "./ResponseTimelineView.vue";
+import VariableAwareInput from "./VariableAwareInput.vue";
 import { useResizablePane } from "../composables/useResizablePane";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
@@ -631,17 +632,19 @@ async function loadResolvedVariables() {
 
 function toggleVariablesDrawer() {
   variablesDrawerOpen.value = !variablesDrawerOpen.value;
-  if (variablesDrawerOpen.value) loadResolvedVariables();
 }
 
-// Keep the drawer's contents current with whichever request/environment is
-// active while it's open, rather than only refreshing on the next manual
-// toggle — `environmentsVersion` covers an edit made in EnvironmentPanel
-// (e.g. adding a variable) landing here live, without the name of the
-// active environment itself having changed.
-watch([() => props.request.path, () => props.selectedEnvironment, () => props.environmentsVersion], () => {
-  if (variablesDrawerOpen.value) loadResolvedVariables();
-});
+// Kept loaded eagerly (not just while the drawer is open) since the
+// URL/header/param fields' `{{variable}}` hover tooltips need a resolved
+// value available even when nobody has opened the drawer —
+// `environmentsVersion` covers an edit made in EnvironmentPanel (e.g.
+// adding a variable) landing here live, without the name of the active
+// environment itself having changed.
+watch(
+  [() => props.request.path, () => props.selectedEnvironment, () => props.environmentsVersion],
+  () => loadResolvedVariables(),
+  { immediate: true },
+);
 
 // "Copy as…" (#152): render this request, resolved the same way Send
 // would resolve it, as a curl command or fetch() snippet, then copy it to
@@ -1119,11 +1122,11 @@ defineExpose({ dirty, save: handleSave });
         <select v-model="method" class="request-panel__method-select">
           <option v-for="m in HTTP_METHODS" :key="m" :value="m">{{ m }}</option>
         </select>
-        <input
+        <VariableAwareInput
           v-model="urlDisplay"
-          type="text"
           class="request-panel__url-input"
           placeholder="{{base_url}}/path"
+          :resolved="resolvedVariables"
           @paste="handleUrlPaste"
           @keydown.enter="handleSend"
         />
@@ -1265,7 +1268,13 @@ defineExpose({ dirty, save: handleSave });
       </div>
 
       <div v-else-if="activeTab === 'headers'" class="request-panel__tab-panel">
-        <KeyValueEditor v-model="headers" name-placeholder="Header" value-placeholder="Value" mode="headers" />
+        <KeyValueEditor
+          v-model="headers"
+          name-placeholder="Header"
+          value-placeholder="Value"
+          mode="headers"
+          :resolved="resolvedVariables"
+        />
         <p class="request-panel__hint-text">
           Sent on every request, in addition to whatever's set above (only overridden if you set
           the same name yourself): <code>Host: &lt;from the URL&gt;</code>,
@@ -1275,7 +1284,12 @@ defineExpose({ dirty, save: handleSave });
       </div>
 
       <div v-else-if="activeTab === 'params'" class="request-panel__tab-panel">
-        <KeyValueEditor v-model="query" name-placeholder="param" value-placeholder="value" />
+        <KeyValueEditor
+          v-model="query"
+          name-placeholder="param"
+          value-placeholder="value"
+          :resolved="resolvedVariables"
+        />
       </div>
 
       <div v-else-if="activeTab === 'body'" class="request-panel__tab-panel">
@@ -1317,6 +1331,7 @@ defineExpose({ dirty, save: handleSave });
           v-model="formFields"
           name-placeholder="key"
           value-placeholder="value"
+          :resolved="resolvedVariables"
         />
         <template v-else-if="bodyType === 'multipart'">
           <p v-if="multipartParseError" class="request-panel__save-error">
@@ -1340,16 +1355,21 @@ defineExpose({ dirty, save: handleSave });
           />
           <div class="request-panel__graphql-pane">
             <span class="request-panel__graphql-label">Query</span>
-            <CodeEditor ref="graphqlQueryEditorRef" v-model="graphqlQuery" language="text" />
+            <CodeEditor
+              ref="graphqlQueryEditorRef"
+              v-model="graphqlQuery"
+              language="text"
+              :resolved-variables="resolvedVariables"
+            />
           </div>
           <div class="request-panel__graphql-pane">
             <span class="request-panel__graphql-label">Variables</span>
-            <CodeEditor v-model="graphqlVariablesText" language="json" />
+            <CodeEditor v-model="graphqlVariablesText" language="json" :resolved-variables="resolvedVariables" />
             <p v-if="graphqlVariablesError" class="request-panel__save-error">{{ graphqlVariablesError }}</p>
           </div>
         </div>
         <div v-else-if="bodyType === 'raw'" class="request-panel__body-editor">
-          <CodeEditor v-model="bodyText" :language="editorLanguage" />
+          <CodeEditor v-model="bodyText" :language="editorLanguage" :resolved-variables="resolvedVariables" />
           <button
             v-if="rawLanguage === 'json' || rawLanguage === 'xml'"
             type="button"
@@ -1393,7 +1413,11 @@ defineExpose({ dirty, save: handleSave });
               beautify aren't available (only JavaScript and Python get those today).
             </p>
             <div class="request-panel__script-editor">
-              <CodeEditor v-model="preScriptContent" :language="scriptEditorLanguage(preScriptLanguage)" />
+              <CodeEditor
+                v-model="preScriptContent"
+                :language="scriptEditorLanguage(preScriptLanguage)"
+                :resolved-variables="resolvedVariables"
+              />
               <button
                 v-if="preScriptLanguage === 'javascript'"
                 type="button"
@@ -1426,7 +1450,11 @@ defineExpose({ dirty, save: handleSave });
               beautify aren't available (only JavaScript and Python get those today).
             </p>
             <div class="request-panel__script-editor">
-              <CodeEditor v-model="postScriptContent" :language="scriptEditorLanguage(postScriptLanguage)" />
+              <CodeEditor
+                v-model="postScriptContent"
+                :language="scriptEditorLanguage(postScriptLanguage)"
+                :resolved-variables="resolvedVariables"
+              />
               <button
                 v-if="postScriptLanguage === 'javascript'"
                 type="button"
@@ -1448,7 +1476,7 @@ defineExpose({ dirty, save: handleSave });
           <code>access_token = response.access_token</code>. Runs with
           <code>nova test</code> or the Run Tests button in the top bar.
         </p>
-        <CodeEditor v-model="assertText" language="text" />
+        <CodeEditor v-model="assertText" language="text" :resolved-variables="resolvedVariables" />
       </div>
     </template>
     </div>

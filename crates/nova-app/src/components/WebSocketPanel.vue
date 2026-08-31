@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { useResizablePane } from "../composables/useResizablePane";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
 import {
   connectWebSocketSession,
   disconnectWebSocketSession,
+  getResolvedVariables,
   listenForWebSocketSessionClosed,
   listenForWebSocketSessionMessages,
   pickBinaryFrameDestination,
@@ -16,12 +18,13 @@ import {
   sendWebSocketSessionMessage,
 } from "../api/nova";
 import { relativeToRoot } from "../lib/relativePath";
-import type { RequestFile, RequestHeader, WebSocketMessage } from "../types/nova";
+import type { RequestFile, RequestHeader, ResolvedVariables, WebSocketMessage } from "../types/nova";
 import { beautifyJson } from "../lib/jsonFormat";
 import { formatXml } from "../lib/xmlFormat";
 import CodeEditor, { type EditorLanguage } from "./CodeEditor.vue";
 import Icon from "./Icon.vue";
 import KeyValueEditor from "./KeyValueEditor.vue";
+import VariableAwareInput from "./VariableAwareInput.vue";
 
 const props = defineProps<{
   request: RequestFile;
@@ -52,6 +55,40 @@ const original = ref<{ url: string; headers: RequestHeader[]; messages: WebSocke
 const url = ref("");
 const headers = ref<RequestHeader[]>([]);
 const messages = ref<WebSocketMessage[]>([]);
+
+// Powers the URL/header fields' `{{variable}}` hover tooltips — same idea
+// as `RequestPanel`'s own `resolvedVariables`, loaded eagerly rather than
+// behind a drawer toggle since there's no separate variables drawer here.
+const resolvedVariables = ref<ResolvedVariables | null>(null);
+
+watch(
+  [() => props.request.path, () => props.selectedEnvironment],
+  async () => {
+    try {
+      resolvedVariables.value = await getResolvedVariables(props.request.path, props.selectedEnvironment);
+    } catch {
+      resolvedVariables.value = null;
+    }
+  },
+  { immediate: true },
+);
+
+// Matches `.request-view__divider`'s CSS flex-basis and the top pane's own
+// CSS min-height (`.request-view__pane--top` in _request-panel.scss) — same
+// idea as `RequestPanel`'s response pane, just without a collapse toggle
+// for either side (nothing here needs one).
+const DIVIDER_HEIGHT = 7;
+const TOP_PANE_MIN_HEIGHT = 96;
+
+const transcriptPane = useResizablePane({
+  storageKey: "nova.wsTranscriptPaneHeight",
+  lastExpandedStorageKey: "nova.wsTranscriptPaneLastExpandedHeight",
+  defaultSize: 320,
+  minSize: 96,
+  getMax: (container) => (container ? container.clientHeight - TOP_PANE_MIN_HEIGHT - DIVIDER_HEIGHT : 320),
+  axis: "vertical",
+  direction: -1, // dragging up (decreasing clientY) grows the transcript pane
+});
 
 const dirty = computed(() => {
   if (!original.value) return false;
@@ -416,7 +453,7 @@ defineExpose({ dirty, save: handleSave });
 </script>
 
 <template>
-  <div class="request-view">
+  <div class="request-view" :ref="(el) => (transcriptPane.containerEl.value = el as HTMLElement | null)">
     <div class="request-view__pane request-view__pane--top">
     <div class="request-panel__header">
       <div class="request-panel__header-main">
@@ -451,11 +488,11 @@ defineExpose({ dirty, save: handleSave });
 
         <div class="request-panel__method-url">
           <span class="ws-panel__protocol-badge">WS</span>
-          <input
+          <VariableAwareInput
             v-model="url"
-            type="text"
             class="request-panel__url-input"
             placeholder="{{ws_base_url}}/socket"
+            :resolved="resolvedVariables"
           />
           <span class="ws-panel__status" :class="{ 'ws-panel__status--connected': sessionConnected }">
             {{ sessionConnected ? "Connected" : "Disconnected" }}
@@ -481,7 +518,13 @@ defineExpose({ dirty, save: handleSave });
 
         <div class="request-panel__tab-panel">
           <h4 class="ws-panel__section-title">Headers</h4>
-          <KeyValueEditor v-model="headers" name-placeholder="Header" value-placeholder="Value" mode="headers" />
+          <KeyValueEditor
+            v-model="headers"
+            name-placeholder="Header"
+            value-placeholder="Value"
+            mode="headers"
+            :resolved="resolvedVariables"
+          />
         </div>
 
         <div class="request-panel__tab-panel ws-panel__composer">
@@ -532,7 +575,12 @@ defineExpose({ dirty, save: handleSave });
                   Sent as a real binary frame — the file's raw bytes, not typed text.
                 </p>
               </template>
-              <CodeEditor v-else v-model="composedText" :language="editorLanguage" />
+              <CodeEditor
+                v-else
+                v-model="composedText"
+                :language="editorLanguage"
+                :resolved-variables="resolvedVariables"
+              />
               <div class="ws-panel__composer-save">
                 <button type="button" class="button button--ghost" @click="newComposedMessage">New</button>
                 <button type="button" class="button button--secondary" @click="saveComposedMessage">
@@ -570,7 +618,9 @@ defineExpose({ dirty, save: handleSave });
     </div>
     </div>
 
-    <div class="request-view__pane request-view__pane--bottom" style="flex-basis: 320px">
+    <div class="request-view__divider" title="Drag to resize" @mousedown="transcriptPane.startDrag"></div>
+
+    <div class="request-view__pane request-view__pane--bottom" :style="{ flexBasis: `${transcriptPane.size.value}px` }">
     <div class="response-pane__header">
       <span class="response-pane__header-label">Transcript</span>
     </div>

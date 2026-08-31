@@ -8,8 +8,9 @@
 }
 
 .project-panel__section-title {
-  font-size: $font-size-md;
-  font-weight: 600;
+  font-size: $type-h3-size;
+  line-height: $type-h3-line;
+  font-weight: $type-h3-weight;
   margin: $spacing-xl 0 $spacing-sm;
 }
 

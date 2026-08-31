@@ -34,6 +34,13 @@
   flex: 1;
   min-width: 0;
   height: $control-height;
+  // Matches `height` exactly (no vertical padding here) so a single line
+  // of text centers itself in the box the same way a native `<input>`'s
+  // own centering would — needed for `VariableAwareInput`'s textarea-based
+  // field (see `.var-input__field` in _base.scss) to land the text/caret
+  // at the same vertical position as this row's plain `<input>` sibling
+  // (the name column), which centers regardless of line-height.
+  line-height: $control-height;
   padding: 0 $spacing-sm;
   border: none;
   border-right: 1px solid var(--color-border);
@@ -384,7 +391,7 @@
   right: $spacing-sm;
   bottom: $spacing-sm;
   z-index: 1;
-  box-shadow: var(--shadow-popover);
+  box-shadow: var(--shadow-raised-2);
 }
 
 .request-panel__body-type-select {
@@ -434,8 +441,15 @@
   background: none;
   font-family: $font-family-mono;
   font-size: $font-size-base;
+  // Matches the row's own height (this field has no vertical padding, and
+  // stretches to fill it) — see `.kv-editor__input`'s identical comment.
+  line-height: $control-height * 1.2;
 
-  &:focus-visible {
+  // The row itself (`.request-panel__method-url`) already shows an accent
+  // border via `:focus-within` — suppress the inner field's own ring (its
+  // real focused element, `.var-input__field`, would otherwise show the
+  // generic global one) so there's a single focus indicator, not two.
+  .var-input__field:focus-visible {
     outline: none;
   }
 }
@@ -565,7 +579,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 36px;
+  height: $pane-header-height;
   padding: 0 $spacing-sm 0 $spacing-lg;
   border-bottom: 1px solid var(--color-border);
 }
@@ -748,9 +762,9 @@ $variables-drawer-width: 18rem;
   margin: 0;
   padding: $spacing-xs;
   border: 1px solid var(--color-border);
-  border-radius: $radius-sm;
+  border-radius: $radius-md;
   background-color: var(--color-bg-raised);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-raised-2);
 }
 
 .copy-as__menu-item {
@@ -924,6 +938,7 @@ $variables-drawer-width: 18rem;
   margin: 0 0 $spacing-sm;
   color: var(--color-text-muted);
   font-size: $font-size-sm;
+  line-height: $type-small-line;
   font-weight: 600;
 }
 

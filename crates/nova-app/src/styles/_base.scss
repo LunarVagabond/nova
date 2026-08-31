@@ -7,20 +7,26 @@
 @mixin dark-theme-vars {
   color-scheme: dark;
 
-  --color-bg: #1c1c1c;
-  --color-bg-raised: #262626;
-  --color-bg-sidebar: #202020;
-  --color-bg-inset: #202020;
-  --color-bg-hover: rgba(255, 255, 255, 0.06);
-  --color-border: #383838;
-  --color-text: #f2f2f2;
-  --color-text-muted: #9a9a9a;
-  --shadow-popover: 0 8px 24px rgb(0 0 0 / 45%);
+  --color-bg: #0f172a;
+  --color-bg-raised: #334155;
+  --color-bg-sidebar: #1e293b;
+  --color-bg-inset: #1e293b;
+  --color-bg-hover: rgba(248, 250, 252, 0.06);
+  --color-border: #475569;
+  --color-text: #f8fafc;
+  --color-text-muted: #94a3b8;
 
-  --color-accent: #9b85ff;
-  --color-warning: #f5b942;
-  --color-success: #2dd4bf;
-  --color-danger: #ff6b90;
+  --shadow-raised-1: 0 1px 2px rgb(0 0 0 / 24%);
+  --shadow-raised-2: 0 4px 8px rgb(0 0 0 / 32%);
+  --shadow-raised-3: 0 10px 24px rgb(0 0 0 / 45%);
+
+  // Primary/success/warning/danger, lightened a step from the light-mode
+  // values (same family, e.g. indigo-400 vs indigo-600) so they stay legible
+  // against a dark background instead of just reusing the light-mode hue.
+  --color-accent: #818cf8;
+  --color-warning: #fbbf24;
+  --color-success: #4ade80;
+  --color-danger: #f87171;
 
   --color-code-key: #c678dd;
   --color-code-string: #98c379;
@@ -37,31 +43,40 @@
   // unreadable white-on-white text in the popup.
   color-scheme: light;
 
-  --color-bg: #f6f6f6;
+  --color-bg: #f8fafc;
   --color-bg-raised: #ffffff;
-  --color-bg-sidebar: #efefef;
-  --color-bg-inset: #eeeeee;
-  --color-bg-hover: rgba(15, 15, 15, 0.05);
-  --color-border: #dcdcdc;
-  --color-text: #0f0f0f;
-  --color-text-muted: #6b6b6b;
-  --shadow-popover: 0 8px 24px rgb(0 0 0 / 14%);
+  --color-bg-sidebar: #f1f5f9;
+  --color-bg-inset: #f1f5f9;
+  --color-bg-hover: rgba(15, 23, 42, 0.05);
+  --color-border: #e2e8f0;
+  --color-text: #0f172a;
+  // One step past the design system's own Neutral 400 swatch (#94a3b8) —
+  // that value alone lands at ~2.2:1 contrast against a white/near-white
+  // surface, below the ~4.5:1 needed for regular UI text at this size.
+  // #64748b is the same neutral scale's next stop, chosen for accessible
+  // contrast rather than sticking to only the swatches the mockup labeled.
+  --color-text-muted: #64748b;
 
-  // The app's fixed "supernova" palette — four colors, used everywhere
-  // something needs to be colored (buttons, links, badges, method tags,
-  // git status) instead of one-off hex values. Don't introduce a fifth.
-  //   --color-accent (violet)  — primary/interactive: buttons, links, the
+  --shadow-raised-1: 0 1px 2px rgb(16 24 40 / 5%);
+  --shadow-raised-2: 0 4px 8px rgb(16 24 40 / 8%);
+  --shadow-raised-3: 0 10px 24px rgb(16 24 40 / 10%);
+
+  // The design system's own palette (mockup section 07) — four semantic
+  // colors plus a neutral scale, used everywhere something needs color
+  // (buttons, links, badges, method tags, git status) instead of one-off hex
+  // values. Don't introduce a fifth semantic color.
+  //   --color-accent (indigo)  — primary/interactive: buttons, links, the
   //     active tab, POST, an untracked file.
   //   --color-warning (amber)  — caution/in-progress: PUT/PATCH, an
   //     unstaged change.
-  //   --color-success (teal)   — safe/complete: GET, a staged change, a 2xx
+  //   --color-success (green)  — safe/complete: GET, a staged change, a 2xx
   //     response.
-  //   --color-danger (rose)    — destructive/error: DELETE, a 4xx/5xx
+  //   --color-danger (red)    — destructive/error: DELETE, a 4xx/5xx
   //     response, delete actions.
-  --color-accent: #7c5cff;
-  --color-warning: #e8960a;
-  --color-success: #0f9d8e;
-  --color-danger: #e8437a;
+  --color-accent: #4f46e5;
+  --color-warning: #f59e0b;
+  --color-success: #22c55e;
+  --color-danger: #ef4444;
 
   // Code editor token colors (request body syntax highlighting).
   --color-code-key: #a626a4;
@@ -320,4 +335,90 @@ button {
   border-color: var(--color-accent);
   background-color: var(--color-bg-hover);
   color: var(--color-accent);
+}
+
+// --- Variable-aware input ------------------------------------------------
+// `VariableAwareInput.vue`'s overlay: a real `<textarea>` (text made
+// transparent, caret still visible) stacked under a non-interactive
+// backdrop that renders the same text with `{{variable}}` spans colored —
+// a native form field can't color part of its own value. Callers apply
+// their usual field class (e.g. `.request-panel__url-input`,
+// `.kv-editor__input`) to the component itself, which Vue forwards onto
+// this `.var-input` root, so sizing/padding/border stay whatever that class
+// already specifies; `padding: inherit`/`font: inherit` copy those computed
+// values down to the two overlaid layers rather than needing them restated
+// here.
+.var-input {
+  position: relative;
+  display: block;
+}
+
+.var-input__backdrop,
+.var-input__field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: inherit;
+  font: inherit;
+  line-height: inherit;
+  border: none;
+  background: transparent;
+  box-sizing: border-box;
+  white-space: pre;
+}
+
+.var-input__backdrop {
+  pointer-events: none;
+  color: var(--color-text);
+  overflow: hidden;
+}
+
+// Re-enables hit-testing for just this span despite the backdrop's own
+// `pointer-events: none` above — needed so `VariableAwareInput`'s
+// `elementsFromPoint` hover check can find it at all (see that component
+// for why plain CSS `:hover` can't be used here instead).
+.var-input__token {
+  color: var(--color-accent);
+  font-weight: 600;
+  pointer-events: auto;
+}
+
+.var-input__field {
+  color: transparent;
+  caret-color: var(--color-text);
+  resize: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.var-input__field::placeholder {
+  color: var(--color-text-muted);
+}
+
+// Teleported to `<body>` (see `VariableAwareInput.vue`) and positioned in
+// viewport coordinates, so `position: fixed` + a z-index above even the
+// modal overlay (`.modal-overlay` is 100) — it needs to clear whatever
+// scrolling/clipping pane or stacked panel the field itself happens to sit
+// inside, not just the field's own local stacking context.
+.var-input__tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 24rem;
+  padding: $spacing-xs $spacing-sm;
+  border-radius: $radius-md;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-raised);
+  color: var(--color-text);
+  font-size: $font-size-xs;
+  white-space: normal;
+  word-break: break-word;
+  box-shadow: var(--shadow-raised-2);
+  pointer-events: none;
 }
