@@ -38,12 +38,22 @@ release bundle with `make build-app`.
   session-chained variables included, via the `get_resolved_variables`
   command (`nova_engine::Session::resolved_variables`, the same
   collection/chained/environment merge `send_request` uses). Editing still
-  only happens in `EnvironmentPanel.vue`;
+  only happens in `EnvironmentPanel.vue`; also next to Send, a "Copy as ▾"
+  control renders the resolved request as a `curl` command or a JavaScript
+  `fetch()` call (`export_request_as`, `nova_engine::formats::export`) and
+  copies it to the clipboard, showing the rendered text inline as well since
+  clipboard write isn't guaranteed in every webview context — the CLI
+  equivalent is `nova export-request` (see [the CLI reference](./cli.md));
   `WebSocketPanel.vue` for a WebSocket request (`protocol: websocket`) — a
   separate component from `RequestPanel.vue` rather than another tab on it,
   since a WebSocket request has no method/params/body/auth/assertions/
   example response to begin with (see below); `EnvironmentPanel.vue` for
-  environment editing; `HistoryPanel.vue` for the current project's recent
+  environment editing — a variable flagged secret (the environment file's
+  `secrets:` list, see [project structure](./project-structure.md)) renders
+  its value masked in `KeyValueEditor.vue`'s `variables` mode, with a
+  reveal/hide toggle and a lock toggle to flag/unflag any row, the reveal
+  state itself staying local/ephemeral UI state rather than being persisted;
+  `HistoryPanel.vue` for the current project's recent
   sends (method/status/timing/timestamp), reachable from the top bar's
   clock-icon action, with a click on an entry reopening its full stored
   request/response — in-memory and per-session, so it resets when the app
@@ -91,8 +101,7 @@ unchanged from the original batch design; there's no new section and no
 per-message name field. `nova ws` (the CLI) still sends every message in
 `[messages]` in order on connect, exactly as before. Since a saved message
 has no name field to show, the side panel labels each entry with a
-truncated preview of its own text (mirroring how Postman itself falls back
-to a content-derived name) rather than inventing an on-disk naming syntax —
+truncated preview of its own text rather than inventing an on-disk naming syntax —
 adding a `name:` prefix line was considered and rejected: distinguishing it
 unambiguously from a JSON/text message that happens to start the same way
 isn't clean, and a fallback preview needs no format or parser change at
