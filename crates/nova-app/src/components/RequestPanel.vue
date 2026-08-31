@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 import {
   diffAgainstExampleResponse,
@@ -25,6 +25,7 @@ import type {
   RequestFile,
   RequestHeader,
   RequestResponse,
+  ResolvedVariables,
   ResponseDiff,
 } from "../types/nova";
 import {
@@ -375,17 +376,30 @@ function beautifyBody() {
 // just to check a value. Editing still only happens there; this is
 // quick-reference only.
 const variablesDrawerOpen = ref(false);
-const resolvedVariables = ref<Record<string, string> | null>(null);
+const resolvedVariables = ref<ResolvedVariables | null>(null);
 const variablesLoading = ref(false);
 const variablesError = ref<string | null>(null);
 
 const sortedResolvedVariables = computed(() =>
-  Object.entries(resolvedVariables.value ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+  Object.entries(resolvedVariables.value?.variables ?? {}).sort(([a], [b]) => a.localeCompare(b)),
 );
+
+const secretVariableNames = computed(() => new Set(resolvedVariables.value?.secrets ?? []));
+
+// Whether a masked variable's value is currently shown in plain text —
+// purely local, ephemeral UI state (mirrors `KeyValueEditor`'s own
+// `revealed` state for the environment editor), reset whenever the drawer
+// reloads so a value doesn't stay revealed across requests/environments.
+const revealedVariables = reactive<Record<string, boolean>>({});
+
+function toggleVariableRevealed(name: string) {
+  revealedVariables[name] = !revealedVariables[name];
+}
 
 async function loadResolvedVariables() {
   variablesLoading.value = true;
   variablesError.value = null;
+  for (const name of Object.keys(revealedVariables)) delete revealedVariables[name];
   try {
     resolvedVariables.value = await getResolvedVariables(props.request.path, props.selectedEnvironment);
   } catch (e) {
@@ -830,7 +844,19 @@ defineExpose({ dirty, save: handleSave });
         <ul v-else class="variables-drawer__list">
           <li v-for="[name, value] in sortedResolvedVariables" :key="name" class="variables-drawer__item">
             <span class="variables-drawer__name">{{ name }}</span>
-            <span class="variables-drawer__value">{{ value }}</span>
+            <span
+              class="variables-drawer__value"
+              :class="{ 'variables-drawer__value--masked': secretVariableNames.has(name) && !revealedVariables[name] }"
+            >{{ secretVariableNames.has(name) && !revealedVariables[name] ? "••••••••" : value }}</span>
+            <button
+              v-if="secretVariableNames.has(name)"
+              type="button"
+              class="variables-drawer__reveal"
+              :title="revealedVariables[name] ? 'Hide value' : 'Reveal value'"
+              @click="toggleVariableRevealed(name)"
+            >
+              <Icon :name="revealedVariables[name] ? 'eye-off' : 'eye'" />
+            </button>
           </li>
         </ul>
         <p class="request-panel__hint-text">

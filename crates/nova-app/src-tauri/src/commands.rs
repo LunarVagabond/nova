@@ -239,18 +239,30 @@ pub fn export_request_as(
     export_request(&resolved, format)
 }
 
+/// [`get_resolved_variables`]'s result: the resolved `{{name}}` -> value map,
+/// alongside the names among them that the active environment flags secret
+/// (via [`Environment::is_secret`]) — so the request panel's variables
+/// drawer can mask those rows the same way the environment editor does,
+/// without re-deriving the secret-name list itself.
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolvedVariables {
+    pub variables: HashMap<String, String>,
+    pub secrets: Vec<String>,
+}
+
 /// The full variable map `request_path`'s `{{name}}` placeholders would
 /// resolve against right now, without sending anything — collection
 /// variables, this project's session-chained (extracted) variables, and
 /// `environment`'s (or the project's default environment's) own variables,
-/// merged with the same precedence [`send_request`] uses. Powers the
-/// request panel's read-only variables drawer.
+/// merged with the same precedence [`send_request`] uses — plus which of
+/// those names the active environment flags secret. Powers the request
+/// panel's read-only variables drawer.
 #[tauri::command]
 pub fn get_resolved_variables(
     request_path: String,
     environment: Option<String>,
     sessions: tauri::State<SessionStore>,
-) -> Result<HashMap<String, String>, String> {
+) -> Result<ResolvedVariables, String> {
     let path = std::path::Path::new(&request_path);
     let project = NovaProject::discover(path).map_err(|e| e.to_string())?;
 
@@ -271,9 +283,18 @@ pub fn get_resolved_variables(
         .map(|collection| collection.variables.clone())
         .unwrap_or_default();
 
-    Ok(sessions.with_session(&project.root, |session| {
+    let variables = sessions.with_session(&project.root, |session| {
         session.resolved_variables(&resolved_environment, &collection_variables)
-    }))
+    });
+
+    Ok(ResolvedVariables {
+        secrets: resolved_environment
+            .secrets
+            .into_iter()
+            .filter(|name| variables.contains_key(name))
+            .collect(),
+        variables,
+    })
 }
 
 /// One [`nova_engine::HistoryEntry`] reduced to what a history list needs to

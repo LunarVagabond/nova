@@ -722,6 +722,33 @@
 .variables-drawer__value {
   color: var(--color-text);
   word-break: break-all;
+  flex: 1;
+}
+
+// A secret-flagged row's value before it's revealed — same treatment as a
+// masked environment-variable input in `.kv-editor`, but as static text
+// rather than a `type="password"` input since this drawer is read-only.
+.variables-drawer__value--masked {
+  color: var(--color-text-muted);
+  letter-spacing: 0.15em;
+}
+
+.variables-drawer__reveal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: $control-height;
+  height: $control-height;
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  line-height: 1;
+
+  &:hover {
+    color: var(--color-text);
+    background-color: var(--color-bg-hover);
+  }
 }
 
 .response-headers {

@@ -326,6 +326,19 @@ export interface TestRunResult {
 }
 
 /**
+ * Mirrors `nova-app`'s `commands::ResolvedVariables` — the resolved
+ * `{{name}}` -> value map `get_resolved_variables` returns, alongside the
+ * names among them that the active environment flags secret. Powers the
+ * request panel's read-only variables drawer, which masks a row whose name
+ * appears in `secrets` the same way the environment editor masks its own
+ * secret-flagged rows.
+ */
+export interface ResolvedVariables {
+  variables: Record<string, string>;
+  secrets: string[];
+}
+
+/**
  * Mirrors `nova-app`'s `commands::HistorySummary` — one past send reduced
  * to what a history list needs to show (method/status/timing/timestamp
  * plus the URL). Fetch the full request/response with `reopenHistoryEntry`
