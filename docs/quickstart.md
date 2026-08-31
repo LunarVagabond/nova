@@ -80,14 +80,16 @@ For every request under the project that has a `[response <status>]`
 section, this serves that example verbatim on the matching method/path
 (default `127.0.0.1:4010`; override with `--host`/`--port`).
 
-A WebSocket or SSE connection, if a `.nova` file declares one
-(`protocol: websocket` or `protocol: sse` under `[request]` — see the
+A WebSocket, SSE, or gRPC connection, if a `.nova` file declares one
+(`protocol: websocket`, `protocol: sse`, or `protocol: grpc` under
+`[request]` — see the
 [`.nova` file format reference](reference/nova-file-format.md#websocket-requests)
 for the exact syntax):
 
 ```bash
 nova ws nova/collections/chat/echo.nova
 nova sse nova/collections/events/stream.nova
+nova grpc nova/collections/greeter/say_hello.nova
 ```
 
 Assertions, as a lightweight test suite:

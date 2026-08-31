@@ -548,6 +548,49 @@ response body incrementally, parsing the SSE event framing (`event:`/
 rather than buffering the whole response, printing each event as it comes
 in until the connection closes or a read timeout elapses.
 
+## gRPC requests
+
+A `.nova` file can declare a gRPC unary call instead of an HTTP request,
+by setting `protocol: grpc` under `[request]`. Unlike HTTP, WebSocket, or
+SSE, gRPC needs to know the shape of the message it's sending and
+receiving before it can do anything — so the `[request]` section also
+names a `.proto` file describing the service (`proto:`, resolved relative
+to the project root, the same escape-checked way an HTTP `[body]`'s
+`@file:` binary body is) and the fully-qualified method to call (`rpc:`,
+in the same `package.Service/Method` shape gRPC itself uses on the wire).
+The request message goes under `[body]` as plain JSON, matched against
+that method's input type:
+
+```text
+[request]
+protocol: grpc
+url: {{grpc_host}}
+proto: protos/greeter.proto
+rpc: greeter.Greeter/SayHello
+
+[headers]
+authorization: Bearer {{auth_token}}
+
+[body]
+{ "name": "world" }
+```
+
+`url` is the gRPC server's address — a scheme of `https://` connects over
+TLS, `http://` doesn't. `[headers]` become gRPC metadata sent with the
+call, the same way they become HTTP headers for an ordinary request.
+There's no method, params, auth section, assertions, or example response
+for a gRPC request in this first pass — only unary calls over an
+explicitly-given `.proto` file are supported; streaming calls and server
+reflection (discovering a service's shape without a `.proto` file at all)
+are both out of scope for now.
+
+`nova grpc` (see the [CLI reference](./cli.md)) compiles the named
+`.proto` file (no `protoc` install required — parsing happens directly
+against the `.proto` source), encodes `[body]`'s JSON against the RPC's
+input message type, makes the call, and prints the response decoded back
+to JSON against the RPC's output message type — the wire protobuf bytes
+are never surfaced to the user on either side of the call.
+
 ## Variable substitution
 
 Any `{{name}}` in any section — URL, params, headers, body, auth fields,

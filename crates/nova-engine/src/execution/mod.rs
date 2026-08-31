@@ -3,7 +3,10 @@
 //!
 //! [`http`] is the plain request/response path (and the [`http::Response`]
 //! every other piece here talks about); [`websocket`] and [`sse`] are the
-//! two long-lived-connection protocols a `.nova` file can declare instead.
+//! two long-lived-connection protocols a `.nova` file can declare instead,
+//! and [`grpc`] is a third: a single unary call transcoded to/from the
+//! protobuf wire format via a `.proto` file rather than reusing any of
+//! `http`'s JSON/text body machinery.
 //! [`auth`] turns a request's declared scheme into the header or query
 //! parameter that actually goes out, [`script`] runs the pre-request/
 //! post-response hooks around a send, and [`assertion`] evaluates the
@@ -27,6 +30,7 @@ pub mod assertion;
 pub mod auth;
 pub mod boundary_values;
 pub mod graphql_introspection;
+pub mod grpc;
 pub mod http;
 pub mod oauth2_loopback;
 pub mod script;

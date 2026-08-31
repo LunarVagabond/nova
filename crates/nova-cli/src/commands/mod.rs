@@ -2,6 +2,7 @@ pub mod check_secrets;
 pub mod export;
 pub mod export_request;
 pub mod generate;
+pub mod grpc;
 pub mod init;
 pub mod inspect;
 pub mod install_hook;

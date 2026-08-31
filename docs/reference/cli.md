@@ -22,6 +22,7 @@ nova test [path]                 # run requests as assertions/tests
 nova sweep <request>              # resend a request once per value across one position
 nova ws <request>                # open a WebSocket connection declared by a .nova file
 nova sse <request>                # open an SSE connection declared by a .nova file
+nova grpc <request>               # make the unary gRPC call declared by a .nova file
 
 nova generate <input> <output>   # OpenAPI spec or Postman export -> new Nova project
 nova export [path]               # collections -> OpenAPI 3.x spec (YAML)
@@ -163,6 +164,25 @@ all is a CLI failure.
 - `--timeout-secs <n>` — how long to keep waiting for another event after
   the last one (or after connecting, if none have arrived yet) before
   giving up and closing the connection. Default `5`.
+
+## `nova grpc <request>`
+
+Make the unary gRPC call a `.nova` file declares (`protocol: grpc` under
+`[request]` — see
+[nova-file-format.md](./nova-file-format.md#grpc-requests)): compile its
+named `.proto` file, encode `[body]`'s JSON against the call's input
+message type, make the call, and print the response decoded back to JSON.
+Like `nova ws`/`nova sse`, a call that connects and gets a response back
+counts as success regardless of that response's own contents (a gRPC error
+status included) — only a failure to parse the request, resolve its
+`{{variable}}`s, compile the `.proto`, resolve `rpc` against it, or make
+the call at all is a CLI failure. `--json` prints the full
+`{ rpc, response, elapsed_ms }` result as JSON instead of the two-line
+human summary.
+
+- `--environment <name>`
+- `--timeout-secs <n>` — how long to allow the whole call (connecting plus
+  the round trip) before giving up. Default `10`.
 
 ## `nova generate <input> <output>`
 

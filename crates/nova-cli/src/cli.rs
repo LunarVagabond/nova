@@ -20,8 +20,8 @@ pub struct Cli {
     pub path: PathBuf,
 
     /// Print machine-readable JSON instead of human-formatted text.
-    /// Supported by `inspect`/`open`, `validate`, `run`, `test`, and
-    /// `sweep`; the JSON shape reuses `nova-engine`'s own `Serialize`
+    /// Supported by `inspect`/`open`, `validate`, `run`, `test`, `sweep`,
+    /// and `grpc`; the JSON shape reuses `nova-engine`'s own `Serialize`
     /// types rather than a CLI-specific schema. On failure, a JSON error
     /// object is printed to stderr instead of the usual `error: ...`
     /// line; the exit code is unchanged either way.
@@ -146,6 +146,26 @@ pub enum Command {
         /// (or after connecting, if none have arrived yet) before giving
         /// up and closing the connection.
         #[arg(long, default_value_t = 5)]
+        timeout_secs: u64,
+    },
+
+    /// Make the unary gRPC call declared by a `.nova` file (`protocol:
+    /// grpc` under `[request]`) and print the decoded response as JSON.
+    ///
+    /// The `.proto` file the request names is compiled at call time (no
+    /// `protoc` install required), so the request message under `[body]`
+    /// and the printed response are both plain JSON — never raw protobuf
+    /// bytes.
+    Grpc {
+        /// Path to a `.nova` file declaring a gRPC unary call.
+        request: PathBuf,
+
+        #[arg(long)]
+        environment: Option<String>,
+
+        /// How long to allow the whole call (connecting plus the round
+        /// trip) before giving up.
+        #[arg(long, default_value_t = 10)]
         timeout_secs: u64,
     },
 

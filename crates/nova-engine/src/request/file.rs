@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::error::{NovaError, NovaResult};
+use crate::request::grpc::{parse_nova_grpc, ParsedGrpcRequest};
 use crate::request::model::{ParsedRequest, RequestBody, RequestDraft};
 use crate::request::parse::{parse_nova, parse_section_marker, Section};
 use crate::request::stream::{
@@ -34,8 +35,8 @@ pub struct RequestFile {
     /// failure shouldn't break loading the whole tree, just leave this one
     /// request's badge blank.
     pub method: String,
-    /// This request's `[request]` `protocol:` (`"http"`, `"websocket"`, or
-    /// `"sse"`), read eagerly at discovery time the same way `method` is —
+    /// This request's `[request]` `protocol:` (`"http"`, `"websocket"`,
+    /// `"sse"`, or `"grpc"`), read eagerly at discovery time the same way `method` is —
     /// cheaply, via [`detect_protocol`], without a full parse — so the GUI
     /// can pick the right badge/editor for the file without a round trip
     /// per request. Defaults to `"http"` for a file with no explicit
@@ -94,6 +95,25 @@ impl RequestFile {
             source,
         })?;
         parse_nova_sse(&contents).map_err(|message| NovaError::RequestParse {
+            path: self.path.clone(),
+            message,
+        })
+    }
+
+    /// Read and parse this file's contents as a gRPC unary call declaration
+    /// — the gRPC counterpart to
+    /// [`RequestFile::parse`]/[`RequestFile::parse_websocket`]/[`RequestFile::parse_sse`].
+    /// See [`ParsedGrpcRequest`](crate::ParsedGrpcRequest).
+    ///
+    /// Errors (as a [`NovaError::RequestParse`], same as `parse`) if the
+    /// file's `[request]` section doesn't declare `protocol: grpc`, e.g.
+    /// when called on an ordinary HTTP/WebSocket/SSE request file.
+    pub fn parse_grpc(&self) -> NovaResult<ParsedGrpcRequest> {
+        let contents = fs::read_to_string(&self.path).map_err(|source| NovaError::Io {
+            path: self.path.clone(),
+            source,
+        })?;
+        parse_nova_grpc(&contents).map_err(|message| NovaError::RequestParse {
             path: self.path.clone(),
             message,
         })
@@ -203,6 +223,19 @@ impl RequestFile {
         )
     }
 
+    /// Create a brand-new `.nova` file at `path` declaring a gRPC unary
+    /// call (`protocol: grpc`) rather than an HTTP request, returning the
+    /// [`RequestFile`] handle for it. Errors if a file already exists at
+    /// `path`, mirroring [`RequestFile::create`]/[`RequestFile::create_websocket`].
+    pub fn create_grpc(path: PathBuf) -> NovaResult<RequestFile> {
+        Self::create_with_contents(
+            path,
+            "[request]\nprotocol: grpc\nurl: localhost:50051\nproto: \nrpc: \n\n[body]\n",
+            "grpc".to_string(),
+            String::new(),
+        )
+    }
+
     fn create_with_contents(
         path: PathBuf,
         contents: &str,
@@ -289,8 +322,9 @@ pub(super) fn load_request_file(path: &Path) -> RequestFile {
     }
 }
 
-/// Cheaply detect a `.nova` file's `protocol` (`"http"`, `"websocket"`, or
-/// `"sse"`) and, for an HTTP file, its `method` — the shared logic behind
+/// Cheaply detect a `.nova` file's `protocol` (`"http"`, `"websocket"`,
+/// `"sse"`, or `"grpc"`) and, for an HTTP file, its `method` — the shared
+/// logic behind
 /// [`RequestFile`]'s two discovery-time fields, factored out so a caller
 /// (collection discovery, [`load_request_file`]) reads the file only once
 /// rather than once for a protocol peek and again for a full parse.

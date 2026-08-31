@@ -6,7 +6,8 @@
 //! params, headers, body, auth, settings, assertions, a script, and an
 //! example response. Only `[request]` is required. WebSocket and SSE
 //! files use the same section syntax but a different shape; they're
-//! parsed in [`super::stream`].
+//! parsed in [`super::stream`]. A gRPC file does too; it's parsed in
+//! [`super::grpc`].
 
 use crate::request::model::{
     ExampleResponse, Header, ParsedRequest, QueryParam, RequestBody, DEFAULT_SYNC_CONTENT_TYPE,
