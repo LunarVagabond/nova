@@ -1,12 +1,17 @@
 <script setup lang="ts">
-// A syntax-highlighted, lint-aware code editor for the request body field
-// (JSON/XML today; a plain editor with no language support for
-// form/text/multipart bodies) — CodeMirror 6 under the hood, themed off
-// this app's own `--color-*` custom properties so it tracks the OS light/
-// dark scheme like the rest of the UI. Property names, strings, numbers,
-// booleans, and tag/attribute names are colored distinctly per CodeMirror's
-// own token classification for the language in use; a malformed JSON body
-// gets a red underline plus a gutter marker at the error location.
+// A syntax-highlighted, lint-aware code editor — used for the request body
+// field (JSON/XML today; a plain editor with no language support for
+// form/text/multipart bodies) and for the Scripts tab's in-app pre-/post-
+// request script editor (JavaScript/Python; anything else, e.g. a custom
+// interpreter mapping, falls back to plain text) — CodeMirror 6 under the
+// hood, themed off this app's own `--color-*` custom properties so it
+// tracks the OS light/dark scheme like the rest of the UI. Property names,
+// strings, numbers, booleans, and tag/attribute names are colored
+// distinctly per CodeMirror's own token classification for the language in
+// use; a malformed JSON body, or a JS/Python script with a syntax error,
+// gets a red underline plus a gutter marker at the error location — see
+// `syntaxErrorLinter` for what "lint" does and doesn't mean for JS/Python
+// here.
 //
 // This component only formats and highlights what's already in `modelValue`
 // — it never invents or rewrites body content itself. Nothing here decides
@@ -25,11 +30,13 @@ import {
 import { tags } from "@lezer/highlight";
 import { json, jsonParseLinter } from "@codemirror/lang-json";
 import { xml } from "@codemirror/lang-xml";
-import { javascript } from "@codemirror/lang-javascript";
+import { javascript, javascriptLanguage } from "@codemirror/lang-javascript";
+import { python, pythonLanguage } from "@codemirror/lang-python";
 import { html } from "@codemirror/lang-html";
-import { lintGutter, linter } from "@codemirror/lint";
+import { lintGutter, linter, type Diagnostic } from "@codemirror/lint";
+import type { LRLanguage } from "@codemirror/language";
 
-export type EditorLanguage = "json" | "xml" | "javascript" | "html" | "text";
+export type EditorLanguage = "json" | "xml" | "javascript" | "python" | "html" | "text";
 
 const props = defineProps<{
   modelValue: string;
@@ -124,6 +131,37 @@ function jsonLinterIgnoringEmpty(): ReturnType<typeof jsonParseLinter> {
   return (view) => (view.state.doc.toString().trim() === "" ? [] : base(view));
 }
 
+// "Lint" for JavaScript/Python scripts (the Scripts tab's #184 in-app
+// editor) is scoped to syntax-error detection, not a real linter — there's
+// no ESLint/pylint dependency here, just each language's own CodeMirror
+// grammar. Reusing the grammar this way (rather than executing the script,
+// e.g. via `new Function(...)`) never runs anything the user typed; it
+// just walks the parse tree `language.parser.parse()` already produces for
+// syntax highlighting and flags any node the parser couldn't make sense of
+// as an error node (`type.isError`). An empty document is never flagged —
+// nothing to have a syntax error in.
+function syntaxErrorLinter(language: LRLanguage): (view: EditorView) => Diagnostic[] {
+  return (view) => {
+    const text = view.state.doc.toString();
+    if (text.trim() === "") return [];
+    const tree = language.parser.parse(text);
+    const diagnostics: Diagnostic[] = [];
+    tree.iterate({
+      enter: (node) => {
+        if (node.type.isError) {
+          diagnostics.push({
+            from: node.from,
+            to: Math.max(node.to, node.from + 1),
+            severity: "error",
+            message: "syntax error",
+          });
+        }
+      },
+    });
+    return diagnostics;
+  };
+}
+
 function languageExtension(language: EditorLanguage): Extension[] {
   switch (language) {
     case "json":
@@ -131,7 +169,9 @@ function languageExtension(language: EditorLanguage): Extension[] {
     case "xml":
       return [xml()];
     case "javascript":
-      return [javascript()];
+      return [javascript(), linter(syntaxErrorLinter(javascriptLanguage)), lintGutter()];
+    case "python":
+      return [python(), linter(syntaxErrorLinter(pythonLanguage)), lintGutter()];
     case "html":
       return [html()];
     case "text":

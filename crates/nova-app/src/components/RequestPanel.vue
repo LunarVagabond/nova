@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type Ref } from "vue";
 
 import {
   diffAgainstExampleResponse,
@@ -7,15 +7,18 @@ import {
   exportRequestAs,
   fetchGraphqlSchema,
   getResolvedVariables,
+  getScriptLanguage,
   parseCurlCommand,
   parseGraphqlBody,
   parseMultipartBody,
   readRequest,
+  readScriptContent,
   saveRequest,
   saveResponseAsExample,
   sendRequest,
   serializeGraphqlBody,
   serializeMultipartBody,
+  writeScriptContent,
 } from "../api/nova";
 import type {
   AuthScheme,
@@ -31,6 +34,7 @@ import type {
   RequestResponse,
   ResolvedVariables,
   ResponseDiff,
+  ScriptLanguage,
 } from "../types/nova";
 import {
   BODY_TYPE_CONTENT_TYPES,
@@ -51,6 +55,7 @@ import { formatBytes, statusClass } from "../lib/format";
 import { parseQueryString, serializeQuery, splitUrlAndQuery } from "../lib/queryString";
 import { beautifyJson } from "../lib/jsonFormat";
 import { formatXml } from "../lib/xmlFormat";
+import { beautifyJavascript } from "../lib/jsFormat";
 import AuthEditor from "./AuthEditor.vue";
 import BinaryEditor from "./BinaryEditor.vue";
 import CodeEditor, { type EditorLanguage } from "./CodeEditor.vue";
@@ -105,6 +110,102 @@ const assertText = ref("");
 // The `[script]` section's `pre:`/`post:` script name or path, if any.
 const scriptPre = ref("");
 const scriptPost = ref("");
+
+// The pre-/post-request scripts' own file contents, read/written through
+// the engine (never nova-app touching the filesystem itself) so the
+// Scripts tab can edit them in place instead of only naming them. `*Original`
+// tracks the last content successfully loaded from (or saved to) disk, so
+// `dirty` can tell an in-progress edit apart from a script that just hasn't
+// been touched; `*Language` is the engine's `ScriptLanguage` for the
+// current name (`null` for a custom/external interpreter mapping, which
+// still edits as plain text — just without lint/beautify).
+const preScriptContent = ref("");
+const preScriptOriginalContent = ref("");
+const preScriptLanguage = ref<ScriptLanguage | null>(null);
+const preScriptError = ref<string | null>(null);
+const postScriptContent = ref("");
+const postScriptOriginalContent = ref("");
+const postScriptLanguage = ref<ScriptLanguage | null>(null);
+const postScriptError = ref<string | null>(null);
+
+/**
+ * Loads a `pre:`/`post:` script's content + language for the Scripts tab
+ * editor. A blank `scriptRef` clears the editor rather than calling into
+ * the engine at all; an as-yet-unwritten script (a name/path the user just
+ * typed) comes back as an empty document rather than an error — see
+ * `readScriptContent`.
+ */
+async function loadScriptEditor(
+  scriptRef: string,
+  content: Ref<string>,
+  originalContent: Ref<string>,
+  language: Ref<ScriptLanguage | null>,
+  error: Ref<string | null>,
+) {
+  const trimmed = scriptRef.trim();
+  if (trimmed === "") {
+    content.value = "";
+    originalContent.value = "";
+    language.value = null;
+    error.value = null;
+    return;
+  }
+  error.value = null;
+  try {
+    const [loaded, lang] = await Promise.all([
+      readScriptContent(props.projectRoot, trimmed),
+      getScriptLanguage(trimmed),
+    ]);
+    content.value = loaded ?? "";
+    originalContent.value = loaded ?? "";
+    language.value = lang;
+  } catch (e) {
+    content.value = "";
+    originalContent.value = "";
+    language.value = null;
+    error.value = String(e);
+  }
+}
+
+// Debounced so retyping a script name doesn't fire a read on every
+// keystroke — only once typing settles for a moment.
+function debouncedScriptLoad(
+  scriptRef: string,
+  content: Ref<string>,
+  originalContent: Ref<string>,
+  language: Ref<ScriptLanguage | null>,
+  error: Ref<string | null>,
+  timer: { id: ReturnType<typeof setTimeout> | undefined },
+) {
+  if (timer.id !== undefined) clearTimeout(timer.id);
+  timer.id = setTimeout(() => {
+    loadScriptEditor(scriptRef, content, originalContent, language, error);
+  }, 300);
+}
+
+const preScriptLoadTimer: { id: ReturnType<typeof setTimeout> | undefined } = { id: undefined };
+const postScriptLoadTimer: { id: ReturnType<typeof setTimeout> | undefined } = { id: undefined };
+
+watch(scriptPre, (value) => {
+  debouncedScriptLoad(
+    value,
+    preScriptContent,
+    preScriptOriginalContent,
+    preScriptLanguage,
+    preScriptError,
+    preScriptLoadTimer,
+  );
+});
+watch(scriptPost, (value) => {
+  debouncedScriptLoad(
+    value,
+    postScriptContent,
+    postScriptOriginalContent,
+    postScriptLanguage,
+    postScriptError,
+    postScriptLoadTimer,
+  );
+});
 
 type FieldTab = "auth" | "headers" | "params" | "body" | "scripts" | "tests";
 const activeTab = ref<FieldTab>("auth");
@@ -412,13 +513,20 @@ const dirty = computed(() => {
     syncContentType.value !== original.value.sync_content_type ||
     assertText.value !== original.value.assert_text ||
     (scriptPre.value.trim() === "" ? null : scriptPre.value) !== original.value.script_pre ||
-    (scriptPost.value.trim() === "" ? null : scriptPost.value) !== original.value.script_post
+    (scriptPost.value.trim() === "" ? null : scriptPost.value) !== original.value.script_post ||
+    preScriptContent.value !== preScriptOriginalContent.value ||
+    postScriptContent.value !== postScriptOriginalContent.value
   );
 });
 
 watch(dirty, (value) => emit("dirtyChange", value));
 
 const editorLanguage = computed<EditorLanguage>(() => (bodyType.value === "raw" ? rawLanguage.value : "text"));
+
+/** Maps a script's `ScriptLanguage` (or `null` for a custom/external interpreter) to the code editor's language mode. */
+function scriptEditorLanguage(language: ScriptLanguage | null): EditorLanguage {
+  return language ?? "text";
+}
 
 // Two-way sync between the URL field and the Params tab: `url` itself
 // always stays the bare base URL (what actually gets saved as
@@ -704,6 +812,21 @@ async function load() {
     const normalizedQuery = [...draft.query.map((q) => ({ ...q })), ...embeddedQuery];
     original.value = { ...draft, url: base, query: normalizedQuery };
     await applyDraft(original.value);
+    // Load each script's content right away rather than waiting out the
+    // usual debounce, so switching to a different request doesn't show the
+    // previous request's script content for a moment first.
+    clearTimeout(preScriptLoadTimer.id);
+    clearTimeout(postScriptLoadTimer.id);
+    await Promise.all([
+      loadScriptEditor(scriptPre.value, preScriptContent, preScriptOriginalContent, preScriptLanguage, preScriptError),
+      loadScriptEditor(
+        scriptPost.value,
+        postScriptContent,
+        postScriptOriginalContent,
+        postScriptLanguage,
+        postScriptError,
+      ),
+    ]);
   } catch (e) {
     loadError.value = String(e);
     original.value = null;
@@ -716,6 +839,22 @@ async function load() {
 async function handleRevert() {
   if (!original.value || !dirty.value) return;
   await applyDraft(original.value);
+  // `applyDraft` just reset `scriptPre`/`scriptPost`, which would otherwise
+  // reload their script content on the usual debounce delay — reload right
+  // away instead, so Revert doesn't leave the editor showing discarded
+  // content for a moment after the rest of the form has already reverted.
+  clearTimeout(preScriptLoadTimer.id);
+  clearTimeout(postScriptLoadTimer.id);
+  await Promise.all([
+    loadScriptEditor(scriptPre.value, preScriptContent, preScriptOriginalContent, preScriptLanguage, preScriptError),
+    loadScriptEditor(
+      scriptPost.value,
+      postScriptContent,
+      postScriptOriginalContent,
+      postScriptLanguage,
+      postScriptError,
+    ),
+  ]);
   saveError.value = null;
 }
 
@@ -748,6 +887,21 @@ async function handleSave(): Promise<boolean> {
       script_post: scriptPost.value.trim() === "" ? null : scriptPost.value,
     };
     await saveRequest(props.request.path, draft);
+
+    // Persist each script's own content alongside the `.nova` file's
+    // `pre:`/`post:` names, same as any other request panel edit — through
+    // the engine, never nova-app touching the filesystem directly. Only a
+    // named, edited script is written; an unnamed field has nothing to
+    // save.
+    if (draft.script_pre && preScriptContent.value !== preScriptOriginalContent.value) {
+      await writeScriptContent(props.projectRoot, draft.script_pre, preScriptContent.value);
+      preScriptOriginalContent.value = preScriptContent.value;
+    }
+    if (draft.script_post && postScriptContent.value !== postScriptOriginalContent.value) {
+      await writeScriptContent(props.projectRoot, draft.script_post, postScriptContent.value);
+      postScriptOriginalContent.value = postScriptContent.value;
+    }
+
     original.value = draft;
     emit("saved");
     return true;
@@ -1220,24 +1374,71 @@ defineExpose({ dirty, save: handleSave });
           folder can also carry its own scripts that wrap around this
           request's — see the project's <code>_collection.yaml</code>.
         </p>
-        <label class="request-panel__script-field">
-          <span class="request-panel__script-label">pre:</span>
-          <input
-            v-model="scriptPre"
-            type="text"
-            class="request-panel__script-input"
-            placeholder="sign-request.py"
-          />
-        </label>
-        <label class="request-panel__script-field">
-          <span class="request-panel__script-label">post:</span>
-          <input
-            v-model="scriptPost"
-            type="text"
-            class="request-panel__script-input"
-            placeholder="log-response.js"
-          />
-        </label>
+        <div class="request-panel__script-group">
+          <label class="request-panel__script-field">
+            <span class="request-panel__script-label">pre:</span>
+            <input
+              v-model="scriptPre"
+              type="text"
+              class="request-panel__script-input"
+              placeholder="sign-request.py"
+            />
+          </label>
+          <p v-if="preScriptError" class="request-panel__save-error">
+            Couldn't load this script's contents: {{ preScriptError }}
+          </p>
+          <template v-if="scriptPre.trim().length > 0">
+            <p v-if="preScriptLanguage === null" class="request-panel__hint-text">
+              No built-in interpreter for this file type — editing as plain text; lint and
+              beautify aren't available (only JavaScript and Python get those today).
+            </p>
+            <div class="request-panel__script-editor">
+              <CodeEditor v-model="preScriptContent" :language="scriptEditorLanguage(preScriptLanguage)" />
+              <button
+                v-if="preScriptLanguage === 'javascript'"
+                type="button"
+                class="icon-button icon-button--outline request-panel__beautify"
+                title="Beautify"
+                @click="preScriptContent = beautifyJavascript(preScriptContent)"
+              >
+                <Icon name="wand" />
+              </button>
+            </div>
+          </template>
+        </div>
+
+        <div class="request-panel__script-group">
+          <label class="request-panel__script-field">
+            <span class="request-panel__script-label">post:</span>
+            <input
+              v-model="scriptPost"
+              type="text"
+              class="request-panel__script-input"
+              placeholder="log-response.js"
+            />
+          </label>
+          <p v-if="postScriptError" class="request-panel__save-error">
+            Couldn't load this script's contents: {{ postScriptError }}
+          </p>
+          <template v-if="scriptPost.trim().length > 0">
+            <p v-if="postScriptLanguage === null" class="request-panel__hint-text">
+              No built-in interpreter for this file type — editing as plain text; lint and
+              beautify aren't available (only JavaScript and Python get those today).
+            </p>
+            <div class="request-panel__script-editor">
+              <CodeEditor v-model="postScriptContent" :language="scriptEditorLanguage(postScriptLanguage)" />
+              <button
+                v-if="postScriptLanguage === 'javascript'"
+                type="button"
+                class="icon-button icon-button--outline request-panel__beautify"
+                title="Beautify"
+                @click="postScriptContent = beautifyJavascript(postScriptContent)"
+              >
+                <Icon name="wand" />
+              </button>
+            </div>
+          </template>
+        </div>
       </div>
 
       <div v-else-if="activeTab === 'tests'" class="request-panel__tab-panel">

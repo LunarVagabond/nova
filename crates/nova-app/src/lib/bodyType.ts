@@ -52,9 +52,10 @@ export function serializeBinaryBodyPath(filePath: string): string {
 }
 
 // The language sub-choice shown only when "Raw" is selected — reuses
-// `EditorLanguage` directly rather than a separate parallel type, since the
-// two sets are identical.
-export type RawLanguage = EditorLanguage;
+// `EditorLanguage` rather than a separate parallel type, minus "python":
+// CodeEditor's Python mode exists for the Scripts tab's script editor
+// (#184), not as a body content type the Body tab offers here.
+export type RawLanguage = Exclude<EditorLanguage, "python">;
 
 export const RAW_LANGUAGE_OPTIONS: RawLanguage[] = ["text", "javascript", "json", "html", "xml"];
 

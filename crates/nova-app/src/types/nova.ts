@@ -273,6 +273,18 @@ export interface GraphQlSchema {
  * editable here — they just let the GUI say what example responses the
  * file already has; saving always preserves them unchanged.
  */
+/**
+ * The built-in interpreter a `[script]` `pre:`/`post:` reference's file
+ * extension maps to (`.js`/`.mjs`/`.ts` -> `"javascript"`, `.py` ->
+ * `"python"`) — mirrors the engine's `interpreter_for`. The Scripts tab
+ * editor uses this to decide whether a script gets syntax highlighting and
+ * lint/beautify, or falls back to plain text for a custom/external
+ * interpreter mapping the engine has no built-in extension for (bash/shell
+ * included — see `ScriptLanguage` in `execution/script.rs` for why it's
+ * not a built-in language yet).
+ */
+export type ScriptLanguage = "javascript" | "python";
+
 export interface RequestDraft {
   method: string;
   url: string;

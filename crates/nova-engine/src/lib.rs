@@ -44,8 +44,8 @@ pub use execution::oauth2_loopback::{
     begin_oauth2_authorization_code, PendingAuthorizationCode, DEFAULT_AUTHORIZATION_TIMEOUT,
 };
 pub use execution::script::{
-    resolve_script_path, run_post_response, run_pre_request, PreRequestOverrides, ScriptSection,
-    SCRIPTS_DIR_NAME,
+    read_script_contents, resolve_script_path, run_post_response, run_pre_request, script_language,
+    write_script_contents, PreRequestOverrides, ScriptLanguage, ScriptSection, SCRIPTS_DIR_NAME,
 };
 pub use execution::sse::{
     connect_and_stream, SseEvent, SseExchange, DEFAULT_READ_TIMEOUT as SSE_DEFAULT_READ_TIMEOUT,
