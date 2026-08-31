@@ -264,9 +264,12 @@ functions the desktop app's own "new" actions call, so CLI- and GUI-created
 files are identical.
 
 - `nova new request <name> [path] [--collection <subdir>]` — a new `.nova`
-  file with a minimal default request (`GET {{base_url}}/`). `--collection`
-  places it in a subdirectory of the collections root instead of the root
-  itself.
+  file with a minimal default request (`GET {{base_url}}/`), its `[headers]`
+  pre-populated with `User-Agent`/`Accept`/`Accept-Encoding` (the same values
+  sent implicitly if a request omits them — see `nova inspect`/the engine's
+  `execute` — but written here as ordinary editable/deletable rows instead).
+  `--collection` places it in a subdirectory of the collections root instead
+  of the root itself.
 - `nova new collection <name> [path] [--parent <subdir>]` — a new, empty
   collection subdirectory. `--parent` nests it inside another collection.
 - `nova new environment <name> [path]` — a new environment file with no

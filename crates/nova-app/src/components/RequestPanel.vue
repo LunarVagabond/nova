@@ -1276,10 +1276,10 @@ defineExpose({ dirty, save: handleSave });
           :resolved="resolvedVariables"
         />
         <p class="request-panel__hint-text">
-          Sent on every request, in addition to whatever's set above (only overridden if you set
-          the same name yourself): <code>Host: &lt;from the URL&gt;</code>,
-          <code>User-Agent: Nova/…</code>, <code>Accept: */*</code>,
-          <code>Accept-Encoding: gzip</code>.
+          A new request starts with <code>User-Agent</code>, <code>Accept</code>, and
+          <code>Accept-Encoding</code> already listed above — delete or edit any of them like any
+          other header. <code>Host</code> isn't one of these: it always tracks the URL, so it's
+          never stored as a header itself.
         </p>
       </div>
 

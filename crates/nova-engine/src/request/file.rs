@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::error::{NovaError, NovaResult};
+use crate::execution::http::{DEFAULT_ACCEPT, DEFAULT_ACCEPT_ENCODING, DEFAULT_USER_AGENT};
 use crate::request::grpc::{parse_nova_grpc, ParsedGrpcRequest};
 use crate::request::model::{ParsedRequest, RequestBody, RequestDraft};
 use crate::request::parse::{parse_nova, parse_section_marker, Section};
@@ -201,10 +202,21 @@ impl RequestFile {
     /// request (`GET {{base_url}}/`), returning the [`RequestFile`]
     /// handle for it. Errors if a file already exists at `path`, so a
     /// caller never silently clobbers an existing request.
+    ///
+    /// Writes `User-Agent`/`Accept`/`Accept-Encoding` into `[headers]` with
+    /// the same values [`crate::execution::http::execute`] would otherwise
+    /// send implicitly — real, editable/deletable rows from the start
+    /// rather than invisible defaults a user would have to be told about
+    /// separately. `Host` is deliberately left out: its value tracks the
+    /// URL, and a literal `Host:` row would go stale (and win over the URL)
+    /// the moment that URL changed.
     pub fn create(path: PathBuf) -> NovaResult<RequestFile> {
         Self::create_with_contents(
             path,
-            "[request]\nmethod: GET\nurl: {{base_url}}/\n",
+            &format!(
+                "[request]\nmethod: GET\nurl: {{{{base_url}}}}/\n\n\
+                 [headers]\nUser-Agent: {DEFAULT_USER_AGENT}\nAccept: {DEFAULT_ACCEPT}\nAccept-Encoding: {DEFAULT_ACCEPT_ENCODING}\n"
+            ),
             String::new(),
             "GET".to_string(),
         )
