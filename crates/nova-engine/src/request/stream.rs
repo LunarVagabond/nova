@@ -29,14 +29,29 @@ use crate::request::resolve::substitute;
 pub struct ParsedWebSocketRequest {
     pub url: String,
     pub headers: Vec<Header>,
-    /// Text messages to send, in order, once the connection is open —
-    /// declared under `[messages]`, one per line.
-    pub messages: Vec<String>,
+    /// Messages to send, in order, once the connection is open — declared
+    /// under `[messages]`, one per line. See [`WebSocketMessage`].
+    pub messages: Vec<WebSocketMessage>,
+}
+
+/// One entry in a WebSocket request's `[messages]` section: either a plain
+/// text frame, or a reference to a file on disk whose raw bytes are sent
+/// as a single binary frame — the WebSocket counterpart to
+/// [`crate::request::model::RequestBody::Binary`], down to reusing the
+/// same `@file: <path>` line convention and project-root-relative,
+/// escape-checked resolution (see
+/// [`crate::execution::http::resolve_project_file_path`]) at send time.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WebSocketMessage {
+    Text { text: String },
+    BinaryFile { path: String },
 }
 
 impl ParsedWebSocketRequest {
     /// Resolve `{{variable}}` placeholders in the URL, header values, and
-    /// messages against `environment`'s variables — the WebSocket
+    /// messages (a text message's content, or a binary message's file
+    /// path) against `environment`'s variables — the WebSocket
     /// counterpart to
     /// [`ParsedRequest::resolve`](crate::ParsedRequest::resolve). There's
     /// no auth scheme or body to resolve here, just these three.
@@ -54,7 +69,14 @@ impl ParsedWebSocketRequest {
         let messages = self
             .messages
             .iter()
-            .map(|message| substitute(message, environment))
+            .map(|message| match message {
+                WebSocketMessage::Text { text } => Ok(WebSocketMessage::Text {
+                    text: substitute(text, environment)?,
+                }),
+                WebSocketMessage::BinaryFile { path } => Ok(WebSocketMessage::BinaryFile {
+                    path: substitute(path, environment)?,
+                }),
+            })
             .collect::<NovaResult<Vec<_>>>()?;
 
         Ok(ParsedWebSocketRequest {
@@ -105,8 +127,17 @@ impl ParsedWebSocketRequest {
 
         out.push_str("\n[messages]\n");
         for message in &self.messages {
-            out.push_str(message);
-            out.push('\n');
+            match message {
+                WebSocketMessage::Text { text } => {
+                    out.push_str(text);
+                    out.push('\n');
+                }
+                WebSocketMessage::BinaryFile { path } => {
+                    out.push_str("@file: ");
+                    out.push_str(path);
+                    out.push('\n');
+                }
+            }
         }
 
         out
@@ -126,7 +157,7 @@ impl ParsedWebSocketRequest {
 pub struct WebSocketDraft {
     pub url: String,
     pub headers: Vec<Header>,
-    pub messages: Vec<String>,
+    pub messages: Vec<WebSocketMessage>,
 }
 
 /// Parse a `.nova` file's raw contents as a WebSocket connection
@@ -244,7 +275,14 @@ pub(super) fn parse_nova_websocket(contents: &str) -> Result<ParsedWebSocketRequ
         .iter()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty())
-        .map(|line| line.to_string())
+        .map(|line| match line.strip_prefix("@file:") {
+            Some(path) => WebSocketMessage::BinaryFile {
+                path: path.trim().to_string(),
+            },
+            None => WebSocketMessage::Text {
+                text: line.to_string(),
+            },
+        })
         .collect();
 
     Ok(ParsedWebSocketRequest {
@@ -418,7 +456,7 @@ mod tests {
 
     #[test]
     fn parses_a_websocket_request_with_headers_and_messages() {
-        let contents = "[request]\nprotocol: websocket\nurl: wss://example.com/socket\n\n[headers]\nAuthorization: Bearer {{token}}\n\n[messages]\n{\"type\": \"subscribe\"}\nping\n";
+        let contents = "[request]\nprotocol: websocket\nurl: wss://example.com/socket\n\n[headers]\nAuthorization: Bearer {{token}}\n\n[messages]\n{\"type\": \"subscribe\"}\nping\n@file: payload.bin\n";
 
         let parsed = parse_nova_websocket(contents).unwrap();
 
@@ -432,7 +470,17 @@ mod tests {
         );
         assert_eq!(
             parsed.messages,
-            vec!["{\"type\": \"subscribe\"}".to_string(), "ping".to_string()]
+            vec![
+                WebSocketMessage::Text {
+                    text: "{\"type\": \"subscribe\"}".to_string()
+                },
+                WebSocketMessage::Text {
+                    text: "ping".to_string()
+                },
+                WebSocketMessage::BinaryFile {
+                    path: "payload.bin".to_string()
+                },
+            ]
         );
     }
 
@@ -473,14 +521,39 @@ mod tests {
                 name: "Authorization".to_string(),
                 value: "Bearer {{token}}".to_string(),
             }],
-            messages: vec!["hello {{token}}".to_string()],
+            messages: vec![
+                WebSocketMessage::Text {
+                    text: "hello {{token}}".to_string(),
+                },
+                WebSocketMessage::BinaryFile {
+                    path: "{{attachments_dir}}/payload.bin".to_string(),
+                },
+            ],
+        };
+
+        let mut variables_with_dir = environment.variables.clone();
+        variables_with_dir.insert("attachments_dir".to_string(), "files".to_string());
+        let environment = Environment {
+            variables: variables_with_dir,
+            ..environment
         };
 
         let resolved = parsed.resolve(&environment).unwrap();
 
         assert_eq!(resolved.url, "wss://example.com/socket");
         assert_eq!(resolved.headers[0].value, "Bearer secret123");
-        assert_eq!(resolved.messages[0], "hello secret123");
+        assert_eq!(
+            resolved.messages[0],
+            WebSocketMessage::Text {
+                text: "hello secret123".to_string()
+            }
+        );
+        assert_eq!(
+            resolved.messages[1],
+            WebSocketMessage::BinaryFile {
+                path: "files/payload.bin".to_string()
+            }
+        );
     }
 
     #[test]

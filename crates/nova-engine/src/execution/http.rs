@@ -211,11 +211,12 @@ fn encode_multipart(
 }
 
 /// Resolve a project-root-relative file reference (a `Multipart` field's
-/// `file_path`, or a `Binary` body's file path) to an actual path on disk,
-/// refusing anything that isn't genuinely inside `project_root`. Returns
-/// `None` — rather than a typed error itself — so each caller can attach
-/// its own context (which multipart field, or "the binary body") to the
-/// error it reports.
+/// `file_path`, a `Binary` body's file path, or a WebSocket request's
+/// `WebSocketMessage::BinaryFile` path — see [`crate::execution::websocket`])
+/// to an actual path on disk, refusing anything that isn't genuinely
+/// inside `project_root`. Returns `None` — rather than a typed error
+/// itself — so each caller can attach its own context (which multipart
+/// field, or "the binary body") to the error it reports.
 ///
 /// `.nova` files are plain text committed to a repo — a malicious one could
 /// otherwise set the path to an absolute path (`/etc/passwd`) or a relative
@@ -227,7 +228,7 @@ fn encode_multipart(
 /// even through a symlink — is caught by checking the resolved path is
 /// still inside the resolved root, not just by pattern-matching on `..` in
 /// the text.
-fn resolve_project_file_path(project_root: &Path, file_path: &str) -> Option<PathBuf> {
+pub(crate) fn resolve_project_file_path(project_root: &Path, file_path: &str) -> Option<PathBuf> {
     let requested = Path::new(file_path);
     if requested.is_absolute() {
         return None;

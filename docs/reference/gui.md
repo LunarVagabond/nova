@@ -90,24 +90,40 @@ the Rust side rather than the GUI hand-rolling `.nova` syntax.
 
 **Composer and saved messages.** The top half of the panel is a message
 composer: a `CodeEditor` for the message about to be sent, a format
-selector (JSON/Text/Binary/XML/HTML — "Binary" is edited as plain text with
-beautify disabled, since the engine only ever sends text frames; see
-`crates/nova-engine/src/execution/websocket.rs`'s module doc comment) with a
-beautify button next to it (reusing the same `beautifyJson`/`formatXml` helpers
-`RequestPanel.vue`'s raw body editor uses), and a Send button enabled only
-while a session is open. Alongside it, a saved-messages list is just a
-picker over the request's `[messages]` list — the on-disk format is
-unchanged from the original batch design; there's no new section and no
-per-message name field. `nova ws` (the CLI) still sends every message in
-`[messages]` in order on connect, exactly as before. Since a saved message
-has no name field to show, the side panel labels each entry with a
-truncated preview of its own text rather than inventing an on-disk naming syntax —
-adding a `name:` prefix line was considered and rejected: distinguishing it
-unambiguously from a JSON/text message that happens to start the same way
-isn't clean, and a fallback preview needs no format or parser change at
-all. Clicking a saved entry loads it into the composer for editing/resend;
-saving updates that same entry in place, or appends a new one if the
-composer wasn't loaded from an existing entry.
+selector (JSON/Text/Binary/XML/HTML) with a beautify button next to it
+(reusing the same `beautifyJson`/`formatXml` helpers `RequestPanel.vue`'s
+raw body editor uses), and a Send button enabled only while a session is
+open. "Binary" swaps the `CodeEditor` for a file picker (mirroring
+`BinaryEditor.vue`'s HTTP body counterpart) — picking a file composes a
+`WebSocketMessage::BinaryFile` that sends the file's actual raw bytes as a
+binary frame, not typed text (see
+`crates/nova-engine/src/execution/websocket.rs`'s module doc comment); the
+other four formats are still plain text frames, the format just picking
+the editor's syntax highlighting/beautify. Alongside it, a saved-messages
+list is just a picker over the request's `[messages]` list — the on-disk
+format is unchanged from the original batch design (a binary message is
+just a `@file: <path>` line — see
+[nova-file-format.md](./nova-file-format.md#websocket-requests)); there's
+no new section and no per-message name field. `nova ws` (the CLI) still
+sends every message in `[messages]` in order on connect, exactly as
+before. Since a saved message has no name field to show, the side panel
+labels each entry with a truncated preview of its own content (a binary
+message's file path, for that kind) rather than inventing an on-disk
+naming syntax — adding a `name:` prefix line was considered and rejected:
+distinguishing it unambiguously from a JSON/text message that happens to
+start the same way isn't clean, and a fallback preview needs no format or
+parser change at all. Clicking a saved entry loads it into the composer
+for editing/resend; saving updates that same entry in place, or appends a
+new one if the composer wasn't loaded from an existing entry.
+
+**Binary frames.** A received binary frame shows in the live transcript as
+its byte length with a save icon — clicking it opens the native save-file
+dialog and writes the decoded bytes to disk via the `save_binary_frame`
+Tauri command, rather than attempting to render arbitrary bytes as text.
+A sent binary frame shows the source file's path instead. Both directions
+resolve a project-relative file path the same escape-checked way an HTTP
+binary body already does (see
+`crates/nova-engine/src/execution/http.rs`'s `resolve_project_file_path`).
 
 **Live session.** Connect (saving first if the request has unsaved edits,
 mirroring `RequestPanel.vue`'s save-before-send behavior) calls the
