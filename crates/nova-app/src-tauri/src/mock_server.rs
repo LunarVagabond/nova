@@ -12,17 +12,18 @@
 //! implementation into `nova-engine` itself would cross the boundary this
 //! codebase deliberately keeps engine logic free of I/O frameworks.
 
+use std::collections::VecDeque;
 use std::io::Cursor;
 use std::net::SocketAddr;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use nova_engine::{mock_routes, MockRoute, NovaProject};
+use nova_engine::{mock_routes, MockCallLogEntry, MockRoute, NovaProject};
 
 /// Same defaults `nova mock` binds to (see `nova-cli`'s `Mock` subcommand
 /// in `cli.rs`) — kept in sync deliberately so the toggle's "just start
@@ -30,10 +31,16 @@ use nova_engine::{mock_routes, MockRoute, NovaProject};
 pub const DEFAULT_HOST: &str = "127.0.0.1";
 pub const DEFAULT_PORT: u16 = 4010;
 
+/// How many [`MockCallLogEntry`] records are kept before the oldest is
+/// evicted — mirrors `Session::HISTORY_CAP`'s reasoning: comfortably more
+/// than anyone scrolls back through while debugging a live mock server.
+const CALL_LOG_CAP: usize = 100;
+
 struct RunningServer {
     addr: SocketAddr,
     stop: Arc<AtomicBool>,
     thread: JoinHandle<()>,
+    call_log: Arc<Mutex<VecDeque<MockCallLogEntry>>>,
 }
 
 /// Tauri-managed state holding the mock server's handle, if one is
@@ -51,6 +58,33 @@ impl MockServerState {
     pub fn status(&self) -> MockServerStatus {
         let guard = self.0.lock().expect("mock server state mutex poisoned");
         MockServerStatus::from_running(guard.as_ref())
+    }
+
+    /// The call log recorded by the currently running mock server, most
+    /// recent first. Empty (not an error) when nothing is running or
+    /// nothing has hit it yet.
+    pub fn call_log(&self) -> Vec<MockCallLogEntry> {
+        let guard = self.0.lock().expect("mock server state mutex poisoned");
+        match guard.as_ref() {
+            Some(running) => {
+                let log = running.call_log.lock().expect("call log mutex poisoned");
+                log.iter().rev().cloned().collect()
+            }
+            None => Vec::new(),
+        }
+    }
+
+    /// Clears the currently running mock server's call log. A no-op (not
+    /// an error) when nothing is running.
+    pub fn clear_call_log(&self) {
+        let guard = self.0.lock().expect("mock server state mutex poisoned");
+        if let Some(running) = guard.as_ref() {
+            running
+                .call_log
+                .lock()
+                .expect("call log mutex poisoned")
+                .clear();
+        }
     }
 
     /// Discovers the project at `path`, binds a mock server to
@@ -75,9 +109,22 @@ impl MockServerState {
             .ok_or_else(|| "mock server has no IP address to report".to_string())?;
 
         let stop = Arc::new(AtomicBool::new(false));
-        let thread = spawn_serving_thread(server, routes, Arc::clone(&stop));
+        let call_log = Arc::new(Mutex::new(VecDeque::new()));
+        let next_call_id = Arc::new(AtomicU64::new(1));
+        let thread = spawn_serving_thread(
+            server,
+            routes,
+            Arc::clone(&stop),
+            Arc::clone(&call_log),
+            next_call_id,
+        );
 
-        *guard = Some(RunningServer { addr, stop, thread });
+        *guard = Some(RunningServer {
+            addr,
+            stop,
+            thread,
+            call_log,
+        });
         Ok(MockServerStatus::running(addr))
     }
 
@@ -119,11 +166,13 @@ fn spawn_serving_thread(
     server: tiny_http::Server,
     routes: Vec<MockRoute>,
     stop: Arc<AtomicBool>,
+    call_log: Arc<Mutex<VecDeque<MockCallLogEntry>>>,
+    next_call_id: Arc<AtomicU64>,
 ) -> JoinHandle<()> {
     std::thread::spawn(move || {
         while !stop.load(Ordering::Relaxed) {
             match server.recv_timeout(Duration::from_millis(200)) {
-                Ok(Some(request)) => handle_request(request, &routes),
+                Ok(Some(request)) => handle_request(request, &routes, &call_log, &next_call_id),
                 Ok(None) => continue,
                 Err(_) => break,
             }
@@ -131,15 +180,42 @@ fn spawn_serving_thread(
     })
 }
 
-fn handle_request(request: tiny_http::Request, routes: &[MockRoute]) {
+fn handle_request(
+    request: tiny_http::Request,
+    routes: &[MockRoute],
+    call_log: &Mutex<VecDeque<MockCallLogEntry>>,
+    next_call_id: &AtomicU64,
+) {
     let method = request.method().to_string();
     let full_path = request.url().to_string();
-    let path = full_path.split('?').next().unwrap_or("/");
+    let path = full_path.split('?').next().unwrap_or("/").to_string();
 
-    let matched = routes.iter().find(|route| route.matches(&method, path));
-    let response = build_response(matched, &method, path);
+    let matched = routes.iter().find(|route| route.matches(&method, &path));
+    let response = build_response(matched, &method, &path);
+    let status = response.status_code().0;
+
+    let entry = MockCallLogEntry {
+        id: next_call_id.fetch_add(1, Ordering::Relaxed),
+        received_at_ms: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0),
+        method,
+        path,
+        matched_route: matched.map(|route| route.path.clone()),
+        status,
+    };
+    record_call(call_log, entry);
 
     let _ = request.respond(response);
+}
+
+fn record_call(call_log: &Mutex<VecDeque<MockCallLogEntry>>, entry: MockCallLogEntry) {
+    let mut log = call_log.lock().expect("call log mutex poisoned");
+    log.push_back(entry);
+    if log.len() > CALL_LOG_CAP {
+        log.pop_front();
+    }
 }
 
 fn build_response(
@@ -216,6 +292,53 @@ mod tests {
     /// mock-routing tests rather than a hand-built one just for this.
     fn fixture_path() -> std::path::PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../nova-engine/tests/fixtures/mock-project")
+    }
+
+    /// Sends a bare-bones `GET <path>` over a raw `TcpStream` and reads
+    /// just enough of the response to confirm the server answered — no
+    /// HTTP client dependency needed for a test this simple.
+    fn get(addr: SocketAddr, path: &str) {
+        use std::io::{Read, Write};
+        let mut stream = std::net::TcpStream::connect(addr).expect("connect to mock server");
+        write!(
+            stream,
+            "GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).unwrap();
+    }
+
+    #[test]
+    fn records_a_handled_call_in_the_log() {
+        let state = MockServerState::new();
+        let status = state
+            .start(&fixture_path(), DEFAULT_HOST, 0)
+            .expect("start should succeed");
+        let addr = SocketAddr::new(
+            status.host.as_deref().unwrap().parse().unwrap(),
+            status.port.unwrap(),
+        );
+
+        assert!(state.call_log().is_empty());
+
+        get(addr, "/users");
+        get(addr, "/nonexistent-route");
+
+        let log = state.call_log();
+        assert_eq!(log.len(), 2);
+        // Most recent first.
+        assert_eq!(log[0].path, "/nonexistent-route");
+        assert_eq!(log[0].matched_route, None);
+        assert_eq!(log[0].status, 404);
+        assert_eq!(log[1].path, "/users");
+        assert_eq!(log[1].matched_route.as_deref(), Some("/users"));
+        assert_eq!(log[1].status, 200);
+
+        state.clear_call_log();
+        assert!(state.call_log().is_empty());
+
+        state.stop();
     }
 
     #[test]

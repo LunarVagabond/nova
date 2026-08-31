@@ -15,6 +15,7 @@ defineProps<{
   showingProjectSettings: boolean;
   showingHistory: boolean;
   showingCookies: boolean;
+  showingMockLog: boolean;
   runningTests: boolean;
   mockServerStatus: MockServerStatus;
   mockServerBusy: boolean;
@@ -28,6 +29,7 @@ const emit = defineEmits<{
   (e: "projectSettings"): void;
   (e: "showHistory"): void;
   (e: "showCookies"): void;
+  (e: "showMockLog"): void;
   (e: "runTests"): void;
   (e: "importExport"): void;
   (e: "toggleMockServer"): void;
@@ -123,6 +125,17 @@ const THEME_LABEL: Record<ThemePreference, string> = {
             : "Mock server"
         }}
       </span>
+    </button>
+
+    <button
+      v-if="projectName"
+      type="button"
+      class="icon-button icon-button--outline"
+      :class="{ 'icon-button--active': showingMockLog }"
+      title="Mock server call log"
+      @click="emit('showMockLog')"
+    >
+      <Icon name="history" />
     </button>
 
     <button

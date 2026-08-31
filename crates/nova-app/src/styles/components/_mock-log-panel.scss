@@ -1,0 +1,78 @@
+@use "../variables" as *;
+
+// The mock server call log (see MockLogPanel.vue, TopBar's mock-log
+// action) — a flat, live-updating table of requests the running mock
+// server has handled, most recent first. Mirrors `_cookies-panel.scss`'s
+// layout almost exactly, since both are a single scrolling table sitting
+// in the app shell's flush content region.
+.mock-log-panel {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: $spacing-lg;
+}
+
+.mock-log-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $spacing-md;
+}
+
+.mock-log-panel__title {
+  margin: 0;
+  font-size: $font-size-md;
+  font-weight: 600;
+}
+
+.mock-log-panel__header-actions {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
+.mock-log-panel__hint {
+  color: var(--color-text-muted);
+}
+
+.mock-log-panel__error {
+  color: var(--color-danger);
+}
+
+.mock-log-panel__table-wrap {
+  overflow-x: auto;
+}
+
+.mock-log-panel__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: $font-size-sm;
+}
+
+.mock-log-panel__table th {
+  text-align: left;
+  padding: $spacing-xs $spacing-sm;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.mock-log-panel__table td {
+  padding: $spacing-xs $spacing-sm;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.mock-log-panel__mono {
+  font-family: $font-family-mono;
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mock-log-panel__unmatched {
+  color: var(--color-text-muted);
+  font-style: italic;
+}

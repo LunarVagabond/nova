@@ -463,3 +463,16 @@ export interface MockServerStatus {
   host: string | null;
   port: number | null;
 }
+
+/**
+ * Mirrors `nova-engine`'s `mock::MockCallLogEntry` — one request the
+ * running mock server handled, for the desktop app's mock server call log.
+ */
+export interface MockCallLogEntry {
+  id: number;
+  received_at_ms: number;
+  method: string;
+  path: string;
+  matched_route: string | null;
+  status: number;
+}
