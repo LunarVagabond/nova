@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use nova_engine::{Collection, Environment, NovaProject, RequestFile, Session};
+use nova_engine::{
+    save_example_response, Collection, Environment, NovaProject, RequestFile, Session,
+};
 
 use crate::discovery::{requests_at, resolve_environment};
 
@@ -26,7 +28,19 @@ use crate::discovery::{requests_at, resolve_environment};
 /// `send_request` Tauri command returns) or `error` — into a single JSON
 /// array printed at the end, so a caller doesn't have to stitch together
 /// interleaved per-request output for a directory of requests.
-pub fn run(request: &Path, environment: Option<&str>, json: bool) -> Result<(), String> {
+///
+/// `save_example`: after a request succeeds, capture its response into
+/// that request's own `[response <status>]` section via
+/// [`save_example_response`] — the CLI counterpart to the desktop app's
+/// "Save as Example" button. A failure to save doesn't undo a
+/// successfully-sent request; it's reported as its own failure alongside
+/// the ones execution can produce.
+pub fn run(
+    request: &Path,
+    environment: Option<&str>,
+    json: bool,
+    save_example: bool,
+) -> Result<(), String> {
     let project = NovaProject::discover(request).map_err(|e| e.to_string())?;
     let environment = resolve_environment(&project, environment)?;
     let requests = requests_at(&project.collections, request)?;
@@ -44,6 +58,15 @@ pub fn run(request: &Path, environment: Option<&str>, json: bool) -> Result<(), 
             &mut session,
         ) {
             Ok((resolved, response)) => {
+                if save_example {
+                    if let Err(source) = save_example_response(request_file, &response) {
+                        had_failure = true;
+                        eprintln!(
+                            "{}: failed to save example response: {source}",
+                            request_file.path.display()
+                        );
+                    }
+                }
                 if json {
                     results.push(serde_json::json!({
                         "path": request_file.path,

@@ -89,6 +89,14 @@ pub enum Command {
 
         #[arg(long)]
         environment: Option<String>,
+
+        /// Capture each request's response into its file's `[response
+        /// <status>]` section, replacing whatever example response (if
+        /// any) was already there — the CLI counterpart to the desktop
+        /// app's "Save as Example" button. Applies to every request run,
+        /// so running a directory saves an example for each one.
+        #[arg(long)]
+        save_example: bool,
     },
 
     /// Open a WebSocket connection declared by a `.nova` file (`protocol:

@@ -84,6 +84,20 @@ export function sendRequest(
 }
 
 /**
+ * Captures `response` — whatever `sendRequest` already returned for
+ * `requestPath` — into that request's own `[response <status>]` section,
+ * replacing whatever example response (if any) was already there. Powers
+ * the response pane's "Save as Example" button; doesn't send anything
+ * itself.
+ */
+export function saveResponseAsExample(
+  requestPath: string,
+  response: RequestResponse,
+): Promise<void> {
+  return invoke<void>("save_response_as_example", { requestPath, response });
+}
+
+/**
  * Renders `requestPath`, after `{{variable}}` substitution, as a
  * copy-pasteable `curl` command or code snippet — without sending
  * anything. Resolves the same way `sendRequest` does. Powers the request

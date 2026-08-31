@@ -11,6 +11,7 @@ import {
   parseMultipartBody,
   readRequest,
   saveRequest,
+  saveResponseAsExample,
   sendRequest,
   serializeGraphqlBody,
   serializeMultipartBody,
@@ -681,6 +682,39 @@ async function handleSend() {
   }
 }
 
+// "Save as Example" (#150): captures the response already sitting in
+// `response` (from the send above) into this request's own `[response
+// <status>]` section — no re-send involved.
+const savingExample = ref(false);
+const saveExampleError = ref<string | null>(null);
+const saveExampleJustSaved = ref(false);
+let saveExampleSavedTimeout: ReturnType<typeof setTimeout> | undefined;
+
+async function handleSaveAsExample() {
+  if (!response.value) return;
+
+  savingExample.value = true;
+  saveExampleError.value = null;
+  saveExampleJustSaved.value = false;
+  try {
+    await saveResponseAsExample(props.request.path, response.value);
+    if (original.value) original.value.has_example_response = true;
+    // Refresh the "vs Saved Example" diff if it's the tab currently open,
+    // since the example it compares against just changed.
+    if (activeResponseTab.value === "diff" && diffMode.value === "example") loadDiff();
+
+    saveExampleJustSaved.value = true;
+    clearTimeout(saveExampleSavedTimeout);
+    saveExampleSavedTimeout = setTimeout(() => {
+      saveExampleJustSaved.value = false;
+    }, 2000);
+  } catch (e) {
+    saveExampleError.value = String(e);
+  } finally {
+    savingExample.value = false;
+  }
+}
+
 const responseSize = computed(() =>
   response.value ? new TextEncoder().encode(response.value.body).length : 0,
 );
@@ -759,6 +793,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onGlobalKeydown);
   window.removeEventListener("mousedown", onGlobalMousedown);
+  clearTimeout(saveExampleSavedTimeout);
 });
 
 defineExpose({ dirty, save: handleSave });
@@ -1112,7 +1147,18 @@ defineExpose({ dirty, save: handleSave });
           </span>
           <span class="response-summary__meta">Time <strong>{{ response.elapsed_ms }} ms</strong></span>
           <span class="response-summary__meta">Size <strong>{{ formatBytes(responseSize) }}</strong></span>
+          <button
+            type="button"
+            class="button button--ghost response-summary__save-example"
+            title="Capture this response into the request's [response] section"
+            :disabled="savingExample"
+            @click="handleSaveAsExample"
+          >
+            {{ savingExample ? "Saving…" : "Save as Example" }}
+          </button>
+          <span v-if="saveExampleJustSaved" class="response-summary__save-example-saved">Saved</span>
         </div>
+        <p v-if="saveExampleError" class="response-pane__error">{{ saveExampleError }}</p>
 
         <div class="request-panel__tabs" role="tablist">
           <button

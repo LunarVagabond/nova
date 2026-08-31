@@ -330,6 +330,12 @@ A request with no `[response]` section still gets a mock route; it answers
 `501` explaining that no example response is defined, rather than being
 silently excluded from the mock server.
 
+Hand-writing this section works, but it's also written for you: sending a
+request and choosing "Save as Example" in the desktop app's response pane
+(or running `nova run --save-example`) captures the actual response —
+status, headers, body — into this section, replacing whatever was there
+before and leaving the rest of the file alone.
+
 ## WebSocket requests
 
 A `.nova` file can declare a WebSocket connection instead of an HTTP

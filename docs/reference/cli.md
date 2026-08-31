@@ -72,6 +72,11 @@ Execute a single `.nova` file, or every request under a directory.
 
 - `--environment <name>` — environment to resolve `{{variable}}`s against;
   defaults to the manifest's `defaults.environment`.
+- `--save-example` — capture each request's response into its file's
+  `[response <status>]` section, replacing whatever example response (if
+  any) was already there. Running a directory saves one for every request
+  in it. See [nova-file-format.md](./nova-file-format.md#response-status)
+  for what that section is and how `nova mock` uses it.
 
 ## `nova test [path]`
 

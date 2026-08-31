@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use nova_engine::{delete_request, duplicate_request, rename_request, NovaError, NovaProject};
+use nova_engine::{
+    delete_request, duplicate_request, rename_request, save_example_response, Header, NovaError,
+    NovaProject, Response,
+};
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -234,6 +237,117 @@ fn duplicate_request_on_a_nonexistent_path_is_a_typed_error() {
     let err = duplicate_request(&missing, "new-name").unwrap_err();
     assert!(
         matches!(&err, NovaError::RequestNotFound(path) if path == &missing),
+        "unexpected error: {err}"
+    );
+}
+
+/// The `RequestFile` handle for the same request [`a_request_path`] points
+/// at, for tests that need to call methods on it rather than just a bare
+/// path.
+fn a_request_file(temp_root: &Path) -> nova_engine::RequestFile {
+    let project = NovaProject::discover(temp_root).unwrap();
+    let users = project
+        .collections
+        .children
+        .iter()
+        .find(|c| c.name == "users")
+        .unwrap();
+    users.requests.first().unwrap().clone()
+}
+
+#[test]
+fn save_example_response_writes_a_response_section() {
+    let temp = TempDir::new("save-example-response");
+    copy_dir_recursive(&fixture("basic-project"), &temp.0);
+    let request_file = a_request_file(&temp.0);
+    let original = request_file.parse().unwrap();
+    assert!(
+        original.example_response.is_none(),
+        "fixture request shouldn't start with an example response"
+    );
+
+    let response = Response {
+        status: 201,
+        headers: vec![Header {
+            name: "Content-Type".to_string(),
+            value: "application/json".to_string(),
+        }],
+        body: "{\"id\": \"usr_1234\", \"name\": \"John\"}".to_string(),
+        elapsed_ms: 84,
+    };
+
+    save_example_response(&request_file, &response).unwrap();
+
+    let reparsed = request_file.parse().unwrap();
+    let example = reparsed.example_response.unwrap();
+    assert_eq!(example.status, 201);
+    assert_eq!(
+        example.headers,
+        vec![Header {
+            name: "Content-Type".to_string(),
+            value: "application/json".to_string(),
+        }]
+    );
+    assert_eq!(example.body, "{\"id\": \"usr_1234\", \"name\": \"John\"}");
+
+    // The rest of the file is untouched.
+    assert_eq!(reparsed.method, original.method);
+    assert_eq!(reparsed.url, original.url);
+}
+
+#[test]
+fn save_example_response_replaces_an_existing_example() {
+    let temp = TempDir::new("save-example-response-replace");
+    copy_dir_recursive(&fixture("basic-project"), &temp.0);
+    let request_file = a_request_file(&temp.0);
+
+    save_example_response(
+        &request_file,
+        &Response {
+            status: 500,
+            headers: Vec::new(),
+            body: "old".to_string(),
+            elapsed_ms: 1,
+        },
+    )
+    .unwrap();
+
+    save_example_response(
+        &request_file,
+        &Response {
+            status: 200,
+            headers: Vec::new(),
+            body: "new".to_string(),
+            elapsed_ms: 1,
+        },
+    )
+    .unwrap();
+
+    let reparsed = request_file.parse().unwrap();
+    let example = reparsed.example_response.unwrap();
+    assert_eq!(example.status, 200);
+    assert_eq!(example.body, "new");
+}
+
+#[test]
+fn save_example_response_on_an_unparseable_file_is_a_typed_error() {
+    let temp = TempDir::new("save-example-response-unparseable");
+    copy_dir_recursive(&fixture("basic-project"), &temp.0);
+    let request_file = a_request_file(&temp.0);
+    std::fs::write(&request_file.path, "not a valid nova file").unwrap();
+
+    let err = save_example_response(
+        &request_file,
+        &Response {
+            status: 200,
+            headers: Vec::new(),
+            body: String::new(),
+            elapsed_ms: 1,
+        },
+    )
+    .unwrap_err();
+    assert!(
+        matches!(err, NovaError::RequestParse { .. }),
         "unexpected error: {err}"
     );
 }
