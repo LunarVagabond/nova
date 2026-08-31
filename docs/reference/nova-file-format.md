@@ -374,6 +374,19 @@ environment's `variables:` (see
 [`nova.yaml` and environments](./project-structure.md)) plus any values
 extracted by earlier requests' `[assert]` sections in the same run.
 
+### Built-in dynamic placeholders
+
+A `{{$name}}` placeholder (the leading `$` is what marks it as dynamic) is
+computed fresh on every send instead of being looked up anywhere — no
+environment entry needed:
+
+| Placeholder        | Value                                                |
+| ------------------- | ----------------------------------------------------- |
+| `{{$uuid}}`         | A random UUID (v4)                                    |
+| `{{$timestamp}}`    | The current Unix timestamp, in seconds                |
+| `{{$randomInt}}`    | A random integer between 0 and 1000                   |
+| `{{$randomEmail}}`  | A random `local@example.com` throwaway address        |
+
 ## Full example
 
 ```text

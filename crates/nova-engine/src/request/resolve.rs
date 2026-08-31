@@ -10,6 +10,7 @@
 use crate::error::{NovaError, NovaResult};
 use crate::execution::auth::AppliedAuth;
 use crate::project::environment::Environment;
+use crate::request::dynamic;
 use crate::request::graphql::GraphQlBody;
 use crate::request::model::{Header, ParsedRequest, QueryParam, RequestBody};
 use crate::request::multipart::MultipartField;
@@ -113,10 +114,16 @@ impl ParsedRequest {
     }
 }
 
-/// Replace every `{{name}}` placeholder in `text` with the matching
-/// variable from `environment`. A placeholder with no closing `}}` is left
-/// as literal text; a placeholder naming a variable the environment doesn't
-/// define is a typed error.
+/// Replace every `{{name}}` placeholder in `text` with its resolved value.
+///
+/// A name starting with `$` (e.g. `$uuid`) is a built-in dynamic
+/// placeholder: it's computed fresh by [`dynamic::resolve`] rather than
+/// looked up anywhere, so it needs no environment entry. Anything else is
+/// an ordinary variable, looked up in `environment`.
+///
+/// A placeholder with no closing `}}` is left as literal text; a
+/// placeholder naming neither a recognized dynamic value nor a variable the
+/// environment defines is a typed error.
 pub(crate) fn substitute(text: &str, environment: &Environment) -> NovaResult<String> {
     let mut result = String::with_capacity(text.len());
     let mut rest = text;
@@ -132,15 +139,16 @@ pub(crate) fn substitute(text: &str, environment: &Environment) -> NovaResult<St
         };
 
         let name = after_open[..end].trim();
-        let value =
-            environment
-                .variables
-                .get(name)
-                .ok_or_else(|| NovaError::UndefinedVariable {
+        let value = match dynamic::resolve(name) {
+            Some(value) => value,
+            None => environment.variables.get(name).cloned().ok_or_else(|| {
+                NovaError::UndefinedVariable {
                     name: name.to_string(),
                     environment: environment.name.clone(),
-                })?;
-        result.push_str(value);
+                }
+            })?,
+        };
+        result.push_str(&value);
         rest = &after_open[end + 2..];
     }
     result.push_str(rest);
