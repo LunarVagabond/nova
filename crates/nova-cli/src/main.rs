@@ -24,7 +24,8 @@ fn main() {
         Some(Command::Run {
             request,
             environment,
-        }) => commands::run::run(&request, environment.as_deref(), json),
+            save_example,
+        }) => commands::run::run(&request, environment.as_deref(), json, save_example),
         Some(Command::Ws {
             request,
             environment,

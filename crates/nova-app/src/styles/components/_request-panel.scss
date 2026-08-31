@@ -575,6 +575,19 @@
   }
 }
 
+// "Save as Example" (#150) sits at the far right of the response summary
+// row, next to the status/time/size meta — pushed there with `auto` margin
+// rather than a separate flex container, since the row is already a flex
+// row with nothing else that needs to move.
+.response-summary__save-example {
+  margin-left: auto;
+}
+
+.response-summary__save-example-saved {
+  color: var(--color-success);
+  font-size: $font-size-sm;
+}
+
 // The request panel's read-only variables drawer (#147) — hidden by
 // default, toggled open from the header. Deliberately plain: this is a
 // quick-reference list, not an editor (editing still happens in the

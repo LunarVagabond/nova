@@ -188,6 +188,24 @@ pub fn send_request(
     })
 }
 
+/// Capture `response` into `request_path`'s own `[response <status>]`
+/// section, replacing whatever example response (if any) was already
+/// there — the "Save as Example" button in the response pane, right next
+/// to Send. `response` is whatever [`send_request`] already returned to
+/// the frontend for this request; this just writes it back to disk rather
+/// than sending anything again.
+#[tauri::command]
+pub fn save_response_as_example(request_path: String, response: Response) -> Result<(), String> {
+    let path = std::path::Path::new(&request_path);
+    let request_file = RequestFile {
+        name: String::new(),
+        path: path.to_path_buf(),
+        method: String::new(),
+        protocol: String::new(),
+    };
+    nova_engine::save_example_response(&request_file, &response).map_err(|e| e.to_string())
+}
+
 /// Render `request_path`, after `{{variable}}` substitution, as a
 /// copy-pasteable `curl` command or code snippet (see
 /// [`nova_engine::ExportFormat`]) — without sending anything. Resolves the

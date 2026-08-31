@@ -2,13 +2,20 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{NovaError, NovaResult};
-use crate::request::{Header, MultipartField, ParsedRequest, RequestBody};
+use crate::request::{
+    ExampleResponse, Header, MultipartField, ParsedRequest, RequestBody, RequestFile,
+};
 
 /// The result of actually sending a [`ParsedRequest`] over HTTP.
-#[derive(Debug, Clone, Serialize)]
+///
+/// Also `Deserialize`, not just `Serialize`: `nova-app`'s "Save as Example"
+/// command takes the same `Response` the frontend already got back from
+/// [`crate::execute`] (via `send_request`) as an argument, rather than
+/// re-sending the request just to capture it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Response {
     pub status: u16,
     pub headers: Vec<Header>,
@@ -70,6 +77,37 @@ pub fn execute(project_root: &Path, request: &ParsedRequest) -> NovaResult<Respo
             message: transport.to_string(),
         }),
     }
+}
+
+/// Capture `response` into `file`'s `[response <status>]` section — the
+/// "Save as Example" action (`nova-app`'s response pane, `nova run
+/// --save-example`). Replaces whatever example response the file already
+/// had, if any, and leaves every other section untouched.
+///
+/// Goes through the same [`RequestFile::parse`]/
+/// [`ParsedRequest::to_nova_string`] round trip [`RequestFile::write`] uses,
+/// rather than patching the file's text directly, so a request that also
+/// has a hand-written `[response]` section (as opposed to one from a
+/// previous capture) gets overwritten the same well-defined way.
+pub fn save_example_response(file: &RequestFile, response: &Response) -> NovaResult<()> {
+    let mut parsed = file.parse()?;
+    parsed.example_response = Some(ExampleResponse {
+        status: response.status,
+        headers: response.headers.clone(),
+        body: response.body.clone(),
+    });
+
+    let text = parsed
+        .to_nova_string()
+        .map_err(|message| NovaError::RequestSerialize {
+            path: file.path.clone(),
+            message,
+        })?;
+
+    fs::write(&file.path, text).map_err(|source| NovaError::Io {
+        path: file.path.clone(),
+        source,
+    })
 }
 
 // ureq::Error is large (carries a full Response on the Status variant); it's
