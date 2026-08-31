@@ -211,8 +211,8 @@ onBeforeUnmount(() => {
 
 // --- Composer --------------------------------------------------------------
 //
-// The five formats Postman's own WebSocket composer offers. "Binary" has no
-// real binary framing behind it — see `websocket.rs`'s module doc comment,
+// Five message formats the composer offers. "Binary" has no real binary
+// framing behind it — see `websocket.rs`'s module doc comment,
 // text-frames-only is this pass's whole engine-side scope — so it's edited
 // as plain text with beautify/lint disabled, and a hint below the selector
 // says so plainly rather than pretending otherwise.
@@ -262,8 +262,7 @@ function beautifyComposedText() {
 /** A short label for a saved message with no name of its own — this pass
  * doesn't add a `name:` field to `[messages]` (see the design note in
  * `docs/reference/gui.md`'s WebSocket section for why), so the side panel
- * names each entry by a truncated preview of its own content instead,
- * mirroring how Postman itself falls back to content-derived names. */
+ * names each entry by a truncated preview of its own content instead. */
 function messagePreview(text: string): string {
   const trimmed = text.trim();
   if (trimmed === "") return "(empty message)";

@@ -4,7 +4,7 @@
 // always non-`<` text between that pair there) and indents based on
 // open/close tags. Not a full XML formatter (doesn't track void/self-closing
 // exceptions beyond a simple regex), but good enough for typical request
-// bodies the same way Postman's own "Beautify" is.
+// bodies.
 export function formatXml(xml: string): string {
   const trimmed = xml.trim();
   if (!trimmed) return xml;
