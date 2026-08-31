@@ -28,6 +28,7 @@ import type {
   RequestFile,
   RequestHeader,
   RequestResponse,
+  ResolvedVariables,
   ResponseDiff,
   TestRunResult,
   WebSocketDraft,
@@ -100,14 +101,15 @@ export function exportRequestAs(
  * The full variable map `requestPath`'s `{{name}}` placeholders would
  * resolve against right now — against `environment` if named (else the
  * project's default), collection variables and this project's
- * session-chained variables included — without sending anything. Powers
- * the request panel's read-only variables drawer.
+ * session-chained variables included — without sending anything, plus
+ * which of those names the active environment flags secret. Powers the
+ * request panel's read-only variables drawer.
  */
 export function getResolvedVariables(
   requestPath: string,
   environment: string | null,
-): Promise<Record<string, string>> {
-  return invoke<Record<string, string>>("get_resolved_variables", { requestPath, environment });
+): Promise<ResolvedVariables> {
+  return invoke<ResolvedVariables>("get_resolved_variables", { requestPath, environment });
 }
 
 /**
