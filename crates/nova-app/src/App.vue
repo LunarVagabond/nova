@@ -45,6 +45,7 @@ import WebSocketPanel from "./components/WebSocketPanel.vue";
 import EnvironmentPanel from "./components/EnvironmentPanel.vue";
 import HistoryPanel from "./components/HistoryPanel.vue";
 import CookiesPanel from "./components/CookiesPanel.vue";
+import MockLogPanel from "./components/MockLogPanel.vue";
 import EmptyState from "./components/EmptyState.vue";
 import Modal from "./components/Modal.vue";
 import Icon from "./components/Icon.vue";
@@ -113,7 +114,7 @@ const mockServerError = ref<string | null>(null);
 // inferred from `managedEnvironment`/`openTabs.length`) so there's always a
 // way back to "project" — e.g. a sidebar/header nav action — instead of it
 // only being reachable as an implicit fallback.
-type MainView = "request" | "environment" | "project" | "history" | "cookies";
+type MainView = "request" | "environment" | "project" | "history" | "cookies" | "mock";
 const mainView = ref<MainView>("project");
 
 const error = ref<string | null>(null);
@@ -350,6 +351,17 @@ async function showCookies() {
     environmentPanelDirty.value = false;
   }
   mainView.value = "cookies";
+}
+
+/** Shows the running mock server's call log — a read-only view, so no dirty-discard check is needed to leave it. */
+async function showMockLog() {
+  if (mainView.value === "mock") return;
+  if (mainView.value === "environment") {
+    if (!(await confirmDiscard(environmentPanelDirty.value))) return;
+    managedEnvironment.value = null;
+    environmentPanelDirty.value = false;
+  }
+  mainView.value = "mock";
 }
 
 /** Recursively looks for a request at `path` anywhere in `collection`'s tree. */
@@ -934,6 +946,7 @@ async function handleToggleMockServer() {
       :showing-project-settings="mainView === 'project'"
       :showing-history="mainView === 'history'"
       :showing-cookies="mainView === 'cookies'"
+      :showing-mock-log="mainView === 'mock'"
       :running-tests="runningTests"
       :mock-server-status="mockServer"
       :mock-server-busy="mockServerBusy"
@@ -944,6 +957,7 @@ async function handleToggleMockServer() {
       @project-settings="showProjectSettings"
       @show-history="showHistory"
       @show-cookies="showCookies"
+      @show-mock-log="showMockLog"
       @run-tests="handleRunTests"
       @import-export="openImportExport"
       @toggle-mock-server="handleToggleMockServer"
@@ -1018,7 +1032,7 @@ async function handleToggleMockServer() {
         class="app-shell__content"
         :class="{
           'app-shell__content--flush':
-            mainView === 'request' || mainView === 'history' || mainView === 'cookies',
+            mainView === 'request' || mainView === 'history' || mainView === 'cookies' || mainView === 'mock',
         }"
       >
         <template v-for="tab in openTabs" :key="tab.path">
@@ -1069,6 +1083,11 @@ async function handleToggleMockServer() {
           v-else-if="project && mainView === 'cookies'"
           :project-root="project.root"
           :active="mainView === 'cookies'"
+        />
+        <MockLogPanel
+          v-else-if="project && mainView === 'mock'"
+          :mock-server-status="mockServer"
+          :active="mainView === 'mock'"
         />
         <EmptyState v-else-if="!project" :error="error" @open="handleOpen" />
       </div>

@@ -61,6 +61,8 @@ pub fn run() {
             commands::mock_server_status,
             commands::start_mock_server,
             commands::stop_mock_server,
+            commands::get_mock_call_log,
+            commands::clear_mock_call_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

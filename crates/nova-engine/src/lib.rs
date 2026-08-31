@@ -51,7 +51,7 @@ pub use formats::openapi::{
 };
 pub use formats::postman::generate_from_postman_collection;
 pub use git::status::{git_status, GitFileStatus, GitStatusCache, GIT_STATUS_CACHE_TTL};
-pub use mock::{mock_routes, MockRoute, PathSegment};
+pub use mock::{mock_routes, MockCallLogEntry, MockRoute, PathSegment};
 pub use project::collection::{
     create_collection, delete_collection, rename_collection, Collection,
 };

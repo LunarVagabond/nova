@@ -19,6 +19,7 @@ import type {
   ImportProjectOutcome,
   InitOutcome,
   Manifest,
+  MockCallLogEntry,
   MockServerStatus,
   MultipartField,
   NovaEnvironment,
@@ -485,6 +486,16 @@ export function startMockServer(
 /** Stops the desktop app's mock server. A no-op if it isn't running. */
 export function stopMockServer(): Promise<MockServerStatus> {
   return invoke<MockServerStatus>("stop_mock_server");
+}
+
+/** The running mock server's call log, most recent first. Empty if it isn't running or hasn't been hit yet. */
+export function getMockCallLog(): Promise<MockCallLogEntry[]> {
+  return invoke<MockCallLogEntry[]>("get_mock_call_log");
+}
+
+/** Clears the running mock server's call log. A no-op if it isn't running. */
+export function clearMockCallLog(): Promise<void> {
+  return invoke<void>("clear_mock_call_log");
 }
 
 /** Opens the native folder picker and returns the chosen path, or null if cancelled. */

@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use serde::Serialize;
+
 use crate::error::NovaResult;
 use crate::project::collection::Collection;
 use crate::project::NovaProject;
@@ -49,6 +51,34 @@ impl MockRoute {
                 PathSegment::Param(_) => true,
             })
     }
+}
+
+/// One request the running mock server handled, recorded for display in a
+/// "call log" — visibility into what's actually hitting the server, since
+/// otherwise debugging why a client isn't getting the expected canned
+/// response means digging through terminal output instead of the app that
+/// started the server.
+///
+/// This is a plain data type with no I/O of its own — recording an entry
+/// each time a request comes in is the caller's job (`nova-app`'s
+/// `mock_server.rs`, which owns the actual `tiny_http::Server` loop; see
+/// the module-level boundary note there for why the server itself isn't
+/// in this crate).
+#[derive(Debug, Clone, Serialize)]
+pub struct MockCallLogEntry {
+    /// Identifies this entry independent of its position in the log list,
+    /// which shifts as new calls arrive and old ones are evicted — mirrors
+    /// `HistoryEntry::id`.
+    pub id: u64,
+    /// Milliseconds since the Unix epoch when the call was received.
+    pub received_at_ms: u128,
+    pub method: String,
+    pub path: String,
+    /// The route pattern this call matched (e.g. `/users/{{user_id}}`), if
+    /// any — `None` means no registered route matched, so a `404` was
+    /// served.
+    pub matched_route: Option<String>,
+    pub status: u16,
 }
 
 /// Build the set of mock routes for `project`: one per discovered `.nova`

@@ -1264,3 +1264,20 @@ pub fn start_mock_server(
 pub fn stop_mock_server(state: tauri::State<MockServerState>) -> MockServerStatus {
     state.stop()
 }
+
+/// The running mock server's call log, most recent first — see
+/// [`crate::mock_server::MockServerState::call_log`]. Empty (not an
+/// error) when the server isn't running or hasn't been hit yet.
+#[tauri::command]
+pub fn get_mock_call_log(
+    state: tauri::State<MockServerState>,
+) -> Vec<nova_engine::MockCallLogEntry> {
+    state.call_log()
+}
+
+/// Clears the running mock server's call log. A no-op when nothing is
+/// running.
+#[tauri::command]
+pub fn clear_mock_call_log(state: tauri::State<MockServerState>) {
+    state.clear_call_log()
+}
