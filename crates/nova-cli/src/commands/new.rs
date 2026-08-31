@@ -54,8 +54,9 @@ pub fn request(
             body_text: "query {\n  \n}\n\n[variables]\n{}\n".to_string(),
             auth: None,
             sync_content_type: true,
-            has_assertions: false,
-            has_extractions: false,
+            assert_text: String::new(),
+            script_pre: None,
+            script_post: None,
             has_example_response: false,
         };
         created.write(&draft).map_err(|e| e.to_string())?;

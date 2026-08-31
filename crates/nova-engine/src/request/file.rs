@@ -100,18 +100,24 @@ impl RequestFile {
     }
 
     /// Write an edited [`RequestDraft`](crate::RequestDraft) —
-    /// method/URL/query/headers/body, plus the request's `[auth]` scheme
-    /// and `[settings]` — back to this file on disk, going through
+    /// method/URL/query/headers/body, the request's `[auth]` scheme and
+    /// `[settings]`, its `[assert]` section (re-parsed from
+    /// `draft.assert_text`), and its `[script]` section (rebuilt from
+    /// `draft.script_pre`/`draft.script_post`) — back to this file on disk,
+    /// going through
     /// [`ParsedRequest::to_nova_string`](crate::ParsedRequest::to_nova_string)
     /// rather than nova-app (or any other caller) hand-rolling `.nova`
     /// syntax.
     ///
-    /// Any assertions, extractions, and example response already present in
-    /// the file are read back first and carried through unchanged — the
-    /// fields a draft carries don't touch those sections, so saving one
-    /// shouldn't silently drop the other. A draft's `has_*` flags are
-    /// ignored here for the same reason: they describe what the file
-    /// already had, and the file itself remains the source of truth.
+    /// Only the example response already present in the file (if any) is
+    /// read back and carried through unchanged — a draft has no field for
+    /// it, so saving one shouldn't silently drop it. A draft's
+    /// `has_example_response` is ignored here for the same reason: it
+    /// describes what the file already had, and the file itself remains
+    /// the source of truth.
+    ///
+    /// A malformed `assert_text` line is a [`NovaError::RequestSerialize`],
+    /// the same as any other draft field that fails to round-trip.
     pub fn write(&self, draft: &RequestDraft) -> NovaResult<()> {
         let existing = self.parse().ok();
 
@@ -122,6 +128,23 @@ impl RequestFile {
             }
         })?;
 
+        let (assertions, extractions) = crate::execution::assertion::parse_directives(
+            &draft.assert_text,
+        )
+        .map_err(|message| NovaError::RequestSerialize {
+            path: self.path.clone(),
+            message,
+        })?;
+
+        let script = if draft.script_pre.is_none() && draft.script_post.is_none() {
+            None
+        } else {
+            Some(crate::execution::script::ScriptSection {
+                pre: draft.script_pre.clone(),
+                post: draft.script_post.clone(),
+            })
+        };
+
         let parsed = ParsedRequest {
             method: draft.method.clone(),
             url: draft.url.clone(),
@@ -130,15 +153,9 @@ impl RequestFile {
             body,
             auth: draft.auth.clone(),
             sync_content_type: draft.sync_content_type,
-            assertions: existing
-                .as_ref()
-                .map(|p| p.assertions.clone())
-                .unwrap_or_default(),
-            extractions: existing
-                .as_ref()
-                .map(|p| p.extractions.clone())
-                .unwrap_or_default(),
-            script: existing.as_ref().and_then(|p| p.script.clone()),
+            assertions,
+            extractions,
+            script,
             example_response: existing.and_then(|p| p.example_response),
         };
 

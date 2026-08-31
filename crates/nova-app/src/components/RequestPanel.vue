@@ -91,8 +91,17 @@ const auth = ref<AuthScheme | null>(null);
 // `[settings]`' sync_content_type: whether picking a body type also
 // rewrites the Content-Type header (see `handleBodyTypeChange`).
 const syncContentType = ref(true);
+// The `[assert]` section's assertion/extraction lines, edited as raw text
+// (see `RequestDraft.assert_text`) rather than a structured rule builder —
+// the engine's directive parser is the single source of truth for what's
+// valid, surfaced here as a save-time error rather than duplicated
+// client-side.
+const assertText = ref("");
+// The `[script]` section's `pre:`/`post:` script name or path, if any.
+const scriptPre = ref("");
+const scriptPost = ref("");
 
-type FieldTab = "auth" | "headers" | "params" | "body";
+type FieldTab = "auth" | "headers" | "params" | "body" | "scripts" | "tests";
 const activeTab = ref<FieldTab>("auth");
 
 type ResponseTab = "headers" | "raw" | "preview" | "diff";
@@ -325,7 +334,10 @@ const dirty = computed(() => {
     JSON.stringify(headers.value) !== JSON.stringify(original.value.headers) ||
     bodyText.value !== original.value.body_text ||
     JSON.stringify(auth.value) !== JSON.stringify(original.value.auth) ||
-    syncContentType.value !== original.value.sync_content_type
+    syncContentType.value !== original.value.sync_content_type ||
+    assertText.value !== original.value.assert_text ||
+    (scriptPre.value.trim() === "" ? null : scriptPre.value) !== original.value.script_pre ||
+    (scriptPost.value.trim() === "" ? null : scriptPost.value) !== original.value.script_post
   );
 });
 
@@ -590,6 +602,9 @@ async function applyDraft(draft: RequestDraft) {
   bodyText.value = draft.body_text;
   auth.value = draft.auth ? { ...draft.auth } : null;
   syncContentType.value = draft.sync_content_type;
+  assertText.value = draft.assert_text;
+  scriptPre.value = draft.script_pre ?? "";
+  scriptPost.value = draft.script_post ?? "";
   await syncBodyTypeFromText();
 }
 
@@ -639,8 +654,8 @@ async function handleSave(): Promise<boolean> {
   saving.value = true;
   saveError.value = null;
   try {
-    // `has_*` come along untouched from the last load: they describe the
-    // assertions/example response the file already has, which saving
+    // `has_example_response` comes along untouched from the last load: it
+    // describes the example response the file already has, which saving
     // preserves rather than rewrites.
     const draft: RequestDraft = {
       ...(original.value as RequestDraft),
@@ -651,6 +666,9 @@ async function handleSave(): Promise<boolean> {
       body_text: bodyText.value,
       auth: auth.value ? { ...auth.value } : null,
       sync_content_type: syncContentType.value,
+      assert_text: assertText.value,
+      script_pre: scriptPre.value.trim() === "" ? null : scriptPre.value,
+      script_post: scriptPost.value.trim() === "" ? null : scriptPost.value,
     };
     await saveRequest(props.request.path, draft);
     original.value = draft;
@@ -862,16 +880,8 @@ defineExpose({ dirty, save: handleSave });
     <template v-else-if="original">
       <p v-if="saveError" class="request-panel__save-error">Save failed: {{ saveError }}</p>
 
-      <p
-        v-if="original.has_assertions || original.has_extractions || original.has_example_response"
-        class="request-panel__hint-text"
-      >
-        This file also has
-        <template v-if="original.has_assertions || original.has_extractions">assertions/extractions</template>
-        <template v-if="(original.has_assertions || original.has_extractions) && original.has_example_response">
-          and</template>
-        <template v-if="original.has_example_response"> an example response</template>
-        not shown here — saving preserves them as-is.
+      <p v-if="original.has_example_response" class="request-panel__hint-text">
+        This file also has an example response not shown here — saving preserves it as-is.
       </p>
 
       <div class="request-panel__method-url">
@@ -941,6 +951,30 @@ defineExpose({ dirty, save: handleSave });
             @click="activeTab = 'body'"
           >
             Body<span v-if="bodyText.trim().length > 0" class="request-panel__tab-count">&bull;</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="request-panel__tab"
+            :class="{ 'request-panel__tab--active': activeTab === 'scripts' }"
+            :aria-selected="activeTab === 'scripts'"
+            @click="activeTab = 'scripts'"
+          >
+            Scripts<span
+              v-if="scriptPre.trim().length > 0 || scriptPost.trim().length > 0"
+              class="request-panel__tab-count"
+              >&bull;</span
+            >
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="request-panel__tab"
+            :class="{ 'request-panel__tab--active': activeTab === 'tests' }"
+            :aria-selected="activeTab === 'tests'"
+            @click="activeTab = 'tests'"
+          >
+            Tests<span v-if="assertText.trim().length > 0" class="request-panel__tab-count">&bull;</span>
           </button>
         </div>
 
@@ -1013,7 +1047,7 @@ defineExpose({ dirty, save: handleSave });
         <KeyValueEditor v-model="query" name-placeholder="param" value-placeholder="value" />
       </div>
 
-      <div v-else class="request-panel__tab-panel">
+      <div v-else-if="activeTab === 'body'" class="request-panel__tab-panel">
         <div class="request-panel__body-type">
           <div class="request-panel__body-type-radios" role="radiogroup" aria-label="Body type">
             <label v-for="option in BODY_TYPE_OPTIONS" :key="option" class="request-panel__radio">
@@ -1088,6 +1122,48 @@ defineExpose({ dirty, save: handleSave });
             <Icon name="wand" />
           </button>
         </div>
+      </div>
+
+      <div v-else-if="activeTab === 'scripts'" class="request-panel__tab-panel">
+        <p class="request-panel__hint-text">
+          Named scripts run around this request's execution — a
+          <code>pre:</code> script can add or override headers/params or
+          replace the body, and a <code>post:</code> script can extract
+          <code>&#123;&#123;variable&#125;&#125;</code> values for later
+          requests in the same run. A bare name resolves under
+          <code>nova/scripts/</code>;
+          an explicit path is relative to the project root. A collection or
+          folder can also carry its own scripts that wrap around this
+          request's — see the project's <code>_collection.yaml</code>.
+        </p>
+        <label class="request-panel__script-field">
+          <span class="request-panel__script-label">pre:</span>
+          <input
+            v-model="scriptPre"
+            type="text"
+            class="request-panel__script-input"
+            placeholder="sign-request.py"
+          />
+        </label>
+        <label class="request-panel__script-field">
+          <span class="request-panel__script-label">post:</span>
+          <input
+            v-model="scriptPost"
+            type="text"
+            class="request-panel__script-input"
+            placeholder="log-response.js"
+          />
+        </label>
+      </div>
+
+      <div v-else-if="activeTab === 'tests'" class="request-panel__tab-panel">
+        <p class="request-panel__hint-text">
+          One assertion or extraction per line: <code>status == 200</code>,
+          <code>response.user.id exists</code>,
+          <code>access_token = response.access_token</code>. Runs with
+          <code>nova test</code> or the Run Tests button in the top bar.
+        </p>
+        <CodeEditor v-model="assertText" language="text" />
       </div>
     </template>
     </div>
