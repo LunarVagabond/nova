@@ -11,6 +11,7 @@ import type {
   AuthScheme,
   Collection,
   CookieView,
+  ExportFormat,
   GitStatusMap,
   GraphQlBody,
   HistoryDetail,
@@ -79,6 +80,20 @@ export function sendRequest(
   environment: string | null,
 ): Promise<RequestResponse> {
   return invoke<RequestResponse>("send_request", { requestPath, environment });
+}
+
+/**
+ * Renders `requestPath`, after `{{variable}}` substitution, as a
+ * copy-pasteable `curl` command or code snippet — without sending
+ * anything. Resolves the same way `sendRequest` does. Powers the request
+ * panel's "Copy as…" control.
+ */
+export function exportRequestAs(
+  requestPath: string,
+  environment: string | null,
+  format: ExportFormat,
+): Promise<string> {
+  return invoke<string>("export_request_as", { requestPath, environment, format });
 }
 
 /**

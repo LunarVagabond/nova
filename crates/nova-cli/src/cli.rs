@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 /// Nova — a Git-native API development client.
 ///
@@ -162,6 +162,22 @@ pub enum Command {
         output: Option<PathBuf>,
     },
 
+    /// Render a single request, after `{{variable}}` substitution, as a
+    /// copy-pasteable `curl` command or code snippet — for handing a
+    /// request to someone who doesn't have Nova installed, or dropping one
+    /// into a bug report or script.
+    ExportRequest {
+        /// Path to a `.nova` file.
+        request: PathBuf,
+
+        #[arg(long)]
+        environment: Option<String>,
+
+        /// Target format to render the request as.
+        #[arg(long = "as", value_enum, default_value = "curl")]
+        r#as: ExportRequestFormat,
+    },
+
     /// Start a local mock server serving each request's example response.
     ///
     /// For every `.nova` request found under `path`, registers a route
@@ -261,4 +277,20 @@ pub enum NewKind {
         #[arg(default_value = ".")]
         path: PathBuf,
     },
+}
+
+/// The `--as` target for `nova export-request`.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum ExportRequestFormat {
+    Curl,
+    Fetch,
+}
+
+impl From<ExportRequestFormat> for nova_engine::ExportFormat {
+    fn from(format: ExportRequestFormat) -> Self {
+        match format {
+            ExportRequestFormat::Curl => nova_engine::ExportFormat::Curl,
+            ExportRequestFormat::Fetch => nova_engine::ExportFormat::Fetch,
+        }
+    }
 }

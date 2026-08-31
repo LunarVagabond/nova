@@ -561,6 +561,23 @@ impl Session {
         Ok(Some(header))
     }
 
+    /// Resolve `parsed` against `environment` and `collection_variables`
+    /// with the same precedence [`Session::resolve_and_execute_in_collection`]
+    /// uses, but without executing it, running its `[script]` hooks, or
+    /// mutating this session — for a caller that wants the fully-resolved
+    /// request text (e.g. rendering it as a `curl` command via
+    /// [`crate::export_request`]) without sending anything.
+    pub fn resolve_in_collection(
+        &self,
+        parsed: &ParsedRequest,
+        environment: &Environment,
+        collection_variables: &HashMap<String, String>,
+    ) -> NovaResult<ParsedRequest> {
+        let effective_environment =
+            self.environment_with_variables(environment, collection_variables);
+        parsed.resolve(&effective_environment)
+    }
+
     /// The full variable map [`Session::resolve_and_execute_in_collection`]
     /// would substitute `{{name}}` placeholders against right now:
     /// `collection_variables` overridden by this session's chained

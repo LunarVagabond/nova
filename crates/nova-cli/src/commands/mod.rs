@@ -1,5 +1,6 @@
 pub mod check_secrets;
 pub mod export;
+pub mod export_request;
 pub mod generate;
 pub mod init;
 pub mod inspect;

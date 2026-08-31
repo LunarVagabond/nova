@@ -41,6 +41,11 @@ fn main() {
         }
         Some(Command::Generate { input, output }) => commands::generate::run(&input, &output),
         Some(Command::Export { path, output }) => commands::export::run(&path, output.as_deref()),
+        Some(Command::ExportRequest {
+            request,
+            environment,
+            r#as,
+        }) => commands::export_request::run(&request, environment.as_deref(), r#as.into()),
         Some(Command::Mock { path, host, port }) => commands::mock::run(&path, &host, port),
         Some(Command::CheckSecrets { path, staged }) => commands::check_secrets::run(&path, staged),
         Some(Command::InstallHook { path }) => commands::install_hook::run(&path),
