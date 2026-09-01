@@ -474,24 +474,32 @@ fn post_token_request(token_url: &str, form: &[(&str, &str)]) -> NovaResult<Acce
         message,
     };
 
-    let agent = ureq::Agent::new();
-    let response = match agent.post(token_url).send_form(form) {
-        Ok(response) => response,
-        Err(ureq::Error::Status(status, response)) => {
-            // The body of a token-endpoint failure carries the actual
-            // reason (`invalid_client`, `invalid_scope`, ...), so surface
-            // it rather than only the status code.
-            let body = response.into_string().unwrap_or_default();
-            return Err(failure(format!(
-                "token endpoint returned {status}: {}",
-                body.trim()
-            )));
-        }
-        Err(ureq::Error::Transport(transport)) => return Err(failure(transport.to_string())),
-    };
+    // Disabled so a non-2xx status comes back as an ordinary `Response`
+    // (its body carries the actual failure reason, e.g. `invalid_client`/
+    // `invalid_scope`) instead of an `Err(ureq::Error::StatusCode(_))` that
+    // discards it.
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let mut response = agent
+        .post(token_url)
+        .send_form(form.iter().copied())
+        .map_err(|source| failure(source.to_string()))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.body_mut().read_to_string().unwrap_or_default();
+        return Err(failure(format!(
+            "token endpoint returned {}: {}",
+            status.as_u16(),
+            body.trim()
+        )));
+    }
 
     let body = response
-        .into_string()
+        .body_mut()
+        .read_to_string()
         .map_err(|source| failure(format!("failed to read token response: {source}")))?;
 
     let parsed: TokenResponse = serde_json::from_str(&body)

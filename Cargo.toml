@@ -35,6 +35,6 @@ tiny_http = "0.12"
 tokio = { version = "1.53.1", features = ["rt"] }
 tonic = { version = "0.14.6", default-features = false, features = ["channel", "tls-ring", "tls-webpki-roots"] }
 tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
-ureq = "2"
+ureq = "3"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
