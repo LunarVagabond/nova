@@ -21,7 +21,7 @@ csv = "1"
 http = "1.5.0"
 httpdate = "1"
 indexmap = "2"
-md5 = "0.7"
+md5 = "0.8"
 openapiv3 = "2"
 prost = "0.14.4"
 prost-reflect = { version = "0.16.5", features = ["serde"] }
