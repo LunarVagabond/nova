@@ -52,8 +52,14 @@ fn sse_server() -> (
             if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
                 break;
             }
-            if let Some(value) = line.strip_prefix("Authorization:") {
-                auth = Some(value.trim().to_string());
+            // Header names are case-insensitive on the wire — ureq (via the
+            // `http` crate) always sends lowercase header names, unlike a
+            // hand-rolled client that might preserve whatever casing it was
+            // given.
+            if let Some((name, value)) = line.split_once(':') {
+                if name.eq_ignore_ascii_case("Authorization") {
+                    auth = Some(value.trim().to_string());
+                }
             }
         }
         tx.send(auth).unwrap();

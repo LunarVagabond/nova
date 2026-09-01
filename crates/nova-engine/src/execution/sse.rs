@@ -70,26 +70,44 @@ pub fn connect_and_stream(
     request: &ParsedSseRequest,
     read_timeout: Duration,
 ) -> NovaResult<SseExchange> {
-    let agent = ureq::AgentBuilder::new().timeout_read(read_timeout).build();
+    // `timeout_recv_body` is a rolling/idle timeout, not a hard cap on total
+    // transfer time (each call to receive more of the body is timed from
+    // when that call starts, not from when the response started) — the same
+    // behavior ureq 2.x's per-read socket `timeout_read` gave this stream
+    // reader, letting a still-active-but-slow stream keep going indefinitely
+    // while a stream that's gone quiet gets cut off after `read_timeout`.
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_recv_body(Some(read_timeout))
+        .build()
+        .into();
 
-    let mut req = agent.request("GET", &request.url);
+    let mut builder = ureq::http::Request::builder()
+        .method("GET")
+        .uri(&request.url);
     if !request
         .headers
         .iter()
         .any(|h| h.name.eq_ignore_ascii_case("Accept"))
     {
-        req = req.set("Accept", "text/event-stream");
+        builder = builder.header("Accept", "text/event-stream");
     }
     for header in &request.headers {
-        req = req.set(&header.name, &header.value);
+        builder = builder.header(&header.name, &header.value);
     }
+    let req = builder
+        .body(())
+        .map_err(|source| NovaError::RequestExecution {
+            message: format!("failed to build request to {:?}: {source}", request.url),
+        })?;
 
     let started = Instant::now();
-    let response = req.call().map_err(|source| NovaError::RequestExecution {
-        message: format!("failed to connect to {:?}: {source}", request.url),
-    })?;
+    let response = agent
+        .run(req)
+        .map_err(|source| NovaError::RequestExecution {
+            message: format!("failed to connect to {:?}: {source}", request.url),
+        })?;
 
-    let mut reader = BufReader::new(response.into_reader());
+    let mut reader = BufReader::new(response.into_body().into_reader());
     let mut events = Vec::new();
     let mut parser = EventParser::default();
 
@@ -110,7 +128,10 @@ pub fn connect_and_stream(
                 if matches!(
                     io_error.kind(),
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                ) =>
+                ) || io_error
+                    .get_ref()
+                    .and_then(|source| source.downcast_ref::<ureq::Error>())
+                    .is_some_and(|source| matches!(source, ureq::Error::Timeout(_))) =>
             {
                 break;
             }

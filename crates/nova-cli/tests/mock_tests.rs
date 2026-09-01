@@ -117,17 +117,27 @@ fn spawn_mock_server(project_dir: &Path) -> (String, std::process::Child) {
 /// If `child` has actually exited, though, no amount of retrying will ever
 /// succeed — fail immediately with its exit status rather than waiting out
 /// the full deadline to report a bare, uninformative "connection refused".
-fn get_with_retry(url: &str, child: &mut Child) -> Result<ureq::Response, Box<ureq::Error>> {
+fn get(url: &str) -> ureq::RequestBuilder<ureq::typestate::WithoutBody> {
+    // A non-2xx/3xx status (501, 404, ...) is exactly what several tests
+    // below assert on — disable ureq's default of turning that into an
+    // `Err` that discards the response body, so it comes back as an
+    // ordinary `Response` these tests can inspect.
+    ureq::get(url).config().http_status_as_error(false).build()
+}
+
+fn get_with_retry(url: &str, child: &mut Child) -> ureq::http::Response<ureq::Body> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
-        match ureq::get(url).call() {
-            Err(ureq::Error::Transport(transport)) if std::time::Instant::now() < deadline => {
+        match get(url).call() {
+            Err(source) if std::time::Instant::now() < deadline => {
                 if let Ok(Some(status)) = child.try_wait() {
-                    panic!("nova mock exited early with {status} instead of accepting a connection (last error: {transport})");
+                    panic!("nova mock exited early with {status} instead of accepting a connection (last error: {source})");
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
-            result => return result.map_err(Box::new),
+            result => {
+                return result.unwrap_or_else(|source| panic!("request to {url} failed: {source}"))
+            }
         }
     }
 }
@@ -140,9 +150,12 @@ fn serves_the_example_response_for_a_request_that_declares_one() {
 
     let (base_url, mut child) = spawn_mock_server(&dir);
 
-    let response = get_with_retry(&format!("{base_url}/hello"), &mut child).unwrap();
+    let mut response = get_with_retry(&format!("{base_url}/hello"), &mut child);
     assert_eq!(response.status(), 200);
-    assert_eq!(response.into_string().unwrap().trim(), "hi there");
+    assert_eq!(
+        response.body_mut().read_to_string().unwrap().trim(),
+        "hi there"
+    );
 
     child.kill().unwrap();
     let _ = child.wait();
@@ -157,11 +170,8 @@ fn returns_501_for_a_registered_route_with_no_example_response() {
 
     let (base_url, mut child) = spawn_mock_server(&dir);
 
-    let err = get_with_retry(&format!("{base_url}/missing"), &mut child).unwrap_err();
-    match *err {
-        ureq::Error::Status(code, _) => assert_eq!(code, 501),
-        ureq::Error::Transport(transport) => panic!("unexpected transport error: {transport}"),
-    }
+    let response = get_with_retry(&format!("{base_url}/missing"), &mut child);
+    assert_eq!(response.status(), 501);
 
     child.kill().unwrap();
     let _ = child.wait();
@@ -176,9 +186,12 @@ fn defaults_to_the_lowest_status_example_for_a_route_with_multiple() {
 
     let (base_url, mut child) = spawn_mock_server(&dir);
 
-    let response = get_with_retry(&format!("{base_url}/multi"), &mut child).unwrap();
+    let mut response = get_with_retry(&format!("{base_url}/multi"), &mut child);
     assert_eq!(response.status(), 200);
-    assert_eq!(response.into_string().unwrap().trim(), "found");
+    assert_eq!(
+        response.body_mut().read_to_string().unwrap().trim(),
+        "found"
+    );
 
     child.kill().unwrap();
     let _ = child.wait();
@@ -194,25 +207,22 @@ fn selects_an_example_by_name_header() {
     let (base_url, mut child) = spawn_mock_server(&dir);
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    let response = loop {
-        match ureq::get(&format!("{base_url}/multi"))
-            .set("X-Nova-Mock-Example", "not_found")
+    let mut response = loop {
+        match get(&format!("{base_url}/multi"))
+            .header("X-Nova-Mock-Example", "not_found")
             .call()
         {
-            Err(ureq::Error::Transport(_)) if std::time::Instant::now() < deadline => {
+            Err(_) if std::time::Instant::now() < deadline => {
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
-            result => break result,
+            result => break result.unwrap(),
         }
     };
-    match response {
-        Ok(_) => panic!("expected a 404 status, got a success response"),
-        Err(ureq::Error::Status(code, response)) => {
-            assert_eq!(code, 404);
-            assert_eq!(response.into_string().unwrap().trim(), "missing");
-        }
-        Err(ureq::Error::Transport(transport)) => panic!("unexpected transport error: {transport}"),
-    }
+    assert_eq!(response.status(), 404);
+    assert_eq!(
+        response.body_mut().read_to_string().unwrap().trim(),
+        "missing"
+    );
 
     child.kill().unwrap();
     let _ = child.wait();
@@ -228,25 +238,22 @@ fn selects_an_example_by_status_header() {
     let (base_url, mut child) = spawn_mock_server(&dir);
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    let response = loop {
-        match ureq::get(&format!("{base_url}/multi"))
-            .set("X-Nova-Mock-Status", "404")
+    let mut response = loop {
+        match get(&format!("{base_url}/multi"))
+            .header("X-Nova-Mock-Status", "404")
             .call()
         {
-            Err(ureq::Error::Transport(_)) if std::time::Instant::now() < deadline => {
+            Err(_) if std::time::Instant::now() < deadline => {
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
-            result => break result,
+            result => break result.unwrap(),
         }
     };
-    match response {
-        Ok(_) => panic!("expected a 404 status, got a success response"),
-        Err(ureq::Error::Status(code, response)) => {
-            assert_eq!(code, 404);
-            assert_eq!(response.into_string().unwrap().trim(), "missing");
-        }
-        Err(ureq::Error::Transport(transport)) => panic!("unexpected transport error: {transport}"),
-    }
+    assert_eq!(response.status(), 404);
+    assert_eq!(
+        response.body_mut().read_to_string().unwrap().trim(),
+        "missing"
+    );
 
     child.kill().unwrap();
     let _ = child.wait();
@@ -261,11 +268,8 @@ fn returns_404_for_a_path_with_no_matching_route() {
 
     let (base_url, mut child) = spawn_mock_server(&dir);
 
-    let err = get_with_retry(&format!("{base_url}/nope"), &mut child).unwrap_err();
-    match *err {
-        ureq::Error::Status(code, _) => assert_eq!(code, 404),
-        ureq::Error::Transport(transport) => panic!("unexpected transport error: {transport}"),
-    }
+    let response = get_with_retry(&format!("{base_url}/nope"), &mut child);
+    assert_eq!(response.status(), 404);
 
     child.kill().unwrap();
     let _ = child.wait();

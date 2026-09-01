@@ -29,28 +29,26 @@ pub struct Response {
 ///
 /// The ticket's wishlist was a browser-devtools-style DNS / TCP connect /
 /// TLS handshake / request sent / waiting (TTFB) / content download
-/// breakdown. `ureq` 2.x (see `Cargo.toml`) doesn't support that: its
-/// connection-establishment code (`connect`/`connect_socket`/`connect_host`
-/// in `ureq::stream`/`ureq::unit`) is entirely private with no callback,
-/// tracing, or hook API, and there's no lower-level escape hatch — `ureq`'s
-/// `Request::call`/`send_string`/`send_bytes` etc. are the only entry
-/// points, and they don't return until DNS, connect, TLS, and sending the
-/// request are already done *and* the response status line and headers have
-/// been read. So DNS/connect/TLS/request-sent/TTFB can't be measured
-/// separately without forking or replacing `ureq`'s transport layer
-/// entirely, which is out of scope here.
+/// breakdown. `ureq` doesn't support that: its Sans-IO connection-establishment
+/// machinery is entirely internal with no callback, tracing, or hook API, and
+/// there's no lower-level escape hatch — `Agent::run`/`RequestBuilder::call`/
+/// `send` etc. are the only entry points, and they don't return until DNS,
+/// connect, TLS, and sending the request are already done *and* the response
+/// status line and headers have been read. So DNS/connect/TLS/request-sent/TTFB
+/// can't be measured separately without forking or replacing `ureq`'s
+/// transport layer entirely, which is out of scope here.
 ///
 /// What genuinely is measurable with `ureq`'s public API, and is what this
 /// struct captures instead:
 ///
 /// - `time_to_first_byte_ms`: wall-clock time from just before the request
 ///   is sent to the moment the response status line and headers have been
-///   received (when `call()`/`send_string()`/etc. return). This bundles DNS
+///   received (when `run()`/`call()`/`send()`/etc. return). This bundles DNS
 ///   lookup, TCP connect, TLS handshake, sending the request, and waiting on
 ///   the server into one number — real phases exist inside it, but `ureq`
 ///   gives no way to see the boundaries between them.
 /// - `content_download_ms`: wall-clock time spent reading the response body
-///   after the head has arrived (`Response::into_string`).
+///   after the head has arrived (`Body::read_to_string`).
 ///
 /// `time_to_first_byte_ms + content_download_ms` equals `elapsed_ms` (up to
 /// sub-millisecond rounding). Nothing here is estimated or fabricated: both
@@ -97,8 +95,26 @@ pub(crate) const DEFAULT_ACCEPT_ENCODING: &str = "gzip";
 /// failure (connection refused, DNS failure, timeout, ...) or a missing
 /// multipart/binary file attachment is a typed `NovaError`.
 pub fn execute(project_root: &Path, request: &ParsedRequest) -> NovaResult<Response> {
-    let agent = ureq::Agent::new();
-    let mut req = agent.request(&request.method, &request.full_url());
+    // Disabled so a non-2xx/3xx status comes back as an ordinary `Response`
+    // (matching this function's own contract, see above) rather than as an
+    // `Err(ureq::Error::StatusCode(_))` that discards the response body.
+    // `allow_non_standard_methods` mirrors ureq 2.x's `agent.request(method, url)`,
+    // which never restricted `method` to a fixed verb set either — a `.nova`
+    // file's `method` is a free-form string (WebDAV verbs, etc.).
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .allow_non_standard_methods(true)
+        .build()
+        .into();
+
+    let method = ureq::http::Method::from_bytes(request.method.as_bytes()).map_err(|source| {
+        NovaError::RequestExecution {
+            message: format!("invalid HTTP method {:?}: {source}", request.method),
+        }
+    })?;
+    let mut builder = ureq::http::Request::builder()
+        .method(method)
+        .uri(request.full_url());
 
     let has_header = |name: &str| {
         request
@@ -107,29 +123,28 @@ pub fn execute(project_root: &Path, request: &ParsedRequest) -> NovaResult<Respo
             .any(|h| h.name.eq_ignore_ascii_case(name))
     };
     if !has_header("User-Agent") {
-        req = req.set("User-Agent", DEFAULT_USER_AGENT);
+        builder = builder.header("User-Agent", DEFAULT_USER_AGENT);
     }
     if !has_header("Accept") {
-        req = req.set("Accept", DEFAULT_ACCEPT);
+        builder = builder.header("Accept", DEFAULT_ACCEPT);
     }
     for header in &request.headers {
-        req = req.set(&header.name, &header.value);
+        builder = builder.header(&header.name, &header.value);
     }
 
     let started = Instant::now();
-    let result = send(project_root, req, &request.body)?;
-    // `send()` (via `ureq::Request::call`/`send_string`/etc.) doesn't return
-    // until the response status line and headers have been read — DNS,
-    // connect, TLS, sending the request, and waiting on the server are all
-    // folded into this one span. See `ResponseTiming`'s doc comment for why
-    // that's as fine-grained as `ureq` lets this get.
+    let result = send(project_root, &agent, builder, has_header, &request.body)?;
+    // `send()` (via `Agent::run`) doesn't return until the response status
+    // line and headers have been read — DNS, connect, TLS, sending the
+    // request, and waiting on the server are all folded into this one span.
+    // See `ResponseTiming`'s doc comment for why that's as fine-grained as
+    // `ureq` lets this get.
     let time_to_first_byte = started.elapsed();
 
     match result {
         Ok(response) => build_response(response, time_to_first_byte),
-        Err(ureq::Error::Status(_, response)) => build_response(response, time_to_first_byte),
-        Err(ureq::Error::Transport(transport)) => Err(NovaError::RequestExecution {
-            message: transport.to_string(),
+        Err(source) => Err(NovaError::RequestExecution {
+            message: source.to_string(),
         }),
     }
 }
@@ -184,37 +199,56 @@ pub fn save_example_response(file: &RequestFile, response: &Response) -> NovaRes
     })
 }
 
-// ureq::Error is large (carries a full Response on the Status variant); it's
-// matched immediately by the only caller, not stored or propagated further.
-#[allow(clippy::result_large_err)]
+// ureq::Error is small in 3.x (it no longer carries the response), but this
+// still returns the `Result` rather than unwrapping it since the only caller
+// wants to build a `Response` from a non-2xx/3xx status too, not just an
+// `Ok`.
 fn send(
     project_root: &Path,
-    req: ureq::Request,
+    agent: &ureq::Agent,
+    mut builder: ureq::http::request::Builder,
+    has_header: impl Fn(&str) -> bool,
     body: &RequestBody,
-) -> NovaResult<Result<ureq::Response, ureq::Error>> {
+) -> NovaResult<Result<ureq::http::Response<ureq::Body>, ureq::Error>> {
+    let build_error = |source: ureq::http::Error| NovaError::RequestExecution {
+        message: format!("failed to build request: {source}"),
+    };
+    let build = |builder: ureq::http::request::Builder, body: Vec<u8>| {
+        builder.body(body).map_err(build_error)
+    };
+
     Ok(match body {
-        RequestBody::None => req.call(),
-        RequestBody::Text(text) => req.send_string(text),
-        RequestBody::Json(value) => {
-            req.send_string(&serde_json::to_string(value).unwrap_or_default())
+        RequestBody::None => agent.run(builder.body(()).map_err(build_error)?),
+        RequestBody::Text(text) => agent.run(build(builder, text.clone().into_bytes())?),
+        RequestBody::Json(value) => agent.run(build(
+            builder,
+            serde_json::to_vec(value).unwrap_or_default(),
+        )?),
+        RequestBody::Xml(element) => {
+            agent.run(build(builder, element.to_xml_string().into_bytes())?)
         }
-        RequestBody::Xml(element) => req.send_string(&element.to_xml_string()),
-        RequestBody::Graphql(graphql) => {
-            req.send_string(&serde_json::to_string(&graphql.to_json_envelope()).unwrap_or_default())
-        }
+        RequestBody::Graphql(graphql) => agent.run(build(
+            builder,
+            serde_json::to_vec(&graphql.to_json_envelope()).unwrap_or_default(),
+        )?),
         RequestBody::Form(pairs) => {
+            // Matches ureq 2.x's `send_form`: default the content type only
+            // if the request hasn't already set one of its own.
+            if !has_header("Content-Type") {
+                builder = builder.header("Content-Type", "application/x-www-form-urlencoded");
+            }
             let encoded = url::form_urlencoded::Serializer::new(String::new())
                 .extend_pairs(pairs)
                 .finish();
-            req.send_string(&encoded)
+            agent.run(build(builder, encoded.into_bytes())?)
         }
         RequestBody::Multipart(fields) => {
             let (boundary, bytes) = encode_multipart(project_root, fields)?;
-            req.set(
+            let builder = builder.header(
                 "Content-Type",
-                &format!("multipart/form-data; boundary={boundary}"),
-            )
-            .send_bytes(&bytes)
+                format!("multipart/form-data; boundary={boundary}"),
+            );
+            agent.run(build(builder, bytes)?)
         }
         RequestBody::Binary(file_path) => {
             let resolved = resolve_project_file_path(project_root, file_path).ok_or_else(|| {
@@ -224,7 +258,7 @@ fn send(
             })?;
             let bytes = fs::read(&resolved)
                 .map_err(|_| NovaError::BinaryFileNotFound { path: resolved })?;
-            req.send_bytes(&bytes)
+            agent.run(build(builder, bytes)?)
         }
     })
 }
@@ -320,33 +354,32 @@ pub(crate) fn resolve_project_file_path(project_root: &Path, file_path: &str) ->
     Some(canonical_target)
 }
 
-fn build_response(response: ureq::Response, time_to_first_byte: Duration) -> NovaResult<Response> {
-    let status = response.status();
+fn build_response(
+    mut response: ureq::http::Response<ureq::Body>,
+    time_to_first_byte: Duration,
+) -> NovaResult<Response> {
+    let status = response.status().as_u16();
 
     // A header name can repeat (most notably Set-Cookie, one per cookie) —
-    // `response.all(name)` returns every value for it, so dedupe names
-    // case-insensitively first rather than using `.header()`, which only
-    // ever returns the first value and would silently drop the rest.
-    let mut seen_names = std::collections::HashSet::new();
-    let mut headers = Vec::new();
-    for name in response.headers_names() {
-        if !seen_names.insert(name.to_ascii_lowercase()) {
-            continue;
-        }
-        for value in response.all(&name) {
-            headers.push(Header {
-                name: name.clone(),
-                value: value.to_string(),
-            });
-        }
-    }
+    // `HeaderMap::iter()` already yields one entry per stored value (unlike
+    // `.get()`, which only ever returns the first), so no dedup is needed.
+    let headers = response
+        .headers()
+        .iter()
+        .map(|(name, value)| Header {
+            name: name.as_str().to_string(),
+            value: value.to_str().unwrap_or_default().to_string(),
+        })
+        .collect();
 
     let download_started = Instant::now();
-    let body = response
-        .into_string()
-        .map_err(|source| NovaError::RequestExecution {
-            message: format!("failed to read response body: {source}"),
-        })?;
+    let body =
+        response
+            .body_mut()
+            .read_to_string()
+            .map_err(|source| NovaError::RequestExecution {
+                message: format!("failed to read response body: {source}"),
+            })?;
     let content_download = download_started.elapsed();
 
     Ok(Response {
