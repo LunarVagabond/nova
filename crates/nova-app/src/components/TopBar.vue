@@ -5,6 +5,7 @@
 // open, which environment requests are sent against, and project settings —
 // so the sidebar underneath it can stay a pure navigation tree.
 import Icon from "./Icon.vue";
+import novaIcon from "../assets/nova-icon.png";
 import type { MockServerStatus } from "../types/nova";
 import type { ThemePreference } from "../composables/useTheme";
 
@@ -65,7 +66,7 @@ const THEME_LABEL: Record<ThemePreference, string> = {
     </button>
 
     <div class="topbar__brand">
-      <span class="topbar__mark">N</span>
+      <img class="topbar__mark" :src="novaIcon" alt="" />
       <span class="topbar__wordmark">Nova</span>
     </div>
 
@@ -105,6 +106,8 @@ const THEME_LABEL: Record<ThemePreference, string> = {
       </option>
     </select>
 
+    <span v-if="projectName" class="topbar__divider"></span>
+
     <button
       v-if="projectName"
       type="button"
@@ -140,10 +143,12 @@ const THEME_LABEL: Record<ThemePreference, string> = {
       <Icon name="history" />
     </button>
 
+    <span v-if="projectName" class="topbar__divider"></span>
+
     <button
       v-if="projectName"
       type="button"
-      class="icon-button icon-button--outline"
+      class="icon-button icon-button--outline icon-button--success"
       title="Run tests for the whole project"
       :disabled="runningTests"
       @click="emit('runTests')"
@@ -183,6 +188,8 @@ const THEME_LABEL: Record<ThemePreference, string> = {
     >
       <Icon name="cookie" />
     </button>
+
+    <span v-if="projectName" class="topbar__divider"></span>
 
     <button
       v-if="projectName"

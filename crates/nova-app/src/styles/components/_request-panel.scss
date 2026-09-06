@@ -12,12 +12,50 @@
 // variables) — one bordered region with row dividers rather than a stack of
 // individually-bordered pill inputs, closer to how a professional API
 // client renders this kind of editable table.
+// Row height shared by every `.kv-editor` cell (inputs, icon-button
+// columns, the multipart type toggle) — taller than the app's normal
+// `$control-height` so the table reads as a comfortable data grid rather
+// than a stack of cramped default-height inputs.
+$kv-row-height: $control-height * 1.2;
+
 .kv-editor {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--color-border);
   border-radius: $radius-sm;
   overflow: hidden;
+}
+
+// Column-label row — purely presentational (`aria-hidden`, no inputs), so
+// the table reads as an actual Name/Value grid at a glance instead of a
+// plain stack of two-input rows with no header at all.
+.kv-editor__header {
+  display: flex;
+  align-items: center;
+  height: $control-height-sm;
+  padding: 0 $spacing-sm;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-bg-sidebar);
+}
+
+.kv-editor__header-cell {
+  flex: 1;
+  min-width: 0;
+  padding: 0 $spacing-sm;
+  color: var(--color-text-muted);
+  font-size: $font-size-xs;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+// Reserves the same width as one trailing icon-button column (reveal /
+// secret-toggle / remove) so the two label cells above stay aligned with
+// the Name/Value inputs beneath them despite those columns having no
+// label of their own.
+.kv-editor__header-spacer {
+  flex-shrink: 0;
+  width: $kv-row-height;
 }
 
 .kv-editor__row {
@@ -33,14 +71,14 @@
 .kv-editor__input {
   flex: 1;
   min-width: 0;
-  height: $control-height;
+  height: $kv-row-height;
   // Matches `height` exactly (no vertical padding here) so a single line
   // of text centers itself in the box the same way a native `<input>`'s
   // own centering would — needed for `VariableAwareInput`'s textarea-based
   // field (see `.var-input__field` in _base.scss) to land the text/caret
   // at the same vertical position as this row's plain `<input>` sibling
   // (the name column), which centers regardless of line-height.
-  line-height: $control-height;
+  line-height: $kv-row-height;
   padding: 0 $spacing-sm;
   border: none;
   border-right: 1px solid var(--color-border);
@@ -65,8 +103,8 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: $control-height;
-  height: $control-height;
+  width: $kv-row-height;
+  height: $kv-row-height;
   border: none;
   border-right: 1px solid var(--color-border);
   background: none;
@@ -83,13 +121,23 @@
   color: var(--color-accent);
 }
 
+// Kept in the DOM (rather than `v-if`) on a non-secret row so every row in
+// the list reserves the same fixed-width column for it — an absent
+// element here would shrink the row by one `$control-height` and shift
+// the remove button (and the value column's available width) out of
+// alignment with rows that do show it.
+.kv-editor__reveal--hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .kv-editor__remove {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: $control-height;
-  height: $control-height;
+  width: $kv-row-height;
+  height: $kv-row-height;
   border: none;
   background: none;
   color: var(--color-text-muted);
@@ -130,7 +178,7 @@
 }
 
 .kv-editor__type-btn {
-  height: $control-height;
+  height: $kv-row-height;
   padding: 0 $spacing-sm;
   border: none;
   background: none;
@@ -153,8 +201,8 @@
   flex: 1;
   min-width: 0;
   align-items: center;
-  gap: $spacing-xs;
-  padding: 0 $spacing-sm;
+  gap: $spacing-sm;
+  padding: $spacing-sm;
   border-right: 1px solid var(--color-border);
 }
 
@@ -163,8 +211,8 @@
   align-items: center;
   gap: $spacing-xs;
   flex-shrink: 0;
-  height: $control-height-sm;
-  padding: 0 $spacing-xs;
+  height: $control-height;
+  padding: 0 $spacing-sm;
   border: 1px solid var(--color-border);
   border-radius: $radius-sm;
   background: none;
@@ -420,6 +468,19 @@
   &:focus-within {
     border-color: var(--color-accent);
   }
+
+  // A button placed directly in this row (RequestPanel's Send,
+  // WebSocketPanel's Connect/Disconnect) always declares its own explicit
+  // `height` (from the base `.button`/`.request-panel__send` rules) —
+  // which, per the flexbox spec, opts it out of this row's default
+  // `align-items: stretch` and falls back to `flex-start` instead, pinning
+  // it to the top of the row rather than centering it. Force the stretch
+  // back on explicitly so every button here fills the row's height like
+  // its sibling badge/input/status elements do.
+  > button {
+    align-self: stretch;
+    height: auto;
+  }
 }
 
 .request-panel__method-select {
@@ -602,6 +663,55 @@
 .response-pane__error {
   color: var(--color-danger);
   margin: 0;
+}
+
+// A request/WebSocket file that fails to parse replaces the whole tab body
+// with this instead of a single line of red text — used by both
+// RequestPanel and WebSocketPanel's `loadError` branch. Scoped to
+// `request-panel__body`, which is already just the main content pane, so
+// this naturally never covers the sidebar or top bar.
+.load-error-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $spacing-sm;
+  max-width: 28rem;
+  margin: $spacing-xl auto 0;
+  padding: $spacing-xl $spacing-lg;
+  border: 1px solid var(--color-border);
+  border-radius: $radius-md;
+  background-color: var(--color-bg-raised);
+  text-align: center;
+}
+
+.load-error-overlay__icon {
+  width: 2rem;
+  height: 2rem;
+  color: var(--color-danger);
+}
+
+.load-error-overlay__title {
+  margin: 0;
+  font-size: $type-h3-size;
+  line-height: $type-h3-line;
+  font-weight: $type-h3-weight;
+}
+
+.load-error-overlay__path {
+  margin: 0;
+  padding: $spacing-xs $spacing-sm;
+  border-radius: $radius-sm;
+  background-color: var(--color-bg-inset);
+  color: var(--color-text-muted);
+  font-family: $font-family-mono;
+  font-size: $font-size-sm;
+  word-break: break-all;
+}
+
+.load-error-overlay__message {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: $font-size-sm;
 }
 
 .response-summary {
@@ -921,6 +1031,8 @@ $variables-drawer-width: 18rem;
 }
 
 .ws-panel__status {
+  display: flex;
+  align-items: center;
   flex-shrink: 0;
   padding: 0 $spacing-sm;
   color: var(--color-text-muted);

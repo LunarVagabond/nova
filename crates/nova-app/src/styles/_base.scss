@@ -317,6 +317,12 @@ button {
   color: var(--color-danger);
 }
 
+// Same idea as `.icon-button--danger` above, for the one "safe/go" action
+// (running tests) that deserves the same kind of at-a-glance color signal.
+.icon-button--success:hover:not(:disabled) {
+  color: var(--color-success);
+}
+
 // A visibly bordered variant — for an icon control sitting on its own
 // (not inside an already-obvious toolbar/row) that needs to read as a
 // clickable control at a glance, not just on hover.

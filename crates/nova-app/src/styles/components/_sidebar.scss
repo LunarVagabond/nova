@@ -1,13 +1,25 @@
 @use "../variables" as *;
 
 .sidebar-search {
+  position: relative;
   padding: $spacing-sm $spacing-md;
+}
+
+.sidebar-search__icon {
+  position: absolute;
+  top: 50%;
+  left: $spacing-md + $spacing-xs;
+  width: 0.9em;
+  height: 0.9em;
+  color: var(--color-text-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 
 .sidebar-search__input {
   width: 100%;
-  height: $control-height-sm;
-  padding: 0 $spacing-sm;
+  height: $control-height;
+  padding: 0 $spacing-sm 0 $spacing-xl;
   border-radius: $radius-sm;
   border: 1px solid var(--color-border);
   background-color: var(--color-bg-raised);

@@ -54,6 +54,7 @@ watch(filterQuery, (value) => {
 <template>
   <div>
     <div class="sidebar-search">
+      <Icon name="search" class="sidebar-search__icon" />
       <input
         v-model="filterQuery"
         type="search"

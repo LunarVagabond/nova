@@ -38,6 +38,8 @@ export const WithChanges: Story = {
     tauriMocks: {
       git_status: () => SAMPLE_STATUS,
       git_diff_file: () => SAMPLE_DIFF,
+      git_stage_files: () => undefined,
+      git_unstage_files: () => undefined,
     },
   },
 };
