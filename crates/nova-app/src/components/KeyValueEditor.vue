@@ -91,6 +91,13 @@ function toggleRevealed(index: number) {
     <datalist v-if="mode === 'headers'" id="kv-editor-header-names">
       <option v-for="headerName in COMMON_HEADER_NAMES" :key="headerName" :value="headerName" />
     </datalist>
+    <div v-if="modelValue.length > 0" class="kv-editor__header" aria-hidden="true">
+      <span class="kv-editor__header-cell">{{ namePlaceholder ?? "Name" }}</span>
+      <span class="kv-editor__header-cell">{{ valuePlaceholder ?? "Value" }}</span>
+      <span v-if="mode === 'variables'" class="kv-editor__header-spacer"></span>
+      <span v-if="mode === 'variables'" class="kv-editor__header-spacer"></span>
+      <span class="kv-editor__header-spacer"></span>
+    </div>
     <div v-for="(row, index) in modelValue" :key="index" class="kv-editor__row">
       <input
         class="kv-editor__input"
@@ -117,9 +124,11 @@ function toggleRevealed(index: number) {
         @update:model-value="update(index, 'value', $event)"
       />
       <button
-        v-if="mode === 'variables' && row.secret"
+        v-if="mode === 'variables'"
         type="button"
         class="kv-editor__reveal"
+        :class="{ 'kv-editor__reveal--hidden': !row.secret }"
+        :tabindex="row.secret ? 0 : -1"
         :title="revealed[index] ? 'Hide value' : 'Reveal value'"
         @click="toggleRevealed(index)"
       >

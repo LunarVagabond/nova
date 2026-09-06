@@ -30,7 +30,20 @@ function withLocalState(initial: string, resolved: ResolvedVariables | null = nu
         const value = ref(args.modelValue);
         return { args, value };
       },
-      template: `<VariableAwareInput :model-value="value" :resolved="args.resolved" :placeholder="args.placeholder" @update:model-value="value = $event" />`,
+      // `VariableAwareInput`'s root has no size of its own by design — it
+      // takes on whatever field class its caller applies (see the
+      // `.var-input` comment in _base.scss). `.kv-editor__input` is the
+      // real class request/param/variable rows use for exactly this, so
+      // the story renders with it too rather than collapsing to nothing.
+      template: `<div style="max-width: 28rem; padding: 8px; border: 1px dashed var(--color-border);">
+        <VariableAwareInput
+          class="kv-editor__input"
+          :model-value="value"
+          :resolved="args.resolved"
+          :placeholder="args.placeholder"
+          @update:model-value="value = $event"
+        />
+      </div>`,
     }),
     args: { modelValue: initial, resolved },
   };

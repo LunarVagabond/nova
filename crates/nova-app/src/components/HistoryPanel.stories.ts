@@ -9,6 +9,11 @@ const meta: Meta<typeof HistoryPanel> = {
     projectRoot: "/home/chris/projects/nova-fixtures",
     active: true,
   },
+  // The real app supplies height via its own flex layout (`.history-panel`
+  // is `height: 100%`, which needs a sized ancestor) — without a fixed
+  // height here it collapses to nothing, which reads as "cramped" but is
+  // a story-wrapper issue, not a component bug.
+  decorators: [(story) => ({ components: { story }, template: '<div style="height: 32rem;"><story /></div>' })],
 };
 
 export default meta;

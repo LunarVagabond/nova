@@ -454,7 +454,7 @@ const hasMultipleExampleResponses = computed(() => exampleResponses.value.length
 const selectedExampleKey = ref<string | null>(null);
 
 function exampleKey(example: ExampleResponseSummary): string {
-  return `${example.status} ${example.name ?? ""}`;
+  return `${example.status}\0${example.name ?? ""}`;
 }
 
 function exampleLabel(example: ExampleResponseSummary): string {
@@ -1109,7 +1109,12 @@ defineExpose({ dirty, save: handleSave });
 
     <div v-show="!requestPaneCollapsed" class="request-panel__body">
     <p v-if="loading" class="response-pane__hint">Loading request…</p>
-    <p v-else-if="loadError" class="response-pane__error">{{ loadError }}</p>
+    <div v-else-if="loadError" class="load-error-overlay">
+      <Icon name="warning" class="load-error-overlay__icon" />
+      <h3 class="load-error-overlay__title">Couldn't load this request</h3>
+      <p class="load-error-overlay__path">{{ request.path }}</p>
+      <p class="load-error-overlay__message">{{ loadError }}</p>
+    </div>
 
     <template v-else-if="original">
       <p v-if="saveError" class="request-panel__save-error">Save failed: {{ saveError }}</p>
