@@ -2,7 +2,7 @@ SHELL := /usr/bin/env bash
 
 .PHONY: help install build build-engine build-cli build-app dev run test test-engine \
         test-cli validate fmt fmt-check lint clean stop release-checks release \
-        release-skip-tests build-release-bundles stage-release
+        release-skip-tests build-release-bundles stage-release serve-storybook
 
 APP_DIR := crates/nova-app
 FIXTURE := crates/nova-engine/tests/fixtures/basic-project
@@ -30,6 +30,9 @@ dev: install ## Run the desktop app in dev mode (hot reload)
 
 stop: ## Stop a running dev instance of the desktop app
 	pkill -f "$(APP_DIR)/src-tauri/target" 2>/dev/null || true
+
+serve-storybook: install ## Run Storybook for the desktop app's Vue components (experimental)
+	cd $(APP_DIR) && npm run storybook
 
 run: build-cli ## Run the CLI against the bundled example fixture project (use ARGS="..." for other args/paths)
 	cargo run -q -p nova-cli -- $(if $(ARGS),$(ARGS),inspect $(FIXTURE))
