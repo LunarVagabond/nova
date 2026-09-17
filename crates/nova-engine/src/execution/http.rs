@@ -50,9 +50,12 @@ pub struct Response {
 /// - `content_download_ms`: wall-clock time spent reading the response body
 ///   after the head has arrived (`Body::read_to_string`).
 ///
-/// `time_to_first_byte_ms + content_download_ms` equals `elapsed_ms` (up to
-/// sub-millisecond rounding). Nothing here is estimated or fabricated: both
-/// numbers are real `Instant`-based measurements of what `ureq` actually did.
+/// `time_to_first_byte_ms + content_download_ms` always equals `elapsed_ms`:
+/// `elapsed_ms` is derived from the two already-millisecond-truncated phase
+/// values rather than truncating their summed `Duration` separately, so the
+/// two can't drift apart by a rounding artifact. Nothing here is estimated or
+/// fabricated: both numbers are real `Instant`-based measurements of what
+/// `ureq` actually did.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResponseTiming {
     pub time_to_first_byte_ms: u128,
@@ -381,15 +384,17 @@ fn build_response(
                 message: format!("failed to read response body: {source}"),
             })?;
     let content_download = download_started.elapsed();
+    let time_to_first_byte_ms = time_to_first_byte.as_millis();
+    let content_download_ms = content_download.as_millis();
 
     Ok(Response {
         status,
         headers,
         body,
-        elapsed_ms: (time_to_first_byte + content_download).as_millis(),
+        elapsed_ms: time_to_first_byte_ms + content_download_ms,
         timing: ResponseTiming {
-            time_to_first_byte_ms: time_to_first_byte.as_millis(),
-            content_download_ms: content_download.as_millis(),
+            time_to_first_byte_ms,
+            content_download_ms,
         },
     })
 }
